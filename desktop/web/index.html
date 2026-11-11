@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Turnamen.in — Esports Tournament Management System</title>
+  <link rel="stylesheet" href="assets/css/variables.css" />
+  <link rel="stylesheet" href="assets/css/layout.css" />
+  <link rel="stylesheet" href="assets/css/components.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar" aria-label="Navigasi Utama">
+      <div class="sidebar-brand">
+        <img src="assets/images/logo.svg" alt="Logo Turnamen.in" />
+        <div>
+          <span class="sidebar-brand-title">Turnamen.in</span>
+          <span class="sidebar-brand-subtitle">Esports Management Suite</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-label">Utama</div>
+        <button class="nav-item active" data-page="dashboard">📊 Dashboard</button>
+        <button class="nav-item" data-page="tournament-list">🏆 Daftar Turnamen</button>
+        <button class="nav-item" data-page="tournament-detail">📋 Detail & Peserta</button>
+
+        <div class="nav-section-label">Kompetisi & Pertandingan</div>
+        <button class="nav-item" data-page="team-management">🛡️ Manajemen Tim</button>
+        <button class="nav-item" data-page="match-management">⚔️ Jadwal & Skor Match</button>
+        <button class="nav-item" data-page="bracket">🌿 Bracket 8 Tim</button>
+
+        <div class="nav-section-label">Komunikasi & Laporan</div>
+        <button class="nav-item" data-page="announcements">📢 Pengumuman</button>
+        <button class="nav-item" data-page="reports">📈 Laporan & Klasemen</button>
+
+        <div class="nav-section-label">Akun & Akses</div>
+        <button class="nav-item" data-page="profile">👤 Profil Pengguna</button>
+        <button class="nav-item" data-page="login">🔐 Login / Ganti Role</button>
+      </nav>
+
+      <div class="sidebar-footer" id="sidebar-api-status">
+        <span>● Memeriksa koneksi API...</span>
+      </div>
+    </aside>
+
+    <!-- Main Desktop Workspace -->
+    <div class="main-workspace">
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 class="topbar-title" id="topbar-page-title">Dashboard Utama</h1>
+          <span class="badge badge-warning" id="app-mode-badge">MOCK MODE (SIMULASI LOKAL)</span>
+        </div>
+
+        <div class="topbar-right">
+          <label for="topbar-role-switcher" style="font-size:12px; color:var(--text-secondary);">Simulasi Role:</label>
+          <select id="topbar-role-switcher" class="form-select" style="padding:5px 9px; font-size:12px;">
+            <option value="super_admin">Super Admin</option>
+            <option value="organizer" selected>Tournament Organizer</option>
+            <option value="committee">Committee / Panitia</option>
+            <option value="team_captain">Team Captain</option>
+            <option value="player">Player</option>
+          </select>
+          <span class="badge badge-info tabular-nums" id="topbar-active-user">garuda_eo (organizer)</span>
+        </div>
+      </header>
+
+      <main class="content-area" id="main-content" role="main">
+        <!-- Dynamic page content rendered by desktop/web/assets/js/pages/app-pages.js -->
+      </main>
+    </div>
+  </div>
+
+  <!-- Reusable Application Modal -->
+  <div id="app-modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-dialog">
+      <div class="card-header">
+        <h3 class="card-title" id="app-modal-title">Dialog</h3>
+        <button class="btn btn-secondary btn-sm" onclick="TurnamenUI.closeModal()">✕</button>
+      </div>
+      <div id="app-modal-body"></div>
+      <div id="app-modal-footer" style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <!-- Optional Python Eel script (loaded automatically when served by Eel, ignored safely in standalone browser) -->
+  <script type="text/javascript" src="/eel.js"></script>
+  <script src="assets/js/core/config.js"></script>
+  <script src="assets/js/core/eel-bridge.js"></script>
+  <script src="assets/js/core/api-client.js"></script>
+  <script src="assets/js/components/ui-components.js"></script>
+  <script src="assets/js/pages/app-pages.js"></script>
+</body>
+</html>

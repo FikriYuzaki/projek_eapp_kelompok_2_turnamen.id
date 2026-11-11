@@ -1,0 +1,77 @@
+/* ============================================================================
+ * Turnamen.in — Design Tokens & CSS Variables (DRAFT for Ferlita Review)
+ * Owner: Ferlita (Project Coordinator & UI/UX Designer)
+ * Reference: DESIGN.md
+ * ============================================================================ */
+
+:root {
+  /* Surface Palette (Dark Slate Esports Dashboard) */
+  --bg-primary: #0b0f17;
+  --bg-secondary: #111827;
+  --bg-surface: #161f30;
+  --bg-surface-elevated: #1c273c;
+  --bg-surface-hover: #23304a;
+  --border-subtle: #26334d;
+  --border-focus: #3b82f6;
+
+  /* Typography Colors */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* Accent Colors */
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --accent-secondary: #06b6d4;
+
+  /* Semantic Status Colors */
+  --status-success: #10b981;
+  --status-success-bg: rgba(16, 185, 129, 0.14);
+  --status-warning: #f59e0b;
+  --status-warning-bg: rgba(245, 158, 11, 0.14);
+  --status-danger: #ef4444;
+  --status-danger-bg: rgba(239, 68, 68, 0.14);
+  --status-info: #6366f1;
+  --status-info-bg: rgba(99, 102, 241, 0.14);
+
+  /* Typography Families */
+  --font-sans: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, monospace;
+
+  /* Layout Dimensions */
+  --sidebar-width: 252px;
+  --topbar-height: 64px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.32);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular-nums {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
