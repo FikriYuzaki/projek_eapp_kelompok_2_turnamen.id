@@ -1,10 +1,11 @@
-# Instruksi Tugas Mandiri — ADRIEL (Tournament & Match System Developer)
+# Instruksi Tugas Mandiri: ADRIEL (Tournament & Match System Developer)
 
 ---
 
 ## 1. Identitas dan Tanggung Jawab Anggota
 - **Nama Anggota:** Adriel
 - **Peran:** Tournament & Match System Developer
+- **Branch Resmi:** `feature/adriel-tournament-match`
 - **Tanggung Jawab Utama:**
   - Mengembangkan logika bisnis manajemen turnamen dan pendaftaran/registrasi tim.
   - Mengelola data tim e-sport dan roster pemain (`team_members`).
@@ -13,7 +14,7 @@
   - Menulis unit test menyeluruh untuk logika turnamen dan bracket.
 
 ## 2. Tujuan Pekerjaan
-Menyediakan mesin kompetisi (**Tournament, Team, & Bracket Engine**) yang akurat, tahan terhadap input tidak valid, mendukung simulasi penuh 8 tim (Quarter Final → Semi Final → Grand Final) maupun jumlah tim bukan pangkat dua (*bye*), dan dapat diuji sepenuhnya tanpa memerlukan koneksi Supabase.
+Menyediakan mesin kompetisi (**Tournament, Team, & Bracket Engine**) yang akurat, tahan terhadap input tidak valid, mendukung simulasi penuh 8 tim (Quarter Final -> Semi Final -> Grand Final) maupun jumlah tim bukan pangkat dua (*bye*), dan dapat diuji sepenuhnya tanpa memerlukan koneksi Supabase.
 
 ## 3. Daftar Tugas Terperinci
 1. Mengembangkan `TournamentService` di `backend/modules/tournaments/service.py`:
@@ -88,17 +89,74 @@ pytest tests/unit/test_bracket_engine.py -v
 - [ ] Memastikan promosi pemenang ke `next_match_id` (`next_slot` A/B) berjalan otomatis.
 - [ ] Menambahkan unit test untuk seluruh edge case.
 
-## 14. Cara Menyerahkan Hasil ke Repository Utama
+## 14. Git Branch Assignment & Workflow
+
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+
+### 1. Nama Branch Resmi
+`feature/adriel-tournament-match`
+
+### 2. Tanggung Jawab pada Branch Ini
+Mengembangkan dan memelihara logika domain turnamen dan registrasi (`backend/modules/tournaments/`), manajemen tim dan anggota (`backend/modules/teams/`), algoritma Single Elimination bracket serta pencatatan skor dan promosi babak (`backend/modules/matches/`), beserta unit test bracket (`tests/unit/test_bracket_engine.py`).
+
+### 3. Instruksi Membuat atau Berpindah ke Branch
+- **Membuat branch pertama kali (jika belum ada di lokal maupun remote):**
+  ```powershell
+  git fetch origin
+  git switch main
+  git pull --ff-only origin main
+  git switch -c feature/adriel-tournament-match
+  git push -u origin feature/adriel-tournament-match
+  ```
+- **Jika branch sudah ada di remote (`origin`):**
+  ```powershell
+  git fetch origin
+  git switch feature/adriel-tournament-match
+  git pull --ff-only
+  ```
+- **Jika branch sudah ada di komputer lokal:**
+  ```powershell
+  git switch feature/adriel-tournament-match
+  git pull --ff-only
+  ```
+
+### 4. Perintah Git untuk Menyimpan Pekerjaan
+Pastikan seluruh unit test dan integration test lulus sebelum melakukan commit:
 ```powershell
-git pull origin main
 pytest -v
+python run.py --check
+git status
 git add backend/modules/tournaments/ backend/modules/teams/ backend/modules/matches/ tests/unit/test_bracket_engine.py
 git commit -m "feat(bracket): implement single elimination engine and match progression"
-git push origin main
 ```
 
+### 5. Instruksi Push ke Branch Milik Adriel
+Jangan melakukan push langsung ke `main` dan jangan menggunakan `--force`:
+```powershell
+git push origin feature/adriel-tournament-match
+```
+*(Atau cukup `git push` jika upstream `-u` sudah diatur).*
+
+### 6. Instruksi Membuat Pull Request ke `main`
+1. Buka repository GitHub: `https://github.com/FikriYuzaki/projek_eapp_kelompok_2_turnamen.id`.
+2. Pilih branch `feature/adriel-tournament-match` lalu klik **`Compare & pull request`**.
+3. Pastikan **base** adalah `main` dan **compare** adalah `feature/adriel-tournament-match`.
+4. Tulis ringkasan perubahan modul turnamen/tim/bracket, daftar file yang diubah, dan hasil pengujian `pytest -v`.
+5. Klik **`Create pull request`** dan tunggu review sebelum merge.
+6. Untuk menyinkronkan branch dengan pembaruan terbaru dari `main`:
+   ```powershell
+   git fetch origin
+   git switch feature/adriel-tournament-match
+   git merge origin/main
+   ```
+
+### 7. Aturan Koordinasi Lintas Modul
+- Apabila metode pada `TournamentService`, `TeamService`, atau `MatchService` membutuhkan operasi penyimpanan baru di repository, koordinasikan terlebih dahulu dengan **Habil** (`feature/habil-database-auth`).
+- Apabila terdapat perubahan parameter atau struktur return pada service yang dipanggil oleh endpoint `/api/v1/*`, koordinasikan dengan **Anisa** (`feature/anisa-api-report`) dan perbarui `docs/contracts/module-contract.md`.
+- Apabila struktur data bracket yang dikonsumsi halaman UI berubah, koordinasikan dengan **Ferlita** (`feature/ferlita-ui-ux`).
+
 ## 15. Agent Skills yang Wajib Dibaca Berdasarkan Addendum
-Sebelum meminta bantuan AI Agent, pastikan agent membaca `AGENTS.md`, file tugas ini (`docs/tasks/adriel.md`), dan memuat skill berikut dari `.agents/skills/`:
+Sebelum meminta bantuan AI Agent, pastikan agent membaca `AGENTS.md`, file tugas ini (`docs/tasks/adriel.md`), `docs/GIT_WORKFLOW.md`, dan memuat skill berikut dari `.agents/skills/`:
 - **Wajib:**
   - `antislop` (`.agents/skills/antislop/SKILL.md`)
   - `antislop-code` (`.agents/skills/antislop-code/SKILL.md`)

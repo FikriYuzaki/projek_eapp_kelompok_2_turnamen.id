@@ -1,10 +1,11 @@
-# Instruksi Tugas Mandiri — FIKRI (System Integration & Python Eel Developer)
+# Instruksi Tugas Mandiri: FIKRI (System Integration & Python Eel Developer)
 
 ---
 
 ## 1. Identitas dan Tanggung Jawab Anggota
 - **Nama Anggota:** Fikri
 - **Peran:** System Integration & Python Eel Developer
+- **Branch Resmi:** `feature/fikri-eel`
 - **Tanggung Jawab Utama:**
   - Membangun struktur utama aplikasi desktop dan *single launcher* (`run.py`).
   - Mengatur Python Eel, lifecycle proses Flask + Eel, serta *graceful shutdown*.
@@ -21,7 +22,7 @@ Menyediakan fondasi desktop dan integrasi sistem yang stabil pada Windows 10/11,
    - Default (`python run.py`): Menjalankan Flask API di background thread + membuka jendela Python Eel.
    - API Only (`python run.py --api-only`): Menjalankan server Flask API + melayani static UI di `http://127.0.0.1:5000`.
    - Smoke Check (`python run.py --check`): Memeriksa konfigurasi, repositori, dan kesehatan aplikasi lalu keluar dengan kode `0`.
-3. Mengembangkan fungsi jembatan Python-JavaScript di `desktop/bridge/eel_Required_bridge.py` (`eel_bridge.py`) tanpa menduplikasi business logic.
+3. Mengembangkan fungsi jembatan Python-JavaScript di `desktop/bridge/eel_bridge.py` tanpa menduplikasi business logic.
 4. Mengembangkan modul JavaScript inti di `desktop/web/assets/js/core/` (`config.js`, `eel-bridge.js`, `api-client.js`).
 
 ## 4. Folder yang Menjadi Tanggung Jawab
@@ -88,18 +89,73 @@ python run.py
 - [ ] Memastikan `api-client.js` mencakup seluruh endpoint kontrak `/api/v1`.
 - [ ] Menjalankan `pytest` untuk memverifikasi integrasi antarmodul.
 
-## 14. Cara Menyerahkan Hasil ke Repository Utama
+## 14. Git Branch Assignment & Workflow
+
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+
+### 1. Nama Branch Resmi
+`feature/fikri-eel`
+
+### 2. Tanggung Jawab pada Branch Ini
+Mengembangkan dan memelihara application launcher (`run.py`, `desktop/launcher/`), Python Eel bridge (`desktop/bridge/`), JavaScript core client (`desktop/web/assets/js/core/`), serta konfigurasi dan logging aplikasi (`backend/core/`).
+
+### 3. Instruksi Membuat atau Berpindah ke Branch
+- **Membuat branch pertama kali (jika belum ada di lokal maupun remote):**
+  ```powershell
+  git fetch origin
+  git switch main
+  git pull --ff-only origin main
+  git switch -c feature/fikri-eel
+  git push -u origin feature/fikri-eel
+  ```
+- **Jika branch sudah ada di remote (`origin`):**
+  ```powershell
+  git fetch origin
+  git switch feature/fikri-eel
+  git pull --ff-only
+  ```
+- **Jika branch sudah ada di komputer lokal:**
+  ```powershell
+  git switch feature/fikri-eel
+  git pull --ff-only
+  ```
+
+### 4. Perintah Git untuk Menyimpan Pekerjaan
+Pastikan seluruh pengujian dan smoke check lulus sebelum melakukan commit:
 ```powershell
-git pull origin main
 pytest -v
 python run.py --check
+git status
 git add run.py desktop/launcher/ desktop/bridge/ desktop/web/assets/js/core/ backend/core/
 git commit -m "feat(desktop): integrate eel launcher, bridge, and api client"
-git push origin main
 ```
 
+### 5. Instruksi Push ke Branch Milik Fikri
+Jangan melakukan push langsung ke `main` dan jangan menggunakan `--force`:
+```powershell
+git push origin feature/fikri-eel
+```
+*(Atau cukup `git push` jika upstream `-u` sudah diatur).*
+
+### 6. Instruksi Membuat Pull Request ke `main`
+1. Buka repository GitHub: `https://github.com/FikriYuzaki/projek_eapp_kelompok_2_turnamen.id`.
+2. Pilih branch `feature/fikri-eel` lalu klik **`Compare & pull request`**.
+3. Pastikan **base** adalah `main` dan **compare** adalah `feature/fikri-eel`.
+4. Tulis ringkasan perubahan integrasi/Eel, daftar file yang diubah, serta hasil `pytest -v` dan `python run.py --check`.
+5. Klik **`Create pull request`** dan tunggu review sebelum merge.
+6. Untuk menyinkronkan branch dengan pembaruan terbaru dari `main`:
+   ```powershell
+   git fetch origin
+   git switch feature/fikri-eel
+   git merge origin/main
+   ```
+
+### 7. Aturan Koordinasi Lintas Modul
+- Apabila perubahan pada `api-client.js` atau `eel-bridge.js` mengubah cara pemanggilan dari halaman UI, koordinasikan dengan **Ferlita** (`feature/ferlita-ui-ux`) dan perbarui `docs/contracts/frontend-contract.md`.
+- Apabila penyesuaian konfigurasi di `backend/core/` berkaitan dengan inisialisasi Flask atau Supabase, koordinasikan dengan **Anisa** (`feature/anisa-api-report`) dan **Habil** (`feature/habil-database-auth`).
+
 ## 15. Agent Skills yang Wajib Dibaca Berdasarkan Addendum
-Sebelum meminta bantuan AI Agent, pastikan agent membaca `AGENTS.md`, file tugas ini (`docs/tasks/fikri.md`), dan memuat skill berikut dari `.agents/skills/`:
+Sebelum meminta bantuan AI Agent, pastikan agent membaca `AGENTS.md`, file tugas ini (`docs/tasks/fikri.md`), `docs/GIT_WORKFLOW.md`, dan memuat skill berikut dari `.agents/skills/`:
 - **Wajib:**
   - `antislop` (`.agents/skills/antislop/SKILL.md`)
   - `antislop-code` (`.agents/skills/antislop-code/SKILL.md`)

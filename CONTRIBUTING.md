@@ -1,9 +1,9 @@
-# Panduan Kontribusi — Turnamen.in (Single Main Branch Workflow)
+# Panduan Kontribusi: Turnamen.in
 
-Proyek **Turnamen.in** dikerjakan secara paralel oleh **5 anggota kelompok** dengan alur kerja Git yang sederhana dan terkoordinasi. Seluruh anggota bekerja menggunakan **satu branch utama: `main`**.
+Proyek **Turnamen.in** dikerjakan secara paralel oleh **5 anggota kelompok** menggunakan sistem **branch terpisah untuk setiap anggota** dan **`main` sebagai branch integrasi utama**. Panduan lengkap penggunaan Git langkah demi langkah juga tersedia di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
 
 > [!IMPORTANT]
-> Jangan membuat branch individual, jangan mengubah kontrak bersama secara sepihak, dan jangan pernah menggunakan `git push --force`.
+> Setiap anggota wajib bekerja pada branch khusus miliknya. Jangan mengerjakan fitur langsung pada branch `main`, jangan mengubah kontrak bersama secara sepihak, dan jangan pernah menggunakan `git push --force`.
 
 ---
 
@@ -11,88 +11,162 @@ Proyek **Turnamen.in** dikerjakan secara paralel oleh **5 anggota kelompok** den
 
 Setiap anggota bertanggung jawab penuh pada area kerjanya masing-masing agar tidak terjadi bentrokan file (*merge conflict*):
 
-| Anggota | Peran | Folder Utama |
-| :--- | :--- | :--- |
-| **Ferlita** | Project Coordinator & UI/UX Designer | `desktop/web/pages/`, `desktop/web/assets/css/`, `desktop/web/assets/images/`, `DESIGN.md` |
-| **Fikri** | System Integration & Python Eel Developer | `desktop/launcher/`, `desktop/bridge/`, `desktop/web/assets/js/core/`, `run.py` |
-| **Habil** | Database & Authentication Developer | `supabase/`, `backend/modules/auth/`, `backend/infrastructure/supabase/`, `backend/repositories/` |
-| **Adriel** | Tournament & Match System Developer | `backend/modules/tournaments/`, `backend/modules/teams/`, `backend/modules/matches/` |
-| **Anisa** | REST API, Reporting & Testing Developer | `backend/api/`, `backend/modules/reports/`, `backend/modules/announcements/`, `tests/`, `docs/api/` |
+| Anggota | Peran | Branch Resmi | Folder Utama |
+| :--- | :--- | :--- | :--- |
+| **Ferlita** | Project Coordinator & UI/UX Designer | `feature/ferlita-ui-ux` | `desktop/web/pages/`, `desktop/web/assets/css/`, `desktop/web/assets/images/`, `desktop/web/assets/js/components/`, `desktop/web/assets/js/pages/`, `DESIGN.md` |
+| **Fikri** | System Integration & Python Eel Developer | `feature/fikri-eel` | `desktop/launcher/`, `desktop/bridge/`, `desktop/web/assets/js/core/`, `run.py`, `backend/core/` |
+| **Habil** | Database & Authentication Developer | `feature/habil-database-auth` | `supabase/`, `backend/modules/auth/`, `backend/infrastructure/supabase/`, `backend/repositories/`, `docs/database-schema.md`, `docs/security.md` |
+| **Adriel** | Tournament & Match System Developer | `feature/adriel-tournament-match` | `backend/modules/tournaments/`, `backend/modules/teams/`, `backend/modules/matches/`, `tests/unit/test_bracket_engine.py` |
+| **Anisa** | REST API, Reporting & Testing Developer | `feature/anisa-api-report` | `backend/app.py`, `backend/api/`, `backend/modules/reports/`, `backend/modules/announcements/`, `tests/`, `docs/api/` |
 
 Kepemilikan folder adalah batas tanggung jawab utama. Apabila suatu perubahan menyentuh folder anggota lain atau mengubah kontrak bersama (`docs/contracts/`), wajib dikoordinasikan terlebih dahulu.
 
 ---
 
-## 2. Alur Kerja Harian (Single Branch `main`)
+## 2. Git Branch Workflow
 
-### A. Sebelum Mulai Bekerja
-Selalu tarik pembaruan terbaru dari `origin/main` sebelum mengedit file apa pun:
+### A. Fungsi Branch `main` dan Branch Anggota
 
-```bash
-git pull origin main
+- **Fungsi Branch `main`:**
+  Branch `main` adalah pusat integrasi resmi seluruh pekerjaan tim. Branch ini hanya boleh berisi kode yang sudah diperiksa, lulus pengujian otomatis (`pytest`), dan siap dijalankan oleh seluruh anggota.
+- **Fungsi Branch Masing-Masing Anggota:**
+  Setiap anggota memiliki satu branch kerja khusus (`feature/ferlita-ui-ux`, `feature/fikri-eel`, `feature/habil-database-auth`, `feature/adriel-tournament-match`, dan `feature/anisa-api-report`) sebagai ruang kerja mandiri untuk mengembangkan, menguji, dan menyimpan fitur sesuai perannya sebelum digabungkan ke `main`.
+
+### B. Aturan Kerja Menggunakan Branch
+
+1. Setiap anggota wajib bekerja pada branch khusus miliknya.
+2. Branch `main` hanya untuk kode yang sudah diperiksa dan siap diintegrasikan.
+3. Anggota tidak boleh mengerjakan perubahan fitur secara langsung pada `main`.
+4. Setiap anggota hanya boleh melakukan `git push` ke branch miliknya sendiri.
+5. Penggabungan kode ke `main` harus melalui **Pull Request (PR)** di GitHub.
+6. Dilarang menggunakan `git push --force`.
+7. Jangan menghapus branch anggota ketika masih digunakan untuk pengembangan.
+8. Jangan mengubah atau menghapus commit awal repository (`29350bd`).
+
+### C. Cara Membuat atau Berpindah ke Branch Anggota
+
+Saat pertama kali menyiapkan branch kerja (ketika branch belum ada di lokal maupun di remote):
+
+```powershell
+git fetch origin
+git switch main
+git pull --ff-only origin main
+git switch -c <nama-branch-anggota>
+git push -u origin <nama-branch-anggota>
 ```
 
-Pastikan pengujian dasar tetap hijau sebelum mulai menulis kode baru:
+Daftar nama branch anggota:
+- Ferlita: `feature/ferlita-ui-ux`
+- Fikri: `feature/fikri-eel`
+- Habil: `feature/habil-database-auth`
+- Adriel: `feature/adriel-tournament-match`
+- Anisa: `feature/anisa-api-report`
 
-```bash
-pytest
-```
+**Catatan penting untuk pemula:**
+- Gunakan `git switch -c <nama-branch>` **hanya satu kali** saat branch belum pernah dibuat.
+- Jika branch sudah ada di GitHub (remote), jalankan `git fetch origin` lalu `git switch <nama-branch>` tanpa `-c`.
+- Jika branch sudah ada di komputer lokal Anda, cukup jalankan `git switch <nama-branch>`.
 
-### B. Saat Bekerja
-1. Baca `AGENTS.md`, file tugas masing-masing di `docs/tasks/<nama>.md`, serta Agent Skills yang diwajibkan.
-2. Gunakan `APP_MODE=mock` untuk mengembangkan dan menguji modul secara mandiri tanpa bergantung pada koneksi cloud.
-3. Hanya ubah file di dalam area tanggung jawab masing-masing.
+### D. Cara Commit dan Push Pekerjaan Harian
 
-### C. Setelah Menyelesaikan Satu Bagian Kecil
-Simpan dan unggah perubahan ke `main` dengan pesan commit yang deskriptif:
-
-```bash
-git add .
-git commit -m "feat: descriptive feature name"
-git push origin main
-```
+1. Sebelum mulai mengedit kode, pastikan Anda berada di branch milik sendiri:
+   ```powershell
+   git status
+   git switch <nama-branch-anggota>
+   git pull --ff-only
+   ```
+2. Kembangkan fitur pada folder tanggung jawab Anda dalam mode `APP_MODE=mock`, lalu jalankan pengujian:
+   ```powershell
+   pytest
+   python run.py --check
+   ```
+3. Simpan perubahan (*commit*) dan unggah (*push*) ke branch Anda:
+   ```powershell
+   git status
+   git add .
+   git commit -m "feat(scope): deskripsi singkat perubahan"
+   git push
+   ```
 
 Format pesan commit yang disarankan:
-- `feat: tambah validasi skor best-of-3 pada modul matches`
-- `fix: perbaiki tampilan status badge pada halaman bracket`
-- `docs: perbarui dokumentasi endpoint pengumuman`
-- `test: tambah pengujian edge case bye pada bracket 6 tim`
+- `feat(ui): improve tournament dashboard`
+- `feat(desktop): refine eel launcher lifecycle`
+- `feat(auth): enforce role permission checks on repository`
+- `feat(bracket): handle bye advancement for 6 teams`
+- `feat(api): add tournament standings report endpoint`
 
----
+### E. Cara Menyinkronkan Branch dengan `main`
 
-## 3. Penanganan Konflik Saat Push Ditolak
+Ketika ada pekerjaan anggota lain yang baru selesai digabungkan ke `main`, tarik pembaruan tersebut ke branch Anda agar kode tetap sinkron:
 
-Jika perintah `git push origin main` ditolak karena anggota lain baru saja melakukan push:
+```powershell
+git fetch origin
+git switch <nama-branch-anggota>
+git merge origin/main
+```
 
-1. **Jangan gunakan `--force`!**
-2. Tarik perubahan terbaru dengan rebase atau merge yang aman:
-   ```bash
-   git pull --rebase origin main
+Setelah proses merge selesai tanpa konflik, jalankan `pytest` lalu unggah ke branch Anda dengan `git push`.
+
+### F. Cara Membuat Pull Request (PR)
+
+Setelah fitur pada branch Anda selesai dan seluruh pengujian lulus:
+
+1. Buka repository GitHub: `https://github.com/FikriYuzaki/projek_eapp_kelompok_2_turnamen.id`.
+2. Pilih branch milik Anda.
+3. Klik tombol **`Compare & pull request`**.
+4. Pastikan branch tujuan (**base**) adalah `main` dan branch sumber (**compare**) adalah branch milik Anda.
+5. Tulis ringkasan perubahan yang mudah dipahami.
+6. Cantumkan daftar file atau fitur yang diubah.
+7. Cantumkan hasil pengujian (`pytest` dan `python run.py --check`).
+8. Klik **`Create pull request`**.
+9. Tunggu pemeriksaan dan persetujuan sebelum Pull Request di-merge ke `main`.
+10. Setelah Pull Request di-merge, perbarui `main` lokal Anda:
+    ```powershell
+    git switch main
+    git pull --ff-only origin main
+    git switch <nama-branch-anggota>
+    git merge main
+    ```
+
+### G. Cara Menangani Konflik Kode (Merge Conflict)
+
+Konflik dapat dicegah dengan mematuhi kepemilikan folder, tidak mengubah kontrak bersama (`docs/contracts/`) tanpa diskusi, serta berkoordinasi terlebih dahulu sebelum menyentuh file konfigurasi atau file milik anggota lain.
+
+Apabila terjadi konflik saat menjalankan `git merge origin/main`:
+
+1. Periksa `git status` untuk melihat file mana yang mengalami konflik.
+2. Buka dan baca file yang mengalami konflik, lalu perhatikan bagian di antara `<<<<<<<`, `=======`, dan `>>>>>>>`.
+3. Bandingkan perubahan dari branch Anda dengan perubahan dari `origin/main`.
+4. Diskusikan dengan pemilik perubahan terkait jika Anda ragu. Jangan asal menghapus kode milik anggota lain.
+5. Selesaikan konflik dengan mempertahankan kode yang valid dan menghapus baris penanda `<<<<<<<`, `=======`, serta `>>>>>>>`.
+6. Jalankan pengujian (`pytest` dan `python run.py --check`) untuk memastikan aplikasi tetap berjalan normal.
+7. Simpan hasil penyelesaian konflik:
+   ```powershell
+   git add <file-yang-diselesaikan>
+   git commit -m "chore(merge): resolve merge conflict with main"
+   git push
    ```
-3. Jika terdapat konflik pada file yang sama:
-   - Periksa penanda konflik (`<<<<<<<`, `=======`, `>>>>>>>`).
-   - Diskusikan dengan anggota pemilik file tersebut.
-   - Jangan menimpa atau menghapus pekerjaan anggota lain.
-   - Setelah konflik diselesaikan, jalankan `git add <file>` lalu `git rebase --continue` dan `git push origin main`.
 
 ---
 
-## 4. Penggunaan GitHub Desktop (Opsional untuk Non-Terminal)
+## 3. Penggunaan GitHub Desktop (Opsional untuk Non-Terminal)
 
 Bagi anggota yang lebih nyaman menggunakan antarmuka grafis (**GitHub Desktop**):
-1. Pastikan **Current Branch** selalu berada di `main`.
+1. Pastikan **Current Branch** berada pada branch milik Anda (misalnya `feature/ferlita-ui-ux`), **bukan** di `main`.
 2. Klik **Fetch origin** / **Pull origin** sebelum mulai mengedit file.
-3. Periksa daftar **Changes** di panel kiri — pastikan hanya file milik modul Anda yang ikut dicentang, dan tidak ada file `.env` atau kredensial rahasia.
-4. Isi **Summary** (mis. `feat: desain kartu turnamen pada dashboard`), klik **Commit to main**, lalu klik **Push origin**.
+3. Untuk menyinkronkan dengan `main`, klik menu **Branch -> Merge into current branch...**, lalu pilih `main`.
+4. Periksa daftar **Changes** di panel kiri: pastikan hanya file milik modul Anda yang dicentang, dan tidak ada file `.env` atau kredensial rahasia.
+5. Isi **Summary** (misalnya `feat(ui): desain kartu turnamen pada dashboard`), klik **Commit to `<nama-branch-anda>`**, lalu klik **Push origin**.
+6. Klik **Preview Pull Request** / **Create Pull Request** untuk membuka halaman pembuatan Pull Request ke `main` di GitHub.
 
 ---
 
-## 5. AI Agent Skills & Engineering Standards
+## 4. AI Agent Skills & Engineering Standards
 
-Seluruh anggota dan AI Agent yang membantu di repository ini wajib mematuhi standar yang didefinisikan pada `AGENTS.md` dan folder `.agents/skills/`.
+Seluruh anggota dan AI Agent yang membantu di repository ini wajib mematuhi standar yang didefinisikan pada [`AGENTS.md`](file:///C:/Turnamen.in/AGENTS.md) dan folder `.agents/skills/`.
 
 ### A. Daftar Skill Project-Level
-Folder `.agents/skills/` disimpan langsung di dalam Git agar seluruh anggota mendapatkan aturan yang sama setelah melakukan `git clone` atau `git pull origin main`.
+Folder `.agents/skills/` disimpan langsung di dalam Git agar seluruh anggota mendapatkan aturan yang sama setelah melakukan `git clone` atau sinkronisasi dari `main`.
 - **External Skills**:
   - Anti-Slop (`antislop`, `antislop-ui`, `antislop-human`, `antislop-code`, `antislop-copywriting`)
   - Supabase (`supabase`, `supabase-postgres-best-practices`)
@@ -109,20 +183,21 @@ Folder `.agents/skills/` disimpan langsung di dalam Git agar seluruh anggota men
   - `turnamen-quality-gates`
 
 ### B. Pemetaan Skill per Anggota
-| Anggota | Skill Wajib | Skill Tambahan / Opsional |
-| :--- | :--- | :--- |
-| **Ferlita** | `antislop`, `antislop-ui`, `antislop-human`, `antislop-copywriting`, `turnamen-project-standards`, `turnamen-frontend-ui`, `turnamen-quality-gates` | `frontend-design`, `tdd` |
-| **Fikri** | `antislop`, `antislop-code`, `turnamen-project-standards`, `turnamen-python-eel`, `turnamen-quality-gates` | `hexagonal-python`, `tdd`, `team-code-review` |
-| **Habil** | `antislop`, `antislop-code`, `turnamen-project-standards`, `turnamen-supabase-security`, `turnamen-quality-gates` | `supabase`, `supabase-postgres-best-practices`, `tdd` |
-| **Adriel** | `antislop`, `antislop-code`, `turnamen-project-standards`, `turnamen-bracket-engine`, `turnamen-quality-gates` | `tdd`, `team-code-review` |
-| **Anisa** | `antislop`, `antislop-code`, `antislop-copywriting`, `turnamen-project-standards`, `turnamen-flask-api`, `turnamen-quality-gates` | `hexagonal-python`, `tdd`, `team-code-review` |
+| Anggota | Branch Resmi | Skill Wajib | Skill Tambahan / Opsional |
+| :--- | :--- | :--- | :--- |
+| **Ferlita** | `feature/ferlita-ui-ux` | `antislop`, `antislop-ui`, `antislop-human`, `antislop-copywriting`, `turnamen-project-standards`, `turnamen-frontend-ui`, `turnamen-quality-gates` | `frontend-design`, `tdd` |
+| **Fikri** | `feature/fikri-eel` | `antislop`, `antislop-code`, `turnamen-project-standards`, `turnamen-python-eel`, `turnamen-quality-gates` | `hexagonal-python`, `tdd`, `team-code-review` |
+| **Habil** | `feature/habil-database-auth` | `antislop`, `antislop-code`, `turnamen-project-standards`, `turnamen-supabase-security`, `turnamen-quality-gates` | `supabase`, `supabase-postgres-best-practices`, `tdd` |
+| **Adriel** | `feature/adriel-tournament-match` | `antislop`, `antislop-code`, `turnamen-project-standards`, `turnamen-bracket-engine`, `turnamen-quality-gates` | `tdd`, `team-code-review` |
+| **Anisa** | `feature/anisa-api-report` | `antislop`, `antislop-code`, `antislop-copywriting`, `turnamen-project-standards`, `turnamen-flask-api`, `turnamen-quality-gates` | `hexagonal-python`, `tdd`, `team-code-review` |
 
 ### C. Memulai Sesi AI Agent (Antigravity / AGY) Baru
 Saat memulai sesi bersama AI Agent:
-1. Jalankan `git pull origin main` terlebih dahulu.
+1. Pastikan Anda sudah berada pada branch kerja masing-masing (`git switch <nama-branch-anda>`) dan sinkron dengan `origin/main`.
 2. Minta agent membaca:
    - `AGENTS.md`
    - `docs/tasks/<nama-anggota>.md`
+   - `docs/GIT_WORKFLOW.md`
    - Seluruh `SKILL.md` yang tercantum sebagai skill wajib pada file tugas tersebut.
    - Dokumen kontrak di `docs/contracts/`.
 3. Jangan melakukan commit atau push otomatis melalui script tanpa pemeriksaan anggota.
