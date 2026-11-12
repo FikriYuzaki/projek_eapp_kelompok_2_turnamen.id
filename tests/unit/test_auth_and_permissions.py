@@ -1,6 +1,12 @@
-"""Unit tests for authentication in mock mode, 5-role RBAC enforcement, and repository integrity."""
+"""Unit tests for authentication (mock & online Supabase modes), 5-role RBAC, client security, and RLS hardening."""
 
 from __future__ import annotations
+
+import base64
+import json
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,12 +17,17 @@ from backend.contracts.dtos import (
     ROLE_SUPER_ADMIN,
     ROLE_TEAM_CAPTAIN,
 )
+from backend.core.config import AppConfig
 from backend.core.exceptions import (
     DomainConflictError,
     DomainForbiddenError,
     DomainNotFoundError,
     DomainUnauthorizedError,
     DomainValidationError,
+)
+from backend.infrastructure.supabase.client import (
+    create_supabase_client,
+    validate_supabase_credentials,
 )
 from backend.modules.auth.permissions import (
     RolePermissionGuard,
@@ -26,7 +37,16 @@ from backend.modules.auth.permissions import (
     require_permission,
 )
 from backend.modules.auth.service import AuthService
+from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
 from backend.repositories.mock.mock_repository import MockDataStoreRepository
+from backend.repositories.supabase.supabase_repository import SupabaseDataStoreRepository
+
+
+def _build_test_jwt(payload: dict[str, Any]) -> str:
+    header = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').decode("ascii").rstrip("=")
+    body = base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii").rstrip("=")
+    signature = "test_signature_segment_12345"
+    return f"{header}.{body}.{signature}"
 
 
 def test_mock_login_and_session_resolution(mock_repo: MockDataStoreRepository) -> None:
@@ -41,6 +61,7 @@ def test_mock_login_and_session_resolution(mock_repo: MockDataStoreRepository) -
     for email, expected_role in demo_accounts:
         res = auth.login(email, "turnamen123")
         assert "token" in res
+        assert res["token"].startswith("tok_")
         assert res["user"]["role"] == expected_role
         assert "password_hash" not in res["user"]
 
@@ -240,3 +261,218 @@ def test_repository_foreign_key_integrity(mock_repo: MockDataStoreRepository) ->
                 "verified_by": organizer["id"],
             }
         )
+
+
+def test_supabase_client_credential_validation_and_no_monkey_patch() -> None:
+    import re as stdlib_re
+    from supabase._sync import client as sync_client_mod
+
+    valid_anon_jwt = _build_test_jwt({"role": "anon", "iss": "supabase"})
+    service_role_jwt = _build_test_jwt({"role": "service_role", "iss": "supabase"})
+
+    with pytest.raises(RuntimeError, match="SUPABASE_URL dan SUPABASE_ANON_KEY belum tersedia"):
+        validate_supabase_credentials("", "")
+
+    with pytest.raises(RuntimeError, match="SUPABASE_URL tidak valid"):
+        validate_supabase_credentials("https://your-project-ref.supabase.co", valid_anon_jwt)
+
+    with pytest.raises(RuntimeError, match="service_role"):
+        validate_supabase_credentials("https://example.supabase.co", "sb_secret_12345")
+
+    with pytest.raises(RuntimeError, match="service_role"):
+        validate_supabase_credentials("https://example.supabase.co", service_role_jwt)
+
+    with pytest.raises(RuntimeError, match="sb_publishable_"):
+        validate_supabase_credentials(
+            "https://example.supabase.co",
+            "sb_publishable_test_key_format",
+        )
+
+    cfg = AppConfig(
+        app_mode="supabase",
+        supabase_url="https://example.supabase.co",
+        supabase_anon_key=valid_anon_jwt,
+    )
+    client = create_supabase_client(cfg, access_token="user_jwt_token")
+    assert client is not None
+    assert sync_client_mod.re.match is stdlib_re.match
+
+
+class _FakeOnlineSupabaseRepository(MockDataStoreRepository):
+    """Test double simulating online Supabase repository with GoTrue Auth methods."""
+
+    is_supabase_mode: bool = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.signed_out_tokens: list[str] = []
+        self._jwt_to_auth_user: dict[str, dict[str, str]] = {}
+        self._credentials: dict[str, tuple[str, str]] = {
+            "organizer@turnamen.in": ("turnamen123", "auth-uuid-organizer-002"),
+        }
+
+    def auth_sign_up(
+        self,
+        email: str,
+        password: str,
+        user_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        auth_uid = "auth-uuid-new-user-999"
+        jwt_token = _build_test_jwt({"sub": auth_uid, "role": "authenticated"})
+        self._credentials[email] = (password, auth_uid)
+        self._jwt_to_auth_user[jwt_token] = {"auth_user_id": auth_uid, "email": email}
+        return {
+            "auth_user_id": auth_uid,
+            "email": email,
+            "access_token": jwt_token,
+        }
+
+    def auth_sign_in(self, email: str, password: str) -> dict[str, Any]:
+        cred = self._credentials.get(email)
+        if not cred or cred[0] != password:
+            raise DomainUnauthorizedError("Email atau password tidak sesuai.")
+        auth_uid = cred[1]
+        jwt_token = _build_test_jwt({"sub": auth_uid, "role": "authenticated"})
+        self._jwt_to_auth_user[jwt_token] = {"auth_user_id": auth_uid, "email": email}
+        return {
+            "auth_user_id": auth_uid,
+            "email": email,
+            "access_token": jwt_token,
+        }
+
+    def auth_get_user(self, access_token: str) -> dict[str, Any] | None:
+        return self._jwt_to_auth_user.get(access_token)
+
+    def auth_sign_out(self, access_token: str) -> bool:
+        if access_token in self._jwt_to_auth_user:
+            del self._jwt_to_auth_user[access_token]
+            self.signed_out_tokens.append(access_token)
+            return True
+        return False
+
+
+def test_online_supabase_auth_separation_and_session_security() -> None:
+    online_repo = _FakeOnlineSupabaseRepository()
+    for p in online_repo._store["profiles"]:
+        if p["email"] == "organizer@turnamen.in":
+            p["auth_user_id"] = None
+            p["password_hash"] = ""
+
+    auth = AuthService(online_repo)
+
+    assert auth.get_user_by_mock_header(mock_role=ROLE_SUPER_ADMIN) is None
+
+    reg_res = auth.register(
+        {
+            "email": "onlineplayer@turnamen.in",
+            "username": "online_player",
+            "full_name": "Online Player",
+            "password": "securepassword",
+            "role": ROLE_PLAYER,
+        }
+    )
+    assert reg_res["token"] is not None
+    assert not reg_res["token"].startswith("tok_")
+    assert auth._sessions == {}
+    assert reg_res["user"]["auth_user_id"] == "auth-uuid-new-user-999"
+    assert reg_res["user"]["role"] == ROLE_PLAYER
+
+    login_res = auth.login("organizer@turnamen.in", "turnamen123")
+    jwt_token = login_res["token"]
+    assert not jwt_token.startswith("tok_")
+    assert auth._sessions == {}
+    assert login_res["user"]["role"] == ROLE_ORGANIZER
+    assert login_res["user"]["auth_user_id"] == "auth-uuid-organizer-002"
+
+    assert auth.get_user_by_token("tok_fake_mock_token") is None
+    resolved = auth.get_user_by_token(jwt_token)
+    assert resolved is not None
+    assert resolved["email"] == "organizer@turnamen.in"
+    assert resolved["role"] == ROLE_ORGANIZER
+
+    assert auth.logout(jwt_token) is True
+    assert jwt_token in online_repo.signed_out_tokens
+    assert auth.get_user_by_token(jwt_token) is None
+
+
+def test_atomic_replace_tournament_matches_preserves_existing_on_failure(
+    mock_repo: MockDataStoreRepository,
+) -> None:
+    tournament_id = "33333333-3333-4333-8333-333333333301"
+    before_matches = mock_repo.list_matches_by_tournament(tournament_id)
+    assert len(before_matches) > 0
+
+    with pytest.raises(DomainValidationError):
+        mock_repo.replace_tournament_matches(
+            tournament_id,
+            [{"invalid_match_without_round_number": True}],
+        )
+
+    after_matches = mock_repo.list_matches_by_tournament(tournament_id)
+    assert len(after_matches) == len(before_matches)
+
+
+def test_supabase_repository_protocol_and_transactional_rpc() -> None:
+    assert isinstance(MockDataStoreRepository(), DataStoreRepositoryProtocol)
+
+    valid_anon_jwt = _build_test_jwt({"role": "anon", "iss": "supabase"})
+    cfg = AppConfig(
+        app_mode="supabase",
+        supabase_url="https://example.supabase.co",
+        supabase_anon_key=valid_anon_jwt,
+    )
+    supa_repo = SupabaseDataStoreRepository(cfg)
+    assert isinstance(supa_repo, DataStoreRepositoryProtocol)
+    assert not hasattr(supa_repo, "_password_hashes")
+
+    fake_client = MagicMock()
+    supa_repo._client = fake_client
+    supa_repo.get_tournament_by_id = MagicMock(return_value={"id": "t-1"})  # type: ignore[method-assign]
+    supa_repo.list_matches_by_tournament = MagicMock(return_value=[{"id": "m-1"}])  # type: ignore[method-assign]
+
+    res = supa_repo.replace_tournament_matches(
+        "t-1",
+        [{"id": "m-1", "round_number": 1, "match_number": 1}],
+    )
+    assert res == [{"id": "m-1"}]
+    fake_client.rpc.assert_called_once()
+    rpc_name, rpc_params = fake_client.rpc.call_args[0]
+    assert rpc_name == "replace_tournament_matches"
+    assert rpc_params["p_tournament_id"] == "t-1"
+
+
+def test_rls_security_hardening_migration_policies() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "supabase"
+        / "migrations"
+        / "0002_security_hardening.sql"
+    )
+    assert migration_path.exists()
+    sql = migration_path.read_text(encoding="utf-8")
+
+    expected_tables = (
+        "profiles",
+        "games",
+        "tournaments",
+        "teams",
+        "team_members",
+        "tournament_staff",
+        "registrations",
+        "matches",
+        "match_results",
+        "payments",
+        "announcements",
+        "activity_logs",
+    )
+    for table in expected_tables:
+        assert f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY;" in sql
+
+    assert "FOR ALL USING (true)" not in sql
+    assert "WITH CHECK (true)" not in sql
+    assert 'DROP POLICY IF EXISTS "Manage tournaments" ON public.tournaments;' in sql
+    assert 'DROP POLICY IF EXISTS "Public read payments" ON public.payments;' in sql
+    assert 'DROP POLICY IF EXISTS "Public read activity_logs" ON public.activity_logs;' in sql
+    assert 'DROP POLICY IF EXISTS "Public read registrations" ON public.registrations;' in sql
+    assert "CREATE OR REPLACE FUNCTION public.prevent_profile_privilege_escalation()" in sql
+    assert "CREATE OR REPLACE FUNCTION public.replace_tournament_matches(" in sql

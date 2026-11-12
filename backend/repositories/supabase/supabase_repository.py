@@ -6,14 +6,23 @@ Note: Active only when `APP_MODE=supabase` is configured with valid credentials.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from backend.core.config import AppConfig
+from backend.core.exceptions import (
+    DomainConflictError,
+    DomainForbiddenError,
+    DomainNotFoundError,
+    DomainUnauthorizedError,
+    DomainValidationError,
+)
 from backend.infrastructure.supabase.client import create_supabase_client
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
-from backend.repositories.mock.mock_data import DEFAULT_DEMO_PASSWORD_HASH
+
+logger = logging.getLogger(__name__)
 
 
 def _is_uuid(value: str) -> bool:
@@ -24,60 +33,190 @@ def _is_uuid(value: str) -> bool:
         return False
 
 
+def _raise_domain_error_from_postgrest(exc: Exception, context: str) -> None:
+    """Translate PostgREST / PostgreSQL error codes into Turnamen.in domain exceptions."""
+    code = str(getattr(exc, "code", "") or "")
+    message = str(getattr(exc, "message", "") or str(exc))
+    lower_msg = message.lower()
+
+    if code == "23505" or "duplicate key" in lower_msg or "unique constraint" in lower_msg:
+        raise DomainConflictError(f"Data duplikat pada operasi {context}.", {"reason": code or "unique_violation"}) from exc
+    if code == "23503" or "foreign key constraint" in lower_msg:
+        raise DomainNotFoundError(f"Referensi entitas terkait tidak ditemukan pada operasi {context}.", {"reason": code or "fk_violation"}) from exc
+    if code == "42501" or "row-level security" in lower_msg or "privilege escalation" in lower_msg or "permission denied" in lower_msg:
+        raise DomainForbiddenError(f"Akses ditolak oleh kebijakan keamanan database pada operasi {context}.", {"reason": code or "rls_denied"}) from exc
+    if code in ("22P02", "22023", "23514") or "invalid input syntax" in lower_msg or "check constraint" in lower_msg:
+        raise DomainValidationError(f"Data tidak memenuhi aturan validasi skema pada operasi {context}.", {"reason": code or "check_violation"}) from exc
+    raise exc
+
+
 class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
-    """Production repository backed by Supabase PostgreSQL Data API and RLS."""
+    """Production repository backed by Supabase PostgreSQL Data API, Auth, and RLS."""
+
+    is_supabase_mode: bool = True
 
     def __init__(self, config: AppConfig) -> None:
         self._config = config
         self._client = create_supabase_client(config)
-        self._password_hashes: dict[str, str] = {}
+
+    def _client_for_token(self, access_token: str | None = None) -> Any:
+        if access_token:
+            return create_supabase_client(self._config, access_token=access_token)
+        return self._client
 
     def reset_to_seed(self) -> None:
         raise NotImplementedError(
             "reset_to_seed() hanya diizinkan pada APP_MODE=mock untuk pengujian lokal."
         )
 
-    def _attach_auth_fields(self, profile: dict[str, Any]) -> dict[str, Any]:
-        enriched = dict(profile)
-        if not enriched.get("password_hash"):
-            pid = str(enriched.get("id") or "")
-            email = str(enriched.get("email") or "").lower()
-            if pid in self._password_hashes:
-                enriched["password_hash"] = self._password_hashes[pid]
-            elif email.endswith("@turnamen.in"):
-                enriched["password_hash"] = DEFAULT_DEMO_PASSWORD_HASH
-        return enriched
+    def auth_sign_up(
+        self,
+        email: str,
+        password: str,
+        user_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Register a user via Supabase GoTrue Auth without storing session globally."""
+        auth_client = create_supabase_client(self._config)
+        try:
+            response = auth_client.auth.sign_up(
+                {
+                    "email": email,
+                    "password": password,
+                    "options": {"data": user_metadata or {}},
+                }
+            )
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "already registered" in msg or "already exists" in msg:
+                raise DomainConflictError("Email sudah terdaftar.", {"email": email}) from exc
+            raise DomainValidationError("Gagal mendaftarkan akun pada Supabase Auth.") from exc
+
+        user = getattr(response, "user", None)
+        session = getattr(response, "session", None)
+        if not user or not getattr(user, "id", None):
+            raise DomainValidationError("Respons registrasi Supabase Auth tidak menyertakan identitas pengguna.")
+
+        return {
+            "auth_user_id": str(user.id),
+            "email": str(getattr(user, "email", None) or email).lower(),
+            "access_token": str(session.access_token) if session and getattr(session, "access_token", None) else None,
+        }
+
+    def auth_sign_in(self, email: str, password: str) -> dict[str, Any]:
+        """Authenticate user credentials against Supabase GoTrue Auth."""
+        auth_client = create_supabase_client(self._config)
+        try:
+            response = auth_client.auth.sign_in_with_password(
+                {"email": email, "password": password}
+            )
+        except Exception as exc:
+            raise DomainUnauthorizedError("Email atau password tidak sesuai.") from exc
+
+        user = getattr(response, "user", None)
+        session = getattr(response, "session", None)
+        access_token = getattr(session, "access_token", None) if session else None
+        if not user or not getattr(user, "id", None) or not access_token:
+            raise DomainUnauthorizedError("Email atau password tidak sesuai.")
+
+        return {
+            "auth_user_id": str(user.id),
+            "email": str(getattr(user, "email", None) or email).lower(),
+            "access_token": str(access_token),
+        }
+
+    def auth_get_user(self, access_token: str) -> dict[str, Any] | None:
+        """Verify a Supabase JWT access token and return the authenticated user identity."""
+        clean_token = (access_token or "").strip()
+        if not clean_token or clean_token.startswith("tok_"):
+            return None
+        auth_client = create_supabase_client(self._config)
+        try:
+            response = auth_client.auth.get_user(clean_token)
+        except Exception:
+            return None
+
+        user = getattr(response, "user", None)
+        if not user or not getattr(user, "id", None):
+            return None
+        return {
+            "auth_user_id": str(user.id),
+            "email": str(getattr(user, "email", None) or "").lower(),
+        }
+
+    def auth_sign_out(self, access_token: str) -> bool:
+        """Invalidate the caller's session on Supabase Auth using a request-scoped client."""
+        clean_token = (access_token or "").strip()
+        if not clean_token or clean_token.startswith("tok_"):
+            return False
+        scoped_client = create_supabase_client(self._config, access_token=clean_token)
+        try:
+            scoped_client.auth.sign_out()
+            return True
+        except Exception as exc:
+            logger.warning("Gagal melakukan sign_out pada Supabase Auth: %s", type(exc).__name__)
+            return False
 
     def list_profiles(self) -> list[dict[str, Any]]:
         resp = self._client.table("profiles").select("*").execute()
-        return [self._attach_auth_fields(p) for p in (resp.data or [])]
+        return [dict(p) for p in (resp.data or [])]
 
     def get_profile_by_id(self, profile_id: str) -> dict[str, Any] | None:
         resp = self._client.table("profiles").select("*").eq("id", profile_id).limit(1).execute()
-        return self._attach_auth_fields(resp.data[0]) if resp.data else None
+        return dict(resp.data[0]) if resp.data else None
+
+    def get_profile_by_auth_user_id(self, auth_user_id: str) -> dict[str, Any] | None:
+        resp = (
+            self._client.table("profiles")
+            .select("*")
+            .eq("auth_user_id", auth_user_id)
+            .limit(1)
+            .execute()
+        )
+        return dict(resp.data[0]) if resp.data else None
 
     def get_profile_by_email(self, email: str) -> dict[str, Any] | None:
-        resp = self._client.table("profiles").select("*").eq("email", email.strip().lower()).limit(1).execute()
-        return self._attach_auth_fields(resp.data[0]) if resp.data else None
+        resp = (
+            self._client.table("profiles")
+            .select("*")
+            .eq("email", email.strip().lower())
+            .limit(1)
+            .execute()
+        )
+        return dict(resp.data[0]) if resp.data else None
 
     def get_profile_by_username(self, username: str) -> dict[str, Any] | None:
-        resp = self._client.table("profiles").select("*").eq("username", username.strip()).limit(1).execute()
-        return self._attach_auth_fields(resp.data[0]) if resp.data else None
+        resp = (
+            self._client.table("profiles")
+            .select("*")
+            .eq("username", username.strip())
+            .limit(1)
+            .execute()
+        )
+        return dict(resp.data[0]) if resp.data else None
 
     def create_profile(self, data: dict[str, Any]) -> dict[str, Any]:
-        password_hash = data.get("password_hash", "")
-        payload = {k: v for k, v in data.items() if k != "password_hash"}
-        resp = self._client.table("profiles").insert(payload).execute()
-        created = dict(resp.data[0])
-        if password_hash and created.get("id"):
-            self._password_hashes[str(created["id"])] = str(password_hash)
-            created["password_hash"] = password_hash
-        return created
+        payload = {k: v for k, v in data.items() if k not in ("password_hash", "access_token")}
+        scoped_client = self._client_for_token(data.get("access_token"))
+        try:
+            resp = scoped_client.table("profiles").insert(payload).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_profile")
+        if not resp.data:
+            raise DomainValidationError("Gagal menyimpan profil pengguna baru.")
+        return dict(resp.data[0])
 
     def update_profile(self, profile_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        payload = {k: v for k, v in data.items() if k not in ("id", "password_hash")}
-        resp = self._client.table("profiles").update(payload).eq("id", profile_id).execute()
-        return self._attach_auth_fields(resp.data[0]) if resp.data else None
+        payload = {
+            k: v
+            for k, v in data.items()
+            if k not in ("id", "password_hash", "access_token")
+        }
+        scoped_client = self._client_for_token(data.get("access_token"))
+        try:
+            resp = scoped_client.table("profiles").update(payload).eq("id", profile_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_profile")
+        return dict(resp.data[0]) if resp.data else None
 
     def list_games(self) -> list[dict[str, Any]]:
         resp = self._client.table("games").select("*").eq("is_active", True).execute()
@@ -126,17 +265,26 @@ class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
         return self._enrich_tournament(resp.data[0])
 
     def create_tournament(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("tournaments").insert(data).execute()
+        try:
+            resp = self._client.table("tournaments").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_tournament")
         return self._enrich_tournament(resp.data[0])
 
     def update_tournament(
         self, tournament_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        resp = self._client.table("tournaments").update(data).eq("id", tournament_id).execute()
+        try:
+            resp = self._client.table("tournaments").update(data).eq("id", tournament_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_tournament")
         return self._enrich_tournament(resp.data[0]) if resp.data else None
 
     def delete_tournament(self, tournament_id: str) -> bool:
-        resp = self._client.table("tournaments").delete().eq("id", tournament_id).execute()
+        try:
+            resp = self._client.table("tournaments").delete().eq("id", tournament_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "delete_tournament")
         return bool(resp.data)
 
     def is_staff_assigned(self, tournament_id: str, user_id: str) -> bool:
@@ -181,11 +329,17 @@ class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
         return self._enrich_team(resp.data[0])
 
     def create_team(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("teams").insert(data).execute()
+        try:
+            resp = self._client.table("teams").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_team")
         return self._enrich_team(resp.data[0])
 
     def update_team(self, team_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        resp = self._client.table("teams").update(data).eq("id", team_id).execute()
+        try:
+            resp = self._client.table("teams").update(data).eq("id", team_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_team")
         return self._enrich_team(resp.data[0]) if resp.data else None
 
     def list_team_members(self, team_id: str) -> list[dict[str, Any]]:
@@ -200,7 +354,10 @@ class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
 
     def add_team_member(self, team_id: str, data: dict[str, Any]) -> dict[str, Any]:
         payload = {**data, "team_id": team_id}
-        resp = self._client.table("team_members").insert(payload).execute()
+        try:
+            resp = self._client.table("team_members").insert(payload).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "add_team_member")
         return dict(resp.data[0])
 
     def list_registrations_by_tournament(self, tournament_id: str) -> list[dict[str, Any]]:
@@ -233,18 +390,24 @@ class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
         return dict(resp.data[0]) if resp.data else None
 
     def create_registration(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("registrations").insert(data).execute()
+        try:
+            resp = self._client.table("registrations").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_registration")
         return dict(resp.data[0])
 
     def update_registration_status(
         self, registration_id: str, status: str, verified_by: str, notes: str = ""
     ) -> dict[str, Any] | None:
-        resp = (
-            self._client.table("registrations")
-            .update({"status": status, "verified_by": verified_by, "notes": notes})
-            .eq("id", registration_id)
-            .execute()
-        )
+        try:
+            resp = (
+                self._client.table("registrations")
+                .update({"status": status, "verified_by": verified_by, "notes": notes})
+                .eq("id", registration_id)
+                .execute()
+            )
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_registration_status")
         return dict(resp.data[0]) if resp.data else None
 
     def _enrich_match(
@@ -296,19 +459,46 @@ class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
     def replace_tournament_matches(
         self, tournament_id: str, matches: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        self._client.table("matches").delete().eq("tournament_id", tournament_id).execute()
-        if matches:
-            self._client.table("matches").insert(matches).execute()
+        """Atomically replace bracket matches for a tournament using PostgreSQL RPC transaction."""
+        if not self.get_tournament_by_id(tournament_id):
+            raise DomainNotFoundError("Turnamen tidak ditemukan.", {"tournament_id": tournament_id})
+
+        prepared: list[dict[str, Any]] = []
+        for idx, match in enumerate(matches):
+            if not isinstance(match, dict) or "round_number" not in match or "match_number" not in match:
+                raise DomainValidationError(
+                    "Struktur data pertandingan pada bracket tidak valid.",
+                    {"index": idx},
+                )
+            item = dict(match)
+            item.setdefault("id", str(uuid.uuid4()))
+            item["tournament_id"] = tournament_id
+            prepared.append(item)
+
+        try:
+            self._client.rpc(
+                "replace_tournament_matches",
+                {"p_tournament_id": tournament_id, "p_matches": prepared},
+            ).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "replace_tournament_matches")
+
         return self.list_matches_by_tournament(tournament_id)
 
     def update_match(self, match_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        resp = self._client.table("matches").update(data).eq("id", match_id).execute()
+        try:
+            resp = self._client.table("matches").update(data).eq("id", match_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_match")
         if not resp.data:
             return None
         return self._enrich_match(resp.data[0])
 
     def record_match_result(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("match_results").insert(data).execute()
+        try:
+            resp = self._client.table("match_results").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "record_match_result")
         return dict(resp.data[0])
 
     def list_match_results(self, match_id: str) -> list[dict[str, Any]]:
@@ -335,7 +525,10 @@ class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
         return results
 
     def create_announcement(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("announcements").insert(data).execute()
+        try:
+            resp = self._client.table("announcements").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_announcement")
         return dict(resp.data[0])
 
     def log_activity(
@@ -359,8 +552,13 @@ class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
             resp = self._client.table("activity_logs").insert(payload).execute()
             if resp.data:
                 return dict(resp.data[0])
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Gagal menyimpan activity_log ke Supabase (action=%s, entity_type=%s): %s",
+                action,
+                entity_type,
+                type(exc).__name__,
+            )
         return {
             "id": str(uuid.uuid4()),
             **payload,

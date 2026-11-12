@@ -3,7 +3,9 @@
 Owner: Habil (Database & Authentication Developer)
 Security Rules:
 - Self-registration can only assign `player` or `team_captain` roles.
-- Passwords are hashed using Werkzeug PBKDF2/Scrypt and never returned in responses.
+- Online mode (`APP_MODE=supabase`) delegates authentication and JWT verification to Supabase Auth
+  while resolving authorization roles exclusively from `public.profiles.role`.
+- Mock mode (`APP_MODE=mock`) uses Werkzeug password hashes and in-memory tokens for offline testing.
 """
 
 from __future__ import annotations
@@ -30,8 +32,12 @@ from backend.repositories.interfaces.repository_protocol import DataStoreReposit
 
 
 def _sanitize_profile(profile: dict[str, Any]) -> dict[str, Any]:
-    """Strip internal password hash before returning profile data to callers."""
-    return {k: v for k, v in profile.items() if k != "password_hash"}
+    """Strip internal sensitive fields before returning profile data to callers."""
+    return {
+        k: v
+        for k, v in profile.items()
+        if k not in ("password_hash", "access_token")
+    }
 
 
 class AuthService:
@@ -41,12 +47,26 @@ class AuthService:
         self._repo = repository
         self._sessions: dict[str, str] = {}
 
+    @property
+    def _is_online_mode(self) -> bool:
+        return bool(getattr(self._repo, "is_supabase_mode", False))
+
+    def _find_profile_by_auth_user_id(self, auth_user_id: str) -> dict[str, Any] | None:
+        finder = getattr(self._repo, "get_profile_by_auth_user_id", None)
+        if callable(finder):
+            return finder(auth_user_id)
+        for profile in self._repo.list_profiles():
+            if profile.get("auth_user_id") == auth_user_id:
+                return profile
+        return None
+
     def register(self, payload: dict[str, Any]) -> dict[str, Any]:
         email = str(payload.get("email") or "").strip().lower()
         username = str(payload.get("username") or "").strip()
         full_name = str(payload.get("full_name") or "").strip()
         password = str(payload.get("password") or "")
         requested_role = str(payload.get("role") or ROLE_PLAYER).strip().lower()
+        phone = str(payload["phone"]).strip() if payload.get("phone") else None
 
         if not email or "@" not in email:
             raise DomainValidationError("Alamat email tidak valid.", {"field": "email"})
@@ -71,13 +91,23 @@ class AuthService:
         if self._repo.get_profile_by_username(username):
             raise DomainConflictError("Username sudah digunakan.", {"username": username})
 
+        if self._is_online_mode:
+            return self._register_supabase(
+                email=email,
+                username=username,
+                full_name=full_name,
+                password=password,
+                requested_role=requested_role,
+                phone=phone,
+            )
+
         created = self._repo.create_profile(
             {
                 "email": email,
                 "username": username,
                 "full_name": full_name,
                 "role": requested_role,
-                "phone": payload.get("phone"),
+                "phone": phone,
                 "password_hash": generate_password_hash(password),
             }
         )
@@ -96,10 +126,87 @@ class AuthService:
             "user": _sanitize_profile(created),
         }
 
+    def _register_supabase(
+        self,
+        email: str,
+        username: str,
+        full_name: str,
+        password: str,
+        requested_role: str,
+        phone: str | None,
+    ) -> dict[str, Any]:
+        sign_up_fn = getattr(self._repo, "auth_sign_up", None)
+        if not callable(sign_up_fn):
+            raise DomainValidationError("Repository Supabase tidak mendukung operasi auth_sign_up.")
+
+        auth_result = sign_up_fn(
+            email=email,
+            password=password,
+            user_metadata={
+                "username": username,
+                "full_name": full_name,
+                "role": requested_role,
+            },
+        )
+        auth_user_id = str(auth_result["auth_user_id"])
+        access_token = auth_result.get("access_token")
+
+        profile = self._find_profile_by_auth_user_id(auth_user_id)
+        if not profile:
+            existing_by_email = self._repo.get_profile_by_email(email)
+            if existing_by_email and not existing_by_email.get("auth_user_id"):
+                profile = self._repo.update_profile(
+                    existing_by_email["id"],
+                    {
+                        "auth_user_id": auth_user_id,
+                        "full_name": full_name,
+                        "phone": phone,
+                        "access_token": access_token,
+                    },
+                )
+            else:
+                profile = self._repo.create_profile(
+                    {
+                        "id": auth_user_id,
+                        "auth_user_id": auth_user_id,
+                        "email": email,
+                        "username": username,
+                        "full_name": full_name,
+                        "role": requested_role,
+                        "phone": phone,
+                        "is_active": True,
+                        "access_token": access_token,
+                    }
+                )
+        elif phone and not profile.get("phone"):
+            profile = (
+                self._repo.update_profile(
+                    profile["id"],
+                    {"phone": phone, "access_token": access_token},
+                )
+                or profile
+            )
+
+        self._repo.log_activity(
+            actor_id=profile["id"],
+            tournament_id=None,
+            entity_type="profile",
+            entity_id=profile["id"],
+            action="USER_REGISTERED",
+            details={"role": profile.get("role", requested_role), "email": email},
+        )
+        return {
+            "token": access_token,
+            "user": _sanitize_profile(profile),
+        }
+
     def login(self, email: str, password: str) -> dict[str, Any]:
         normalized_email = str(email or "").strip().lower()
         if not normalized_email or not password:
             raise DomainValidationError("Email dan password wajib diisi.")
+
+        if self._is_online_mode:
+            return self._login_supabase(normalized_email, password)
 
         profile = self._repo.get_profile_by_email(normalized_email)
         if not profile:
@@ -119,8 +226,47 @@ class AuthService:
             "user": _sanitize_profile(profile),
         }
 
+    def _login_supabase(self, normalized_email: str, password: str) -> dict[str, Any]:
+        sign_in_fn = getattr(self._repo, "auth_sign_in", None)
+        if not callable(sign_in_fn):
+            raise DomainUnauthorizedError("Layanan autentikasi online tidak tersedia.")
+
+        auth_result = sign_in_fn(normalized_email, password)
+        auth_user_id = str(auth_result["auth_user_id"])
+        access_token = str(auth_result["access_token"])
+
+        profile = self._find_profile_by_auth_user_id(auth_user_id)
+        if not profile:
+            by_email = self._repo.get_profile_by_email(normalized_email)
+            if by_email:
+                if by_email.get("auth_user_id") and by_email.get("auth_user_id") != auth_user_id:
+                    raise DomainUnauthorizedError("Identitas akun tidak cocok dengan profil terdaftar.")
+                profile = (
+                    self._repo.update_profile(
+                        by_email["id"],
+                        {"auth_user_id": auth_user_id, "access_token": access_token},
+                    )
+                    or by_email
+                )
+
+        if not profile:
+            raise DomainUnauthorizedError("Profil pengguna tidak ditemukan pada sistem.")
+
+        if not profile.get("is_active", True):
+            raise DomainForbiddenError("Akun pengguna tidak aktif.")
+
+        return {
+            "token": access_token,
+            "user": _sanitize_profile(profile),
+        }
+
     def logout(self, token: str | None) -> bool:
-        if token and token in self._sessions:
+        if not token:
+            return False
+        if self._is_online_mode:
+            sign_out_fn = getattr(self._repo, "auth_sign_out", None)
+            return bool(sign_out_fn(token)) if callable(sign_out_fn) else False
+        if token in self._sessions:
             del self._sessions[token]
             return True
         return False
@@ -128,24 +274,50 @@ class AuthService:
     def get_user_by_token(self, token: str | None) -> dict[str, Any] | None:
         if not token:
             return None
-        user_id = self._sessions.get(token)
+        clean_token = token.strip()
+        if not clean_token:
+            return None
+
+        if self._is_online_mode:
+            if clean_token.startswith("tok_"):
+                return None
+            get_user_fn = getattr(self._repo, "auth_get_user", None)
+            if not callable(get_user_fn):
+                return None
+            verified = get_user_fn(clean_token)
+            if not verified or not verified.get("auth_user_id"):
+                return None
+            profile = self._find_profile_by_auth_user_id(str(verified["auth_user_id"]))
+            if not profile and verified.get("email"):
+                candidate = self._repo.get_profile_by_email(str(verified["email"]))
+                if candidate and candidate.get("auth_user_id") in (None, str(verified["auth_user_id"])):
+                    profile = candidate
+            if not profile or not profile.get("is_active", True):
+                return None
+            return _sanitize_profile(profile)
+
+        user_id = self._sessions.get(clean_token)
         if not user_id:
             return None
         profile = self._repo.get_profile_by_id(user_id)
-        return _sanitize_profile(profile) if profile else None
+        if not profile or not profile.get("is_active", True):
+            return None
+        return _sanitize_profile(profile)
 
     def get_user_by_mock_header(
         self, mock_user_id: str | None = None, mock_role: str | None = None
     ) -> dict[str, Any] | None:
         """Resolve a demo user in `APP_MODE=mock` by ID or role for parallel testing."""
+        if self._is_online_mode:
+            return None
         if mock_user_id:
             profile = self._repo.get_profile_by_id(mock_user_id)
-            if profile:
+            if profile and profile.get("is_active", True):
                 return _sanitize_profile(profile)
         if mock_role:
             role_clean = mock_role.strip().lower()
             for p in self._repo.list_profiles():
-                if p.get("role") == role_clean:
+                if p.get("role") == role_clean and p.get("is_active", True):
                     return _sanitize_profile(p)
         return None
 

@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.core.exceptions import DomainNotFoundError
+from backend.core.exceptions import DomainNotFoundError, DomainValidationError
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
 from backend.repositories.mock.mock_data import build_initial_mock_store
 
@@ -18,6 +18,8 @@ def _now_iso() -> str:
 
 class MockDataStoreRepository(DataStoreRepositoryProtocol):
     """Thread-safe in-memory repository for `APP_MODE=mock` and automated tests."""
+
+    is_supabase_mode: bool = False
 
     def __init__(self) -> None:
         self._store: dict[str, list[dict[str, Any]]] = build_initial_mock_store()
@@ -32,6 +34,12 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
     def get_profile_by_id(self, profile_id: str) -> dict[str, Any] | None:
         for p in self._store["profiles"]:
             if p["id"] == profile_id:
+                return copy.deepcopy(p)
+        return None
+
+    def get_profile_by_auth_user_id(self, auth_user_id: str) -> dict[str, Any] | None:
+        for p in self._store["profiles"]:
+            if p.get("auth_user_id") == auth_user_id:
                 return copy.deepcopy(p)
         return None
 
@@ -358,11 +366,28 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
     ) -> list[dict[str, Any]]:
         if not self.get_tournament_by_id(tournament_id):
             raise DomainNotFoundError("Turnamen tidak ditemukan.", {"tournament_id": tournament_id})
-        self._store["matches"] = [
+
+        prepared: list[dict[str, Any]] = []
+        for idx, match in enumerate(matches):
+            if not isinstance(match, dict):
+                raise DomainValidationError(
+                    "Item pertandingan tidak valid.",
+                    {"index": idx},
+                )
+            if "round_number" not in match or "match_number" not in match:
+                raise DomainValidationError(
+                    "Field 'round_number' dan 'match_number' wajib ada pada setiap match.",
+                    {"index": idx},
+                )
+            record = copy.deepcopy(match)
+            record.setdefault("id", str(uuid.uuid4()))
+            record["tournament_id"] = tournament_id
+            prepared.append(record)
+
+        retained = [
             m for m in self._store["matches"] if m["tournament_id"] != tournament_id
         ]
-        for match in matches:
-            self._store["matches"].append(copy.deepcopy(match))
+        self._store["matches"] = retained + prepared
         return self.list_matches_by_tournament(tournament_id)
 
     def update_match(self, match_id: str, data: dict[str, Any]) -> dict[str, Any] | None:

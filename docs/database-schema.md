@@ -1,6 +1,6 @@
 # Dokumentasi Skema Database PostgreSQL: Turnamen.in
 
-Dokumen ini menjelaskan rancangan **Entity-Relationship Diagram (ERD)**, relasi, kardinalitas, constraint, index, dan aturan integritas untuk 12 tabel utama Turnamen.in. File migrasi SQL fisik tersedia di [`supabase/migrations/0001_initial_schema.sql`](../supabase/migrations/0001_initial_schema.sql) dan data demo tersedia di [`supabase/seed.sql`](../supabase/seed.sql).
+Dokumen ini menjelaskan rancangan **Entity-Relationship Diagram (ERD)**, relasi, kardinalitas, constraint, index, dan aturan integritas untuk 12 tabel utama Turnamen.in. File migrasi SQL fisik tersedia secara berurutan di [`supabase/migrations/0001_initial_schema.sql`](../supabase/migrations/0001_initial_schema.sql) dan [`supabase/migrations/0002_security_hardening.sql`](../supabase/migrations/0002_security_hardening.sql), sedangkan data demo tersedia di [`supabase/seed.sql`](../supabase/seed.sql).
 
 ---
 
@@ -40,9 +40,10 @@ erDiagram
 
 ### 1. `profiles`
 - **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
+- **Foreign Keys:** `auth_user_id` → `auth.users(id)` (`ON DELETE SET NULL`, ditambahkan secara kondisional pada `0002_security_hardening.sql`)
 - **Unique Constraints:** `auth_user_id`, `email`, `username`
 - **Check Constraints:** `role IN ('super_admin', 'organizer', 'committee', 'team_captain', 'player')`
-- **Indexes:** `idx_profiles_role`, `idx_profiles_email`
+- **Indexes:** `idx_profiles_role`, `idx_profiles_email`, `idx_profiles_auth_user_id`
 
 ### 2. `games`
 - **Primary Key:** `id UUID DEFAULT gen_random_uuid()`
@@ -143,13 +144,36 @@ erDiagram
 
 ---
 
-## 3. Trigger Otomatis dan Kebijakan Row Level Security (RLS)
+## 3. Trigger Otomatis, Fungsi SQL, dan Kebijakan Row Level Security (RLS)
 
 1. **Trigger `set_updated_at()`:**
    - Diterapkan pada `profiles`, `games`, `tournaments`, `teams`, `team_members`, `registrations`, `matches`, `payments`, dan `announcements` agar kolom `updated_at` diperbarui otomatis setiap kali terjadi operasi `UPDATE`.
-2. **Aktivasi RLS Menyeluruh:**
-   - Seluruh 12 tabel pada skema `public` mengaktifkan `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`.
-3. **Fungsi Pemeriksa Role (`public.current_user_role()`):**
-   - Membaca role langsung dari `public.profiles` berdasarkan `auth.uid()` dengan `SECURITY DEFINER`, bukan dari `user_metadata` yang dapat dimanipulasi klien.
-4. **Perlindungan Registrasi Mandiri:**
-   - Kebijakan `Self register player or captain only` pada `public.profiles` memastikan operasi `INSERT` profil baru hanya mengizinkan `role IN ('player', 'team_captain')`.
+2. **Sinkronisasi Otomatis Supabase Auth (`on_auth_user_created`):**
+   - Trigger `handle_new_auth_user()` pada `auth.users` menyinkronkan akun Supabase Auth baru ke `public.profiles` secara otomatis dan membatasi role registrasi mandiri hanya pada `'player'` atau `'team_captain'`.
+3. **Pencegahan Eskalasi Hak Akses (`trg_prevent_profile_privilege_escalation`):**
+   - Trigger `BEFORE UPDATE ON public.profiles` menolak perubahan kolom `role`, `is_active`, `auth_user_id`, dan `email` oleh pengguna selain `super_admin`.
+4. **RPC Transaksional Bracket (`public.replace_tournament_matches`):**
+   - Mengganti seluruh pertandingan bracket suatu turnamen secara atomik dalam satu transaksi PostgreSQL (urutan `round_number DESC, match_number ASC` agar `next_match_id` valid) menggunakan `SECURITY INVOKER` sehingga tetap tunduk pada RLS.
+5. **Fungsi Pemeriksa Identitas & Kepemilikan (`0002_security_hardening.sql`):**
+   - `public.current_profile_id()` dan `public.current_user_role()` membaca identitas dan role langsung dari `public.profiles` berdasarkan `(SELECT auth.uid())`, bukan dari `user_metadata`.
+   - `public.is_tournament_organizer(tournament_id)`, `public.is_tournament_committee(tournament_id)`, dan `public.is_team_captain(team_id)` memverifikasi kepemilikan entitas secara ketat.
+6. **Matriks RLS 12 Tabel (`ENABLE ROW LEVEL SECURITY`):**
+   - `profiles`: `SELECT` dibatasi untuk pemilik profil sendiri atau staf (`super_admin`, `organizer`, `committee`); `INSERT` mandiri hanya untuk `role IN ('player', 'team_captain')`; `UPDATE` mandiri tidak dapat mengubah `role`/`email`/`is_active`; `super_admin` memiliki akses penuh.
+   - `games`: `SELECT` publik untuk game aktif; operasi tulis hanya untuk `super_admin`.
+   - `tournaments`: `SELECT` publik; `INSERT`/`UPDATE`/`DELETE` hanya untuk `super_admin` atau `organizer` pemilik turnamen (`organizer_id = current_profile_id()`).
+   - `teams` & `team_members`: `SELECT` publik; `INSERT`/`UPDATE` tim dan kelola anggota tim hanya untuk `super_admin` atau `team_captain` pemilik tim (`captain_id = current_profile_id()`).
+   - `tournament_staff`: `SELECT` hanya untuk staf terkait, `organizer` pemilik turnamen, dan `super_admin`; pengelolaan hanya untuk `organizer` pemilik turnamen dan `super_admin`.
+   - `registrations`: `SELECT` publik hanya untuk `status = 'approved'`; status lainnya hanya dapat dibaca oleh kapten tim terkait, staf turnamen, dan `super_admin`; `INSERT` oleh `team_captain` pemilik tim; `UPDATE` verifikasi oleh `organizer`/assigned `committee`/`super_admin`.
+   - `matches` & `match_results`: `SELECT` publik; operasi tulis hanya untuk `organizer` pemilik turnamen, `committee` yang ditugaskan pada turnamen tersebut, dan `super_admin`.
+   - `payments`: Data finansial bersifat privat (`TO authenticated`); hanya dapat dibaca/diunggah oleh `team_captain` pemilik registrasi dan dibaca/diverifikasi oleh `organizer`, assigned `committee`, serta `super_admin`.
+   - `announcements`: `SELECT` publik; operasi tulis hanya untuk `organizer` pemilik turnamen, assigned `committee`, dan `super_admin`.
+   - `activity_logs`: Audit log bersifat *append-only* (tanpa kebijakan `UPDATE`/`DELETE`); `SELECT` hanya untuk aktor terkait, staf turnamen terkait, atau `super_admin`; `INSERT` hanya untuk pengguna terautentikasi dengan `actor_id = current_profile_id()` atau `super_admin`.
+
+---
+
+## 4. Cara Menjalankan Migrasi Database
+
+Jalankan file migrasi secara berurutan pada SQL Editor Supabase atau melalui Supabase CLI:
+1. `supabase/migrations/0001_initial_schema.sql` — Membuat 12 tabel, constraint, index, dan trigger dasar.
+2. `supabase/migrations/0002_security_hardening.sql` — Menambahkan foreign key `auth.users`, trigger anti-privilege escalation, fungsi RPC atomik bracket, dan kebijakan RLS least-privilege.
+3. `supabase/seed.sql` *(opsional untuk environment pengembangan/demo)* — Mengisi data awal 5 akun demo, 3 game, 2 turnamen, 8 tim, dan bracket contoh.

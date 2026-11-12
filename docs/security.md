@@ -20,15 +20,20 @@ Dokumen ini menjelaskan keputusan arsitektur keamanan, perlindungan kredensial S
 
 ## 2. Keamanan Autentikasi & Otorisasi (RBAC + RLS)
 
-1. **Verifikasi di Sisi Backend & Database:**
+1. **Pemisahan Arsitektur Autentikasi `mock` dan `supabase`:**
+   - **Mode Mock (`APP_MODE=mock`):** Digunakan untuk pengembangan offline dan automated testing. Menggunakan hash password Werkzeug (`pbkdf2`/`scrypt`), token memori berawalan `tok_`, serta mendukung header simulasi `X-Mock-User-Id` / `X-Mock-Role`.
+   - **Mode Online (`APP_MODE=supabase`):** Menggunakan Supabase Auth (GoTrue) secara penuh untuk `sign_up`, `sign_in_with_password`, `get_user(jwt)`, dan `sign_out`. Tidak menggunakan dictionary `_sessions` atau `_password_hashes` di memori Python, menolak token `tok_`, dan menonaktifkan seluruh header simulasi mock.
+   - **Stateless Client per Request:** `create_supabase_client()` menginisialisasi SDK dengan `ClientOptions(persist_session=False, auto_refresh_token=False)` serta menolak `service_role` / `sb_secret_` key agar sesi pengguna tidak pernah bocor lintas request pada proses Flask.
+2. **Verifikasi di Sisi Backend & Database:**
    - Menyembunyikan tombol di antarmuka HTML/JS hanyalah fitur kenyamanan UX, bukan batas keamanan.
    - Setiap endpoint perubahan data (`POST`, `PATCH`, `DELETE`) di Flask REST API wajib memeriksa identitas pengguna dan matriks izin di `backend/modules/auth/permissions.py`.
-2. **Perlindungan Role dari Manipulasi Klien:**
-   - Role pengguna (`super_admin`, `organizer`, `committee`, `team_captain`, `player`) disimpan pada tabel `public.profiles` yang dilindungi RLS.
+3. **Perlindungan Role dari Manipulasi Klien:**
+   - Role pengguna (`super_admin`, `organizer`, `committee`, `team_captain`, `player`) disimpan pada tabel `public.profiles` yang terhubung ke `auth.users(id)` melalui `profiles.auth_user_id`.
    - Sistem **tidak pernah** membaca klaim otorisasi dari `raw_user_meta_data` (`user_metadata`) Supabase Auth karena field tersebut dapat dimodifikasi oleh pengguna melalui client SDK.
-   - Pengguna biasa yang melakukan registrasi mandiri hanya dapat memperoleh role dasar (`player` atau `team_captain`); peningkatan role menjadi `organizer`, `committee`, atau `super_admin` hanya dapat dilakukan oleh pihak terpercaya (`super_admin` / penugasan resmi).
-3. **Row Level Security (RLS):**
-   - Seluruh 12 tabel pada skema `public` mengaktifkan `ENABLE ROW LEVEL SECURITY` sejak migrasi pertama (`0001_initial_schema.sql`).
+   - Pengguna biasa yang melakukan registrasi mandiri hanya dapat memperoleh role dasar (`player` atau `team_captain`); peningkatan role menjadi `organizer`, `committee`, atau `super_admin` hanya dapat dilakukan oleh `super_admin` dan dijaga di level database oleh trigger `trg_prevent_profile_privilege_escalation`.
+4. **Row Level Security (RLS) Least-Privilege:**
+   - Seluruh 12 tabel pada skema `public` mengaktifkan `ENABLE ROW LEVEL SECURITY` (`0001_initial_schema.sql` dan diperketat pada `0002_security_hardening.sql`).
+   - Tidak ada kebijakan tulis terbuka (`FOR ALL USING (true)`). Tabel sensitif seperti `profiles`, `payments`, `tournament_staff`, `registrations` (non-approved), dan `activity_logs` dilindungi dari pembacaan dan modifikasi tanpa otorisasi.
 
 ---
 
