@@ -3,8 +3,9 @@
 Owner: Habil (Database & Authentication Developer)
 Security Rules:
 - Self-registration can only assign `player` or `team_captain` roles.
-- Online mode (`APP_MODE=supabase`) delegates authentication and JWT verification to Supabase Auth
-  while resolving authorization roles exclusively from `public.profiles.role`.
+- Online mode (`APP_MODE=supabase`) delegates authentication and JWT verification to Supabase Auth,
+  propagates the caller's verified JWT to repository operations via request-scoped context,
+  and resolves authorization roles exclusively from `public.profiles.role`.
 - Mock mode (`APP_MODE=mock`) uses Werkzeug password hashes and in-memory tokens for offline testing.
 """
 
@@ -26,6 +27,10 @@ from backend.core.exceptions import (
     DomainNotFoundError,
     DomainUnauthorizedError,
     DomainValidationError,
+)
+from backend.infrastructure.supabase.client import (
+    bind_request_access_token,
+    use_access_token,
 )
 from backend.modules.auth.permissions import require_authenticated, require_permission
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
@@ -86,11 +91,6 @@ class AuthService:
                 details={"requested_role": requested_role},
             )
 
-        if self._repo.get_profile_by_email(email):
-            raise DomainConflictError("Email sudah terdaftar.", {"email": email})
-        if self._repo.get_profile_by_username(username):
-            raise DomainConflictError("Username sudah digunakan.", {"username": username})
-
         if self._is_online_mode:
             return self._register_supabase(
                 email=email,
@@ -100,6 +100,11 @@ class AuthService:
                 requested_role=requested_role,
                 phone=phone,
             )
+
+        if self._repo.get_profile_by_email(email):
+            raise DomainConflictError("Email sudah terdaftar.", {"email": email})
+        if self._repo.get_profile_by_username(username):
+            raise DomainConflictError("Username sudah digunakan.", {"username": username})
 
         created = self._repo.create_profile(
             {
@@ -139,64 +144,87 @@ class AuthService:
         if not callable(sign_up_fn):
             raise DomainValidationError("Repository Supabase tidak mendukung operasi auth_sign_up.")
 
+        metadata: dict[str, Any] = {
+            "username": username,
+            "full_name": full_name,
+            "role": requested_role,
+        }
+        if phone:
+            metadata["phone"] = phone
+
         auth_result = sign_up_fn(
             email=email,
             password=password,
-            user_metadata={
-                "username": username,
-                "full_name": full_name,
-                "role": requested_role,
-            },
+            user_metadata=metadata,
         )
         auth_user_id = str(auth_result["auth_user_id"])
         access_token = auth_result.get("access_token")
 
-        profile = self._find_profile_by_auth_user_id(auth_user_id)
-        if not profile:
-            existing_by_email = self._repo.get_profile_by_email(email)
-            if existing_by_email and not existing_by_email.get("auth_user_id"):
-                profile = self._repo.update_profile(
-                    existing_by_email["id"],
-                    {
-                        "auth_user_id": auth_user_id,
-                        "full_name": full_name,
-                        "phone": phone,
-                        "access_token": access_token,
-                    },
+        if not access_token:
+            return {
+                "token": None,
+                "requires_email_confirmation": True,
+                "user": {
+                    "id": auth_user_id,
+                    "auth_user_id": auth_user_id,
+                    "email": email,
+                    "username": username,
+                    "full_name": full_name,
+                    "role": requested_role,
+                    "phone": phone,
+                    "avatar_url": None,
+                    "is_active": True,
+                },
+            }
+
+        with use_access_token(access_token):
+            profile = self._find_profile_by_auth_user_id(auth_user_id)
+            if not profile:
+                existing_by_email = self._repo.get_profile_by_email(email)
+                if existing_by_email and not existing_by_email.get("auth_user_id"):
+                    profile = self._repo.update_profile(
+                        existing_by_email["id"],
+                        {
+                            "auth_user_id": auth_user_id,
+                            "full_name": full_name,
+                            "phone": phone,
+                        },
+                    )
+                else:
+                    profile = self._repo.create_profile(
+                        {
+                            "id": auth_user_id,
+                            "auth_user_id": auth_user_id,
+                            "email": email,
+                            "username": username,
+                            "full_name": full_name,
+                            "role": requested_role,
+                            "phone": phone,
+                            "is_active": True,
+                        }
+                    )
+            elif phone and not profile.get("phone"):
+                profile = (
+                    self._repo.update_profile(
+                        profile["id"],
+                        {"phone": phone},
+                    )
+                    or profile
                 )
-            else:
-                profile = self._repo.create_profile(
-                    {
-                        "id": auth_user_id,
-                        "auth_user_id": auth_user_id,
-                        "email": email,
-                        "username": username,
-                        "full_name": full_name,
-                        "role": requested_role,
-                        "phone": phone,
-                        "is_active": True,
-                        "access_token": access_token,
-                    }
-                )
-        elif phone and not profile.get("phone"):
-            profile = (
-                self._repo.update_profile(
-                    profile["id"],
-                    {"phone": phone, "access_token": access_token},
-                )
-                or profile
+
+            self._repo.log_activity(
+                actor_id=profile["id"],
+                tournament_id=None,
+                entity_type="profile",
+                entity_id=profile["id"],
+                action="USER_REGISTERED",
+                details={"role": profile.get("role", requested_role), "email": email},
             )
 
-        self._repo.log_activity(
-            actor_id=profile["id"],
-            tournament_id=None,
-            entity_type="profile",
-            entity_id=profile["id"],
-            action="USER_REGISTERED",
-            details={"role": profile.get("role", requested_role), "email": email},
-        )
+        bind_request_access_token(access_token)
         return {
             "token": access_token,
+            "requires_email_confirmation": False,
             "user": _sanitize_profile(profile),
         }
 
@@ -235,19 +263,20 @@ class AuthService:
         auth_user_id = str(auth_result["auth_user_id"])
         access_token = str(auth_result["access_token"])
 
-        profile = self._find_profile_by_auth_user_id(auth_user_id)
-        if not profile:
-            by_email = self._repo.get_profile_by_email(normalized_email)
-            if by_email:
-                if by_email.get("auth_user_id") and by_email.get("auth_user_id") != auth_user_id:
-                    raise DomainUnauthorizedError("Identitas akun tidak cocok dengan profil terdaftar.")
-                profile = (
-                    self._repo.update_profile(
-                        by_email["id"],
-                        {"auth_user_id": auth_user_id, "access_token": access_token},
+        with use_access_token(access_token):
+            profile = self._find_profile_by_auth_user_id(auth_user_id)
+            if not profile:
+                by_email = self._repo.get_profile_by_email(normalized_email)
+                if by_email:
+                    if by_email.get("auth_user_id") and by_email.get("auth_user_id") != auth_user_id:
+                        raise DomainUnauthorizedError("Identitas akun tidak cocok dengan profil terdaftar.")
+                    profile = (
+                        self._repo.update_profile(
+                            by_email["id"],
+                            {"auth_user_id": auth_user_id},
+                        )
+                        or by_email
                     )
-                    or by_email
-                )
 
         if not profile:
             raise DomainUnauthorizedError("Profil pengguna tidak ditemukan pada sistem.")
@@ -255,12 +284,14 @@ class AuthService:
         if not profile.get("is_active", True):
             raise DomainForbiddenError("Akun pengguna tidak aktif.")
 
+        bind_request_access_token(access_token)
         return {
             "token": access_token,
             "user": _sanitize_profile(profile),
         }
 
     def logout(self, token: str | None) -> bool:
+        bind_request_access_token(None)
         if not token:
             return False
         if self._is_online_mode:
@@ -273,27 +304,35 @@ class AuthService:
 
     def get_user_by_token(self, token: str | None) -> dict[str, Any] | None:
         if not token:
+            bind_request_access_token(None)
             return None
         clean_token = token.strip()
         if not clean_token:
+            bind_request_access_token(None)
             return None
 
         if self._is_online_mode:
             if clean_token.startswith("tok_"):
+                bind_request_access_token(None)
                 return None
             get_user_fn = getattr(self._repo, "auth_get_user", None)
             if not callable(get_user_fn):
+                bind_request_access_token(None)
                 return None
             verified = get_user_fn(clean_token)
             if not verified or not verified.get("auth_user_id"):
+                bind_request_access_token(None)
                 return None
-            profile = self._find_profile_by_auth_user_id(str(verified["auth_user_id"]))
-            if not profile and verified.get("email"):
-                candidate = self._repo.get_profile_by_email(str(verified["email"]))
-                if candidate and candidate.get("auth_user_id") in (None, str(verified["auth_user_id"])):
-                    profile = candidate
+            with use_access_token(clean_token):
+                profile = self._find_profile_by_auth_user_id(str(verified["auth_user_id"]))
+                if not profile and verified.get("email"):
+                    candidate = self._repo.get_profile_by_email(str(verified["email"]))
+                    if candidate and candidate.get("auth_user_id") in (None, str(verified["auth_user_id"])):
+                        profile = candidate
             if not profile or not profile.get("is_active", True):
+                bind_request_access_token(None)
                 return None
+            bind_request_access_token(clean_token)
             return _sanitize_profile(profile)
 
         user_id = self._sessions.get(clean_token)

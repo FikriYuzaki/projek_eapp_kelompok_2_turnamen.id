@@ -364,6 +364,13 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
     def replace_tournament_matches(
         self, tournament_id: str, matches: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
+        if not tournament_id or not isinstance(tournament_id, str):
+            raise DomainValidationError("Parameter 'tournament_id' wajib diisi.", {"field": "tournament_id"})
+        if matches is None or not isinstance(matches, list):
+            raise DomainValidationError(
+                "Parameter 'matches' wajib berupa JSON array / list.",
+                {"field": "matches"},
+            )
         if not self.get_tournament_by_id(tournament_id):
             raise DomainNotFoundError("Turnamen tidak ditemukan.", {"tournament_id": tournament_id})
 
@@ -377,6 +384,18 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
             if "round_number" not in match or "match_number" not in match:
                 raise DomainValidationError(
                     "Field 'round_number' dan 'match_number' wajib ada pada setiap match.",
+                    {"index": idx},
+                )
+            if (
+                isinstance(match["round_number"], bool)
+                or not isinstance(match["round_number"], int)
+                or match["round_number"] < 1
+                or isinstance(match["match_number"], bool)
+                or not isinstance(match["match_number"], int)
+                or match["match_number"] < 1
+            ):
+                raise DomainValidationError(
+                    "Field 'round_number' dan 'match_number' wajib berupa integer positif.",
                     {"index": idx},
                 )
             record = copy.deepcopy(match)

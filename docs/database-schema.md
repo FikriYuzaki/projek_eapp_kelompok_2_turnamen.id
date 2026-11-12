@@ -151,9 +151,9 @@ erDiagram
 2. **Sinkronisasi Otomatis Supabase Auth (`on_auth_user_created`):**
    - Trigger `handle_new_auth_user()` pada `auth.users` menyinkronkan akun Supabase Auth baru ke `public.profiles` secara otomatis dan membatasi role registrasi mandiri hanya pada `'player'` atau `'team_captain'`.
 3. **Pencegahan Eskalasi Hak Akses (`trg_prevent_profile_privilege_escalation`):**
-   - Trigger `BEFORE UPDATE ON public.profiles` menolak perubahan kolom `role`, `is_active`, `auth_user_id`, dan `email` oleh pengguna selain `super_admin`.
+   - Trigger `BEFORE UPDATE ON public.profiles` menolak perubahan kolom `id`, `created_at`, `role`, `is_active`, `auth_user_id`, `email`, dan `username` oleh pengguna selain `super_admin`. Kebijakan RLS `Profiles update own` tidak menggunakan subquery self-reference sehingga bebas dari *infinite recursion* (`42P17`).
 4. **RPC Transaksional Bracket (`public.replace_tournament_matches`):**
-   - Mengganti seluruh pertandingan bracket suatu turnamen secara atomik dalam satu transaksi PostgreSQL (urutan `round_number DESC, match_number ASC` agar `next_match_id` valid) menggunakan `SECURITY INVOKER` sehingga tetap tunduk pada RLS.
+   - Memvalidasi `p_tournament_id IS NOT NULL`, keberadaan turnamen, `p_matches IS NOT NULL`, `jsonb_typeof(p_matches) = 'array'`, serta struktur setiap elemen pertandingan **sebelum** menjalankan `DELETE`. Mengganti seluruh pertandingan bracket suatu turnamen secara atomik dalam satu transaksi PostgreSQL (urutan `round_number DESC, match_number ASC` agar `next_match_id` valid) menggunakan `SECURITY INVOKER` sehingga tetap tunduk pada RLS.
 5. **Fungsi Pemeriksa Identitas & Kepemilikan (`0002_security_hardening.sql`):**
    - `public.current_profile_id()` dan `public.current_user_role()` membaca identitas dan role langsung dari `public.profiles` berdasarkan `(SELECT auth.uid())`, bukan dari `user_metadata`.
    - `public.is_tournament_organizer(tournament_id)`, `public.is_tournament_committee(tournament_id)`, dan `public.is_team_captain(team_id)` memverifikasi kepemilikan entitas secara ketat.

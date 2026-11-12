@@ -109,7 +109,7 @@ AS $$
     );
 $$;
 
--- Trigger to prevent privilege escalation on public.profiles via direct Data API UPDATE
+-- Trigger to prevent privilege escalation and immutable field tampering on public.profiles
 CREATE OR REPLACE FUNCTION public.prevent_profile_privilege_escalation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -117,6 +117,15 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+    IF NEW.id IS DISTINCT FROM OLD.id THEN
+        RAISE EXCEPTION 'Immutable field: profile id cannot be modified'
+            USING ERRCODE = '42501';
+    END IF;
+    IF NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+        RAISE EXCEPTION 'Immutable field: created_at cannot be modified'
+            USING ERRCODE = '42501';
+    END IF;
+
     IF current_user IN ('anon', 'authenticated') OR (SELECT auth.uid()) IS NOT NULL THEN
         IF COALESCE(public.current_user_role(), '') <> 'super_admin' THEN
             IF NEW.role IS DISTINCT FROM OLD.role THEN
@@ -131,8 +140,16 @@ BEGIN
                 RAISE EXCEPTION 'Privilege escalation denied: auth_user_id cannot be reassigned'
                     USING ERRCODE = '42501';
             END IF;
+            IF OLD.auth_user_id IS NULL AND NEW.auth_user_id IS NOT NULL AND NEW.auth_user_id IS DISTINCT FROM (SELECT auth.uid()) THEN
+                RAISE EXCEPTION 'Privilege escalation denied: auth_user_id must match authenticated user'
+                    USING ERRCODE = '42501';
+            END IF;
             IF NEW.email IS DISTINCT FROM OLD.email THEN
                 RAISE EXCEPTION 'Email address cannot be modified directly on profile'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NEW.username IS DISTINCT FROM OLD.username THEN
+                RAISE EXCEPTION 'Username cannot be modified directly by non-admin user'
                     USING ERRCODE = '42501';
             END IF;
         END IF;
@@ -160,6 +177,7 @@ DECLARE
     v_safe_role VARCHAR(32);
     v_username VARCHAR(60);
     v_full_name VARCHAR(120);
+    v_phone VARCHAR(40);
 BEGIN
     v_requested_role := COALESCE(LOWER(TRIM(NEW.raw_user_meta_data->>'role')), 'player');
     IF v_requested_role IN ('player', 'team_captain') THEN
@@ -176,16 +194,18 @@ BEGIN
         NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''),
         v_username
     );
+    v_phone := NULLIF(TRIM(NEW.raw_user_meta_data->>'phone'), '');
 
     UPDATE public.profiles
     SET auth_user_id = NEW.id,
+        phone = COALESCE(public.profiles.phone, v_phone),
         updated_at = NOW()
     WHERE LOWER(email) = LOWER(NEW.email)
       AND auth_user_id IS NULL;
 
     IF NOT FOUND THEN
-        INSERT INTO public.profiles (id, auth_user_id, email, username, full_name, role, is_active)
-        VALUES (NEW.id, NEW.id, LOWER(NEW.email), v_username, v_full_name, v_safe_role, TRUE)
+        INSERT INTO public.profiles (id, auth_user_id, email, username, full_name, role, phone, is_active)
+        VALUES (NEW.id, NEW.id, LOWER(NEW.email), v_username, v_full_name, v_safe_role, v_phone, TRUE)
         ON CONFLICT (auth_user_id) DO NOTHING;
     END IF;
 
@@ -210,7 +230,7 @@ BEGIN
 END;
 $$;
 
--- Transactional RPC for atomic bracket replacement (prevents partial deletion if insert fails)
+-- Transactional RPC for atomic bracket replacement (validates payload before DELETE)
 CREATE OR REPLACE FUNCTION public.replace_tournament_matches(
     p_tournament_id UUID,
     p_matches JSONB
@@ -225,9 +245,36 @@ BEGIN
         RAISE EXCEPTION 'tournament_id wajib diisi' USING ERRCODE = '22023';
     END IF;
 
+    IF p_matches IS NULL THEN
+        RAISE EXCEPTION 'p_matches tidak boleh bernilai NULL' USING ERRCODE = '22023';
+    END IF;
+
+    IF jsonb_typeof(p_matches) <> 'array' THEN
+        RAISE EXCEPTION 'p_matches harus berupa JSON array' USING ERRCODE = '22023';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM public.tournaments WHERE id = p_tournament_id) THEN
+        RAISE EXCEPTION 'Turnamen tidak ditemukan' USING ERRCODE = 'P0002';
+    END IF;
+
+    IF jsonb_array_length(p_matches) > 0 THEN
+        IF EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(p_matches) AS elem
+            WHERE jsonb_typeof(elem) <> 'object'
+               OR NULLIF(TRIM(elem->>'round_number'), '') IS NULL
+               OR NULLIF(TRIM(elem->>'match_number'), '') IS NULL
+               OR (elem->>'round_number') !~ '^[0-9]+$'
+               OR (elem->>'match_number') !~ '^[0-9]+$'
+        ) THEN
+            RAISE EXCEPTION 'Setiap elemen p_matches wajib berupa JSON object dengan round_number dan match_number bertipe integer positif'
+                USING ERRCODE = '22023';
+        END IF;
+    END IF;
+
     DELETE FROM public.matches WHERE tournament_id = p_tournament_id;
 
-    IF p_matches IS NOT NULL AND jsonb_typeof(p_matches) = 'array' AND jsonb_array_length(p_matches) > 0 THEN
+    IF jsonb_array_length(p_matches) > 0 THEN
         INSERT INTO public.matches (
             id,
             tournament_id,
@@ -388,8 +435,6 @@ CREATE POLICY "Profiles update own" ON public.profiles
     WITH CHECK (
         auth_user_id = (SELECT auth.uid())
         AND is_active = TRUE
-        AND role = (SELECT p.role FROM public.profiles p WHERE p.id = profiles.id)
-        AND email = (SELECT p.email FROM public.profiles p WHERE p.id = profiles.id)
     );
 
 CREATE POLICY "Super admin full access profiles" ON public.profiles

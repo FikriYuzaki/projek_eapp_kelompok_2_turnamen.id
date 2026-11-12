@@ -1,16 +1,19 @@
-"""Supabase client factory for online mode (`APP_MODE=supabase`).
+"""Supabase client factory and request-scoped JWT context management for `APP_MODE=supabase`.
 
 SECURITY RULE:
 Never configure or distribute `service_role` or secret keys inside the desktop client.
 Always use the public `anon` JWT key together with user authentication and RLS.
+Never store user access tokens on a shared global client instance.
 """
 
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import re
-from typing import Any
+from typing import Any, Iterator
 from urllib.parse import urlparse
 
 from backend.core.config import AppConfig
@@ -24,6 +27,65 @@ _PLACEHOLDER_KEYS = {
     "your-supabase-publishable-or-anon-key",
     "your-supabase-anon-key",
 }
+
+_CURRENT_ACCESS_TOKEN: ContextVar[str | None] = ContextVar(
+    "turnamen_supabase_access_token",
+    default=None,
+)
+
+
+def _normalize_jwt_token(token: str | None) -> str | None:
+    if not token or not isinstance(token, str):
+        return None
+    cleaned = token.strip()
+    if not cleaned or cleaned.startswith("tok_"):
+        return None
+    return cleaned
+
+
+@contextmanager
+def use_access_token(access_token: str | None) -> Iterator[None]:
+    """Bind a user's Supabase JWT to the current execution context (thread & coroutine safe)."""
+    normalized = _normalize_jwt_token(access_token)
+    reset_token = _CURRENT_ACCESS_TOKEN.set(normalized)
+    try:
+        yield
+    finally:
+        _CURRENT_ACCESS_TOKEN.reset(reset_token)
+
+
+def bind_request_access_token(access_token: str | None) -> None:
+    """Attach a verified Supabase JWT to the current Flask request context (`flask.g`), if active."""
+    normalized = _normalize_jwt_token(access_token)
+    try:
+        from flask import g, has_request_context
+
+        if has_request_context():
+            g.supabase_access_token = normalized
+    except ImportError:
+        pass
+
+
+def get_current_access_token() -> str | None:
+    """Resolve the active caller's Supabase JWT from ContextVar or active Flask HTTP request."""
+    ctx_token = _CURRENT_ACCESS_TOKEN.get()
+    if ctx_token:
+        return ctx_token
+
+    try:
+        from flask import g, has_request_context, request
+
+        if has_request_context():
+            bound = getattr(g, "supabase_access_token", None)
+            if bound:
+                return _normalize_jwt_token(bound)
+            auth_header = request.headers.get("Authorization", "").strip()
+            if auth_header.lower().startswith("bearer "):
+                return _normalize_jwt_token(auth_header[7:])
+    except ImportError:
+        pass
+
+    return None
 
 
 def _decode_jwt_payload(token: str) -> dict[str, Any]:
@@ -104,10 +166,9 @@ def create_supabase_client(
         ) from exc
 
     headers: dict[str, str] = {}
-    if access_token:
-        clean_token = access_token.strip()
-        if clean_token:
-            headers["Authorization"] = f"Bearer {clean_token}"
+    clean_token = _normalize_jwt_token(access_token)
+    if clean_token:
+        headers["Authorization"] = f"Bearer {clean_token}"
 
     options = ClientOptions(
         persist_session=False,
