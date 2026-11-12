@@ -1,10 +1,11 @@
-# Instruksi Tugas Mandiri — ANISA (REST API, Reporting & Testing Developer)
+# Instruksi Tugas Mandiri: ANISA (REST API, Reporting & Testing Developer)
 
 ---
 
 ## 1. Identitas dan Tanggung Jawab Anggota
 - **Nama Anggota:** Anisa
 - **Peran:** REST API, Reporting & Testing Developer
+- **Branch Resmi:** `feature/anisa-api-report`
 - **Tanggung Jawab Utama:**
   - Mengembangkan aplikasi Flask REST API (`backend/app.py` dan `backend/api/`) dengan prefix `/api/v1`.
   - Membuat validasi request dan memelihara konsistensi format response JSON (`success`, `message`, `data` / `error`).
@@ -21,7 +22,7 @@ Menyediakan lapisan REST API `/api/v1` yang konsisten, tervalidasi, aman, dan te
 3. Mengembangkan dan memelihara blueprint route di `backend/api/routes/v1_routes.py` untuk seluruh grup kontrak:
    - `Health`, `Authentication`, `Games`, `Tournaments`, `Teams`, `Registrations`, `Matches`, `Announcements`, dan `Reports`.
 4. Mengembangkan `AnnouncementService` (`backend/modules/announcements/service.py`) dan `ReportService` (`backend/modules/reports/service.py` untuk laporan statistik & klasemen `standings`).
-5. Memelihara dokumentasi endpoint di [`docs/api/openapi-overview.md`](file:///C:/Turnamen.in/docs/api/openapi-overview.md) dan suite pengujian integrasi di `tests/integration/test_api_endpoints.py`.
+5. Memelihara dokumentasi endpoint di [`docs/api/openapi-overview.md`](../api/openapi-overview.md) dan suite pengujian integrasi di `tests/integration/test_api_endpoints.py`.
 
 ## 4. Folder yang Menjadi Tanggung Jawab
 - `backend/app.py`
@@ -54,7 +55,7 @@ Menyediakan lapisan REST API `/api/v1` yang konsisten, tervalidasi, aman, dan te
 - Dikonsumsi oleh `api-client.js` (Fikri) dan komponen UI (Ferlita).
 
 ## 8. Kontrak Input / Output
-Wajib mematuhi struktur JSON pada [`docs/contracts/api-contract.md`](file:///C:/Turnamen.in/docs/contracts/api-contract.md):
+Wajib mematuhi struktur JSON pada [`docs/contracts/api-contract.md`](../contracts/api-contract.md):
 - **Response Sukses:** `{"success": true, "message": "...", "data": ...}`
 - **Response Error:** `{"success": false, "message": "...", "error": {"code": "...", "details": ...}}`
 
@@ -91,17 +92,73 @@ python run.py --api-only
 - [ ] Memverifikasi perhitungan statistik di `ReportService` (`reports` & `standings`).
 - [ ] Memelihara dokumentasi di `docs/api/openapi-overview.md` dan test di `tests/`.
 
-## 14. Cara Menyerahkan Hasil ke Repository Utama
+## 14. Git Branch Assignment & Workflow
+
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](../GIT_WORKFLOW.md).
+
+### 1. Nama Branch Resmi
+`feature/anisa-api-report`
+
+### 2. Tanggung Jawab pada Branch Ini
+Mengembangkan dan memelihara Flask application factory (`backend/app.py`), route handler dan validator `/api/v1` (`backend/api/`), modul laporan dan statistik (`backend/modules/reports/`), modul pengumuman (`backend/modules/announcements/`), dokumentasi REST API (`docs/api/`), serta suite pengujian integrasi (`tests/`).
+
+### 3. Instruksi Membuat atau Berpindah ke Branch
+- **Membuat branch pertama kali (jika belum ada di lokal maupun remote):**
+  ```powershell
+  git fetch origin
+  git switch main
+  git pull --ff-only origin main
+  git switch -c feature/anisa-api-report
+  git push -u origin feature/anisa-api-report
+  ```
+- **Jika branch sudah tersedia di remote (`origin`), tetapi belum ada di lokal:**
+  ```powershell
+  git fetch origin
+  git switch --track origin/feature/anisa-api-report
+  ```
+- **Jika branch sudah tersedia secara lokal di komputer Anda:**
+  ```powershell
+  git switch feature/anisa-api-report
+  git pull --ff-only
+  ```
+
+### 4. Perintah Git untuk Menyimpan Pekerjaan
+Pastikan seluruh unit test dan integration test lulus sebelum melakukan commit:
 ```powershell
-git pull origin main
 pytest -v
+python run.py --check
+git status
 git add backend/app.py backend/api/ backend/modules/announcements/ backend/modules/reports/ docs/api/ tests/
 git commit -m "feat(api): implement v1 endpoints, reporting, and integration tests"
-git push origin main
 ```
 
+### 5. Instruksi Push ke Branch Milik Anisa
+Jangan melakukan push langsung ke `main` dan jangan menggunakan `--force`:
+```powershell
+git push origin feature/anisa-api-report
+```
+*(Atau cukup `git push` jika upstream `-u` sudah diatur).*
+
+### 6. Instruksi Membuat Pull Request ke `main`
+1. Buka repository GitHub: `https://github.com/FikriYuzaki/projek_eapp_kelompok_2_turnamen.id`.
+2. Pilih branch `feature/anisa-api-report` lalu klik **`Compare & pull request`**.
+3. Pastikan **base** adalah `main` dan **compare** adalah `feature/anisa-api-report`.
+4. Tulis ringkasan perubahan endpoint API/laporan/test, daftar file yang diubah, dan hasil pengujian `pytest -v`.
+5. Klik **`Create pull request`** dan tunggu review sebelum merge.
+6. Untuk menyinkronkan branch dengan pembaruan terbaru dari `main`:
+   ```powershell
+   git fetch origin
+   git switch feature/anisa-api-report
+   git merge origin/main
+   ```
+
+### 7. Aturan Koordinasi Lintas Modul
+- Apabila ada perubahan path endpoint, metode HTTP, atau format payload JSON pada `/api/v1/*`, koordinasikan terlebih dahulu dengan **Fikri** (`feature/fikri-eel`) dan **Ferlita** (`feature/ferlita-ui-ux`), serta perbarui `docs/contracts/api-contract.md`.
+- Apabila route handler membutuhkan penyesuaian pada `TournamentService`, `TeamService`, atau `MatchService`, koordinasikan dengan **Adriel** (`feature/adriel-tournament-match`).
+- Apabila route handler membutuhkan penyesuaian otorisasi atau query repository baru, koordinasikan dengan **Habil** (`feature/habil-database-auth`).
+
 ## 15. Agent Skills yang Wajib Dibaca Berdasarkan Addendum
-Sebelum meminta bantuan AI Agent, pastikan agent membaca `AGENTS.md`, file tugas ini (`docs/tasks/anisa.md`), dan memuat skill berikut dari `.agents/skills/`:
+Sebelum meminta bantuan AI Agent, pastikan agent membaca `AGENTS.md`, file tugas ini (`docs/tasks/anisa.md`), `docs/GIT_WORKFLOW.md`, dan memuat skill berikut dari `.agents/skills/`:
 - **Wajib:**
   - `antislop` (`.agents/skills/antislop/SKILL.md`)
   - `antislop-code` (`.agents/skills/antislop-code/SKILL.md`)

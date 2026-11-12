@@ -1,10 +1,11 @@
-# Instruksi Tugas Mandiri — HABIL (Database & Authentication Developer)
+# Instruksi Tugas Mandiri: HABIL (Database & Authentication Developer)
 
 ---
 
 ## 1. Identitas dan Tanggung Jawab Anggota
 - **Nama Anggota:** Habil
 - **Peran:** Database & Authentication Developer
+- **Branch Resmi:** `feature/habil-database-auth`
 - **Tanggung Jawab Utama:**
   - Merancang ERD, 12 tabel PostgreSQL, relasi, constraints, trigger, dan index.
   - Menyiapkan file migrasi Supabase PostgreSQL (`0001_initial_schema.sql`) dan data awal (`seed.sql`).
@@ -16,8 +17,8 @@
 Menyediakan fondasi penyimpanan data dan keamanan identitas yang kokoh, di mana seluruh modul memiliki kontrak repository yang konsisten, dapat diuji secara penuh menggunakan `MockDataStoreRepository` (`APP_MODE=mock`), dan siap dihubungkan ke Supabase PostgreSQL (`APP_MODE=supabase`) dengan perlindungan RBAC dan RLS.
 
 ## 3. Daftar Tugas Terperinci
-1. Memelihara skema 12 tabel di [`supabase/migrations/0001_initial_schema.sql`](file:///C:/Turnamen.in/supabase/migrations/0001_initial_schema.sql) dan dokumentasi [`docs/database-schema.md`](file:///C:/Turnamen.in/docs/database-schema.md).
-2. Memelihara data seed SQL di [`supabase/seed.sql`](file:///C:/Turnamen.in/supabase/seed.sql) agar selaras dengan data mock Python.
+1. Memelihara skema 12 tabel di [`supabase/migrations/0001_initial_schema.sql`](../../supabase/migrations/0001_initial_schema.sql) dan dokumentasi [`docs/database-schema.md`](../database-schema.md).
+2. Memelihara data seed SQL di [`supabase/seed.sql`](../../supabase/seed.sql) agar selaras dengan data mock Python.
 3. Mengembangkan dan menyempurnakan kontrak repository di `backend/repositories/interfaces/repository_protocol.py`.
 4. Memelihara implementasi `MockDataStoreRepository` di `backend/repositories/mock/` dan mengimplementasikan query nyata pada `SupabaseDataStoreRepository` di `backend/repositories/supabase/` saat proyek cloud siap diuji.
 5. Mengembangkan layanan autentikasi dan otorisasi 5 role di `backend/modules/auth/` (`service.py` dan `permissions.py`).
@@ -53,9 +54,9 @@ Menyediakan fondasi penyimpanan data dan keamanan identitas yang kokoh, di mana 
 - Menyediakan layanan `AuthService` dan helper `RolePermissionGuard` bagi endpoint Flask API milik Anisa.
 
 ## 8. Kontrak Input / Output
-- **Kontrak Database:** Sesuai [`docs/contracts/database-contract.md`](file:///C:/Turnamen.in/docs/contracts/database-contract.md).
+- **Kontrak Database:** Sesuai [`docs/contracts/database-contract.md`](../contracts/database-contract.md).
 - **Kontrak Repository:** Seluruh method di `DataStoreRepositoryProtocol` mengembalikan `dict` atau `list[dict]` dengan nama field yang identik antara mode `mock` dan `supabase`.
-- **Kontrak Role & Izin:** Sesuai [`docs/contracts/role-permissions.md`](file:///C:/Turnamen.in/docs/contracts/role-permissions.md).
+- **Kontrak Role & Izin:** Sesuai [`docs/contracts/role-permissions.md`](../contracts/role-permissions.md).
 
 ## 9. Mock Data yang Tersedia
 File `backend/repositories/mock/mock_data.py` menyediakan dataset awal yang konsisten:
@@ -85,17 +86,72 @@ pytest tests/unit/test_auth_and_permissions.py -v
 - [ ] Memastikan seluruh 5 role diuji pada `tests/unit/test_auth_and_permissions.py`.
 - [ ] Menyempurnakan kebijakan RLS dan adapter Supabase saat kredensial proyek uji tersedia.
 
-## 14. Cara Menyerahkan Hasil ke Repository Utama
+## 14. Git Branch Assignment & Workflow
+
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](../GIT_WORKFLOW.md).
+
+### 1. Nama Branch Resmi
+`feature/habil-database-auth`
+
+### 2. Tanggung Jawab pada Branch Ini
+Mengembangkan dan memelihara skema migrasi dan seed Supabase (`supabase/`), infrastruktur klien Supabase (`backend/infrastructure/supabase/`), kontrak dan implementasi repository (`backend/repositories/`), modul autentikasi dan matriks RBAC 5 role (`backend/modules/auth/`), serta dokumentasi database dan keamanan (`docs/database-schema.md`, `docs/security.md`).
+
+### 3. Instruksi Membuat atau Berpindah ke Branch
+- **Membuat branch pertama kali (jika belum ada di lokal maupun remote):**
+  ```powershell
+  git fetch origin
+  git switch main
+  git pull --ff-only origin main
+  git switch -c feature/habil-database-auth
+  git push -u origin feature/habil-database-auth
+  ```
+- **Jika branch sudah tersedia di remote (`origin`), tetapi belum ada di lokal:**
+  ```powershell
+  git fetch origin
+  git switch --track origin/feature/habil-database-auth
+  ```
+- **Jika branch sudah tersedia secara lokal di komputer Anda:**
+  ```powershell
+  git switch feature/habil-database-auth
+  git pull --ff-only
+  ```
+
+### 4. Perintah Git untuk Menyimpan Pekerjaan
+Pastikan seluruh pengujian lulus dan tidak ada file `.env` atau kredensial rahasia yang ikut ditambahkan:
 ```powershell
-git pull origin main
 pytest -v
+python run.py --check
+git status
 git add supabase/ backend/modules/auth/ backend/infrastructure/supabase/ backend/repositories/ docs/database-schema.md docs/security.md
 git commit -m "feat(db-auth): implement schema, rbac permissions, and repository layer"
-git push origin main
 ```
 
+### 5. Instruksi Push ke Branch Milik Habil
+Jangan melakukan push langsung ke `main` dan jangan menggunakan `--force`:
+```powershell
+git push origin feature/habil-database-auth
+```
+*(Atau cukup `git push` jika upstream `-u` sudah diatur).*
+
+### 6. Instruksi Membuat Pull Request ke `main`
+1. Buka repository GitHub: `https://github.com/FikriYuzaki/projek_eapp_kelompok_2_turnamen.id`.
+2. Pilih branch `feature/habil-database-auth` lalu klik **`Compare & pull request`**.
+3. Pastikan **base** adalah `main` dan **compare** adalah `feature/habil-database-auth`.
+4. Tulis ringkasan perubahan database/auth/repository, daftar file yang diubah, dan hasil pengujian `pytest -v`.
+5. Klik **`Create pull request`** dan tunggu review sebelum merge.
+6. Untuk menyinkronkan branch dengan pembaruan terbaru dari `main`:
+   ```powershell
+   git fetch origin
+   git switch feature/habil-database-auth
+   git merge origin/main
+   ```
+
+### 7. Aturan Koordinasi Lintas Modul
+- Apabila ada perubahan pada tanda tangan method di `DataStoreRepositoryProtocol` atau struktur field tabel, wajib dikoordinasikan terlebih dahulu dengan **Adriel** (`feature/adriel-tournament-match`) dan **Anisa** (`feature/anisa-api-report`), serta diperbarui pada `docs/contracts/database-contract.md` dan `docs/contracts/module-contract.md`.
+- Apabila ada penambahan atau perubahan variabel environment untuk koneksi Supabase, koordinasikan dengan **Fikri** (`feature/fikri-eel`).
+
 ## 15. Agent Skills yang Wajib Dibaca Berdasarkan Addendum
-Sebelum meminta bantuan AI Agent, pastikan agent membaca `AGENTS.md`, file tugas ini (`docs/tasks/habil.md`), dan memuat skill berikut dari `.agents/skills/`:
+Sebelum meminta bantuan AI Agent, pastikan agent membaca `AGENTS.md`, file tugas ini (`docs/tasks/habil.md`), `docs/GIT_WORKFLOW.md`, dan memuat skill berikut dari `.agents/skills/`:
 - **Wajib:**
   - `antislop` (`.agents/skills/antislop/SKILL.md`)
   - `antislop-code` (`.agents/skills/antislop-code/SKILL.md`)

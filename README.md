@@ -1,6 +1,6 @@
-# Turnamen.in — Esports Tournament Management System (Starter Repository)
+# Turnamen.in: Esports Tournament Management System (Starter Repository)
 
-**Turnamen.in** adalah aplikasi desktop berbasis **Python Eel + Flask REST API + Supabase PostgreSQL** untuk Windows 10/11 yang membantu penyelenggara, panitia, kapten tim, dan pemain mengelola turnamen e-sport secara terpusat—mulai dari pembuatan turnamen, registrasi tim, verifikasi peserta, penyusunan bracket **Single Elimination**, pencatatan skor, pengumuman, hingga laporan hasil turnamen.
+**Turnamen.in** adalah aplikasi desktop berbasis **Python Eel + Flask REST API + Supabase PostgreSQL** untuk Windows 10/11 yang membantu penyelenggara, panitia, kapten tim, dan pemain mengelola turnamen e-sport secara terpusat, mulai dari pembuatan turnamen, registrasi tim, verifikasi peserta, penyusunan bracket **Single Elimination**, pencatatan skor, pengumuman, hingga laporan hasil turnamen.
 
 Sistem dirancang bersifat **game-agnostic** (mendukung *Mobile Legends: Bang Bang*, *VALORANT*, *PUBG Mobile*, *Free Fire*, *Dota 2*, *EA Sports FC*, dll.) dan menerapkan pendekatan **Contract-First Parallel Development** agar lima anggota kelompok dapat mengembangkan modul secara bersamaan menggunakan **`APP_MODE=mock`** tanpa bergantung pada kredensial cloud.
 
@@ -10,7 +10,7 @@ Sistem dirancang bersifat **game-agnostic** (mendukung *Mobile Legends: Bang Ban
 
 | Layer | Teknologi | Keterangan |
 | :--- | :--- | :--- |
-| **Desktop Container** | Python 3.10–3.12, Python Eel `0.16.0` | Diikat ke `127.0.0.1` (`localhost`), versi dependensi dipin untuk stabilitas |
+| **Desktop Container** | Python 3.10 to 3.12, Python Eel `0.16.0` | Diikat ke `127.0.0.1` (`localhost`), versi dependensi dipin untuk stabilitas |
 | **Frontend UI** | HTML5, CSS3, Vanilla JavaScript (ES6+) | *Dark Esports Management Dashboard*, tanpa framework frontend berat |
 | **REST API Layer** | Flask `3.0.3` (`/api/v1`) | Format JSON terstandarisasi, validasi input, dan otorisasi RBAC |
 | **Database & Cloud** | Supabase PostgreSQL, Auth, Storage, Realtime | Dilengkapi migrasi SQL 12 tabel, RLS, dan `MockRepository` lokal |
@@ -20,15 +20,15 @@ Sistem dirancang bersifat **game-agnostic** (mendukung *Mobile Legends: Bang Ban
 
 ---
 
-## 2. Pembagian Tim & Kepemilikan Modul (Team Ownership)
+## 2. Pembagian Tim, Branch, & Kepemilikan Modul (Team Ownership)
 
-| Anggota | Peran | Folder Tanggung Jawab Utama | File Instruksi Mandiri |
-| :--- | :--- | :--- | :--- |
-| **Ferlita** | Project Coordinator & UI/UX Designer | `desktop/web/pages/`, `desktop/web/assets/css/`, `desktop/web/assets/images/`, `DESIGN.md` | [`docs/tasks/ferlita.md`](file:///C:/Turnamen.in/docs/tasks/ferlita.md) |
-| **Fikri** | System Integration & Python Eel Developer | `desktop/launcher/`, `desktop/bridge/`, `desktop/web/assets/js/core/`, `run.py` | [`docs/tasks/fikri.md`](file:///C:/Turnamen.in/docs/tasks/fikri.md) |
-| **Habil** | Database & Authentication Developer | `supabase/`, `backend/modules/auth/`, `backend/infrastructure/supabase/`, `backend/repositories/` | [`docs/tasks/habil.md`](file:///C:/Turnamen.in/docs/tasks/habil.md) |
-| **Adriel** | Tournament & Match System Developer | `backend/modules/tournaments/`, `backend/modules/teams/`, `backend/modules/matches/` | [`docs/tasks/adriel.md`](file:///C:/Turnamen.in/docs/tasks/adriel.md) |
-| **Anisa** | REST API, Reporting & Testing Developer | `backend/api/`, `backend/modules/reports/`, `backend/modules/announcements/`, `tests/`, `docs/api/` | [`docs/tasks/anisa.md`](file:///C:/Turnamen.in/docs/tasks/anisa.md) |
+| Anggota | Peran | Branch Resmi | Folder Tanggung Jawab Utama | File Instruksi Mandiri |
+| :--- | :--- | :--- | :--- | :--- |
+| **Ferlita** | Project Coordinator & UI/UX Designer | `feature/ferlita-ui-ux` | `desktop/web/pages/`, `desktop/web/assets/css/`, `desktop/web/assets/images/`, `DESIGN.md` | [`docs/tasks/ferlita.md`](docs/tasks/ferlita.md) |
+| **Fikri** | System Integration & Python Eel Developer | `feature/fikri-eel` | `desktop/launcher/`, `desktop/bridge/`, `desktop/web/assets/js/core/`, `run.py` | [`docs/tasks/fikri.md`](docs/tasks/fikri.md) |
+| **Habil** | Database & Authentication Developer | `feature/habil-database-auth` | `supabase/`, `backend/modules/auth/`, `backend/infrastructure/supabase/`, `backend/repositories/` | [`docs/tasks/habil.md`](docs/tasks/habil.md) |
+| **Adriel** | Tournament & Match System Developer | `feature/adriel-tournament-match` | `backend/modules/tournaments/`, `backend/modules/teams/`, `backend/modules/matches/` | [`docs/tasks/adriel.md`](docs/tasks/adriel.md) |
+| **Anisa** | REST API, Reporting & Testing Developer | `feature/anisa-api-report` | `backend/api/`, `backend/modules/reports/`, `backend/modules/announcements/`, `tests/`, `docs/api/` | [`docs/tasks/anisa.md`](docs/tasks/anisa.md) |
 
 ---
 
@@ -84,6 +84,7 @@ C:\Turnamen.in\
 │   ├── migrations/                  # 0001_initial_schema.sql (12 tabel + RLS)
 │   └── seed.sql                     # Data awal demo konsisten
 ├── docs/
+│   ├── GIT_WORKFLOW.md              # Panduan lengkap Git Branch Workflow
 │   ├── architecture.md
 │   ├── database-schema.md
 │   ├── security.md
@@ -121,7 +122,7 @@ Copy-Item .env.example .env
 
 ---
 
-## 5. Cara Menjalankan Mock Mode (Default — Tanpa Kredensial Cloud)
+## 5. Cara Menjalankan Mock Mode (Default: Tanpa Kredensial Cloud)
 
 Secara bawaan, `.env.example` menetapkan `APP_MODE=mock`. Anda **tidak perlu** mengisi kredensial Supabase untuk menjalankan dan menguji aplikasi:
 
@@ -143,7 +144,7 @@ Saat berjalan dalam mode mock, Topbar aplikasi akan menampilkan badge **`MOCK MO
 ## 6. Cara Konfigurasi Supabase (`APP_MODE=supabase`)
 
 Apabila tim siap menguji integrasi cloud bersama Habil:
-1. Buat proyek di Supabase dan jalankan skrip [`supabase/migrations/0001_initial_schema.sql`](file:///C:/Turnamen.in/supabase/migrations/0001_initial_schema.sql) diikuti [`supabase/seed.sql`](file:///C:/Turnamen.in/supabase/seed.sql) pada SQL Editor Supabase.
+1. Buat proyek di Supabase dan jalankan skrip [`supabase/migrations/0001_initial_schema.sql`](supabase/migrations/0001_initial_schema.sql) diikuti [`supabase/seed.sql`](supabase/seed.sql) pada SQL Editor Supabase.
 2. Buka file `.env` lokal Anda (jangan pernah di-commit ke Git) dan ubah:
    ```ini
    APP_MODE=supabase
@@ -170,38 +171,32 @@ python scripts/verify_starter.py
 
 ---
 
-## 8. Alur Kerja Git Satu Branch (`main`)
+## 8. Cara Berkontribusi & Git Branch Workflow
 
-Kelompok hanya menggunakan satu branch utama: **`main`**. Baca panduan lengkap di [`CONTRIBUTING.md`](file:///C:/Turnamen.in/CONTRIBUTING.md).
+Repository ini menggunakan sistem **branch terpisah untuk setiap anggota**:
+- **`main`** adalah branch integrasi utama untuk kode yang sudah diperiksa dan lulus pengujian.
+- Setiap anggota bekerja pada branch khusus miliknya (`feature/ferlita-ui-ux`, `feature/fikri-eel`, `feature/habil-database-auth`, `feature/adriel-tournament-match`, dan `feature/anisa-api-report`).
+- Anggota tidak mengerjakan fitur langsung di `main` dan tidak menggunakan `git push --force`.
+- Seluruh perubahan dikirimkan ke branch masing-masing lalu digabungkan ke `main` melalui **Pull Request (PR)**.
 
-Sebelum mulai bekerja:
-```bash
-git pull origin main
-```
-
-Setelah menyelesaikan satu bagian pekerjaan dan memastikan `pytest` hijau:
-```bash
-git add .
-git commit -m "feat: descriptive feature name"
-git push origin main
-```
+Detail lengkap workflow, perintah Git harian, sinkronisasi branch, dan penanganan konflik tersedia di [`CONTRIBUTING.md`](CONTRIBUTING.md) dan [`docs/GIT_WORKFLOW.md`](docs/GIT_WORKFLOW.md).
 
 ---
 
 ## 9. Cara Membaca File Tugas Anggota
 
 Setiap anggota memiliki dokumen panduan mandiri di `docs/tasks/`:
-- **Ferlita:** [`docs/tasks/ferlita.md`](file:///C:/Turnamen.in/docs/tasks/ferlita.md)
-- **Fikri:** [`docs/tasks/fikri.md`](file:///C:/Turnamen.in/docs/tasks/fikri.md)
-- **Habil:** [`docs/tasks/habil.md`](file:///C:/Turnamen.in/docs/tasks/habil.md)
-- **Adriel:** [`docs/tasks/adriel.md`](file:///C:/Turnamen.in/docs/tasks/adriel.md)
-- **Anisa:** [`docs/tasks/anisa.md`](file:///C:/Turnamen.in/docs/tasks/anisa.md)
+- **Ferlita:** [`docs/tasks/ferlita.md`](docs/tasks/ferlita.md)
+- **Fikri:** [`docs/tasks/fikri.md`](docs/tasks/fikri.md)
+- **Habil:** [`docs/tasks/habil.md`](docs/tasks/habil.md)
+- **Adriel:** [`docs/tasks/adriel.md`](docs/tasks/adriel.md)
+- **Anisa:** [`docs/tasks/anisa.md`](docs/tasks/anisa.md)
 
 ---
 
 ## AI Agent Skills & Engineering Standards
 
-Proyek ini dilengkapi dengan sistem **Agent Skills** tingkat proyek di `.agents/skills/` yang ikut disimpan ke GitHub (tidak diabaikan oleh `.gitignore`), sehingga seluruh anggota langsung memperoleh standar AI Agent yang seragam setelah melakukan `git clone` atau `git pull origin main`. Rincian lisensi, commit SHA, dan sumber repositori tercatat di [`docs/skill-sources.md`](file:///C:/Turnamen.in/docs/skill-sources.md).
+Proyek ini dilengkapi dengan sistem **Agent Skills** tingkat proyek di `.agents/skills/` yang ikut disimpan ke GitHub (tidak diabaikan oleh `.gitignore`), sehingga seluruh anggota langsung memperoleh standar AI Agent yang seragam setelah melakukan `git clone` atau sinkronisasi dari `main`. Rincian lisensi, commit SHA, dan sumber repositori tercatat di [`docs/skill-sources.md`](docs/skill-sources.md).
 
 ### 1. External Skills (Terpasang di `.agents/skills/`)
 - **Anti-Slop (`miqdadbadjuber/anti-slop` v3.2.28):** `antislop`, `antislop-ui`, `antislop-human`, `antislop-code`, `antislop-copywriting` (Catatan: `antislop-layoutmobile` sengaja tidak dipasang karena aplikasi bersifat desktop-first).
@@ -211,13 +206,13 @@ Proyek ini dilengkapi dengan sistem **Agent Skills** tingkat proyek di `.agents/
 - **Frontend Design (`Junaid-PK/frontend-design-skill`):** `frontend-design` (opsional untuk Ferlita; `DESIGN.md` tetap menjadi acuan utama).
 
 ### 2. Custom Turnamen.in Skills (Terpasang di `.agents/skills/`)
-- `turnamen-project-standards` — Standar arsitektur, konvensi kode, dan workflow paralel seluruh anggota.
-- `turnamen-frontend-ui` — Panduan UI/UX desktop dan komponen untuk Ferlita.
-- `turnamen-python-eel` — Panduan launcher, Python Eel bridge, dan konfigurasi untuk Fikri.
-- `turnamen-supabase-security` — Panduan PostgreSQL 12 tabel, Auth, RBAC 5 role, dan RLS untuk Habil.
-- `turnamen-bracket-engine` — Panduan algoritma Single Elimination, *bye*, dan validasi skor untuk Adriel.
-- `turnamen-flask-api` — Panduan Flask REST API `/api/v1`, laporan, dan testing untuk Anisa.
-- `turnamen-quality-gates` — Standar unit/integration test dan *Definition of Done* seluruh anggota.
+- `turnamen-project-standards`: Standar arsitektur, konvensi kode, dan workflow paralel seluruh anggota.
+- `turnamen-frontend-ui`: Panduan UI/UX desktop dan komponen untuk Ferlita.
+- `turnamen-python-eel`: Panduan launcher, Python Eel bridge, dan konfigurasi untuk Fikri.
+- `turnamen-supabase-security`: Panduan PostgreSQL 12 tabel, Auth, RBAC 5 role, dan RLS untuk Habil.
+- `turnamen-bracket-engine`: Panduan algoritma Single Elimination, *bye*, dan validasi skor untuk Adriel.
+- `turnamen-flask-api`: Panduan Flask REST API `/api/v1`, laporan, dan testing untuk Anisa.
+- `turnamen-quality-gates`: Standar unit/integration test dan *Definition of Done* seluruh anggota.
 
 ### 3. Repository Referensi Teknis
 - **Python Eel:** <https://github.com/python-eel/Eel>
@@ -250,6 +245,6 @@ Proyek ini dilengkapi dengan sistem **Agent Skills** tingkat proyek di `.agents/
   npx skills update -p
   ```
 - **Memulai Sesi Antigravity (AGY) Baru:**
-  1. Jalankan `git pull origin main`.
-  2. Minta agent membaca `AGENTS.md`, `docs/tasks/<nama-anda>.md`, seluruh skill wajib pada tabel di atas, dan kontrak di `docs/contracts/`.
-  3. Kembangkan fitur pada folder tanggung jawab Anda, uji dengan `pytest`, lalu lakukan `git add`, `git commit`, dan `git push origin main`.
+  1. Pastikan Anda berada di branch kerja masing-masing (`git switch <nama-branch-anda>`) dan sinkron dengan `origin/main`.
+  2. Minta agent membaca `AGENTS.md`, `docs/tasks/<nama-anda>.md`, `docs/GIT_WORKFLOW.md`, seluruh skill wajib pada tabel di atas, dan kontrak di `docs/contracts/`.
+  3. Kembangkan fitur pada folder tanggung jawab Anda, uji dengan `pytest`, lalu lakukan `git add`, `git commit`, `git push` ke branch Anda, dan ajukan Pull Request ke `main`.
