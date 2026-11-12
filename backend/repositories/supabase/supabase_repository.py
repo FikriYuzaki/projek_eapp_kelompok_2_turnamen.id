@@ -6,219 +6,725 @@ Note: Active only when `APP_MODE=supabase` is configured with valid credentials.
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Callable
 
 from backend.core.config import AppConfig
-from backend.infrastructure.supabase.client import create_supabase_client
+from backend.core.exceptions import (
+    DomainConflictError,
+    DomainForbiddenError,
+    DomainNotFoundError,
+    DomainUnauthorizedError,
+    DomainValidationError,
+)
+from backend.infrastructure.supabase.client import (
+    create_supabase_client,
+    get_current_access_token,
+    use_access_token,
+)
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
+
+logger = logging.getLogger(__name__)
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _raise_domain_error_from_postgrest(exc: Exception, context: str) -> None:
+    """Translate PostgREST / PostgreSQL error codes into Turnamen.in domain exceptions."""
+    if isinstance(
+        exc,
+        (
+            DomainConflictError,
+            DomainForbiddenError,
+            DomainNotFoundError,
+            DomainUnauthorizedError,
+            DomainValidationError,
+        ),
+    ):
+        raise exc
+
+    code = str(getattr(exc, "code", "") or "")
+    message = str(getattr(exc, "message", "") or str(exc))
+    lower_msg = message.lower()
+
+    if code == "23505" or "duplicate key" in lower_msg or "unique constraint" in lower_msg:
+        raise DomainConflictError(
+            f"Data duplikat pada operasi {context}.",
+            {"reason": code or "unique_violation"},
+        ) from exc
+    if code in ("23503", "P0002") or "foreign key constraint" in lower_msg or "tidak ditemukan" in lower_msg:
+        raise DomainNotFoundError(
+            f"Referensi entitas terkait tidak ditemukan pada operasi {context}.",
+            {"reason": code or "not_found"},
+        ) from exc
+    if (
+        code == "42501"
+        or "row-level security" in lower_msg
+        or "privilege escalation" in lower_msg
+        or "immutable field" in lower_msg
+        or "permission denied" in lower_msg
+        or "cannot be modified" in lower_msg
+    ):
+        raise DomainForbiddenError(
+            f"Akses ditolak oleh kebijakan keamanan database pada operasi {context}.",
+            {"reason": code or "rls_denied"},
+        ) from exc
+    if (
+        code in ("22P02", "22023", "23514")
+        or "invalid input syntax" in lower_msg
+        or "check constraint" in lower_msg
+        or "harus berupa json array" in lower_msg
+        or "tidak boleh bernilai null" in lower_msg
+    ):
+        raise DomainValidationError(
+            f"Data tidak memenuhi aturan validasi skema pada operasi {context}.",
+            {"reason": code or "check_violation"},
+        ) from exc
+    raise exc
 
 
 class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
-    """Production repository backed by Supabase PostgreSQL Data API and RLS."""
+    """Production repository backed by Supabase PostgreSQL Data API, Auth, and RLS."""
 
-    def __init__(self, config: AppConfig) -> None:
+    is_supabase_mode: bool = True
+
+    def __init__(
+        self,
+        config: AppConfig,
+        client_factory: Callable[..., Any] | None = None,
+        bound_access_token: str | None = None,
+    ) -> None:
         self._config = config
-        self._client = create_supabase_client(config)
+        self._client_factory = client_factory or create_supabase_client
+        self._bound_access_token = (
+            bound_access_token.strip()
+            if isinstance(bound_access_token, str) and bound_access_token.strip()
+            else None
+        )
+        self._client = self._client_factory(config, access_token=self._bound_access_token)
+
+    def _get_client(self, explicit_token: str | None = None) -> Any:
+        """Return a request-scoped Supabase client carrying the active caller's JWT."""
+        token = explicit_token or self._bound_access_token or get_current_access_token()
+        if isinstance(token, str):
+            clean = token.strip()
+            if clean and not clean.startswith("tok_"):
+                if clean == self._bound_access_token:
+                    return self._client
+                return self._client_factory(self._config, access_token=clean)
+        return self._client
+
+    def for_access_token(self, access_token: str | None) -> SupabaseDataStoreRepository:
+        """Create an isolated repository view bound to a specific user JWT without mutating shared state."""
+        return SupabaseDataStoreRepository(
+            self._config,
+            client_factory=self._client_factory,
+            bound_access_token=access_token,
+        )
+
+    def with_access_token(self, access_token: str | None) -> Any:
+        """Context manager binding a user's JWT to repository operations in the current execution flow."""
+        return use_access_token(access_token)
 
     def reset_to_seed(self) -> None:
         raise NotImplementedError(
             "reset_to_seed() hanya diizinkan pada APP_MODE=mock untuk pengujian lokal."
         )
 
+    def auth_sign_up(
+        self,
+        email: str,
+        password: str,
+        user_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Register a user via Supabase GoTrue Auth without storing session globally."""
+        auth_client = self._client_factory(self._config)
+        try:
+            response = auth_client.auth.sign_up(
+                {
+                    "email": email,
+                    "password": password,
+                    "options": {"data": user_metadata or {}},
+                }
+            )
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "already registered" in msg or "already exists" in msg or "duplicate key" in msg:
+                raise DomainConflictError("Email atau username sudah terdaftar.", {"email": email}) from exc
+            raise DomainValidationError("Gagal mendaftarkan akun pada Supabase Auth.") from exc
+
+        user = getattr(response, "user", None)
+        session = getattr(response, "session", None)
+        if not user or not getattr(user, "id", None):
+            raise DomainValidationError("Respons registrasi Supabase Auth tidak menyertakan identitas pengguna.")
+
+        access_token = getattr(session, "access_token", None) if session else None
+        return {
+            "auth_user_id": str(user.id),
+            "email": str(getattr(user, "email", None) or email).lower(),
+            "access_token": str(access_token) if access_token else None,
+            "requires_email_confirmation": not bool(access_token),
+        }
+
+    def auth_sign_in(self, email: str, password: str) -> dict[str, Any]:
+        """Authenticate user credentials against Supabase GoTrue Auth."""
+        auth_client = self._client_factory(self._config)
+        try:
+            response = auth_client.auth.sign_in_with_password(
+                {"email": email, "password": password}
+            )
+        except Exception as exc:
+            raise DomainUnauthorizedError("Email atau password tidak sesuai.") from exc
+
+        user = getattr(response, "user", None)
+        session = getattr(response, "session", None)
+        access_token = getattr(session, "access_token", None) if session else None
+        if not user or not getattr(user, "id", None) or not access_token:
+            raise DomainUnauthorizedError("Email atau password tidak sesuai.")
+
+        return {
+            "auth_user_id": str(user.id),
+            "email": str(getattr(user, "email", None) or email).lower(),
+            "access_token": str(access_token),
+        }
+
+    def auth_get_user(self, access_token: str) -> dict[str, Any] | None:
+        """Verify a Supabase JWT access token and return the authenticated user identity."""
+        clean_token = (access_token or "").strip()
+        if not clean_token or clean_token.startswith("tok_"):
+            return None
+        auth_client = self._client_factory(self._config, access_token=clean_token)
+        try:
+            response = auth_client.auth.get_user(clean_token)
+        except Exception:
+            return None
+
+        user = getattr(response, "user", None)
+        if not user or not getattr(user, "id", None):
+            return None
+        return {
+            "auth_user_id": str(user.id),
+            "email": str(getattr(user, "email", None) or "").lower(),
+        }
+
+    def auth_sign_out(self, access_token: str) -> bool:
+        """Invalidate the caller's session on Supabase Auth using a request-scoped client."""
+        clean_token = (access_token or "").strip()
+        if not clean_token or clean_token.startswith("tok_"):
+            return False
+        scoped_client = self._client_factory(self._config, access_token=clean_token)
+        try:
+            scoped_client.auth.sign_out()
+            return True
+        except Exception as exc:
+            logger.warning("Gagal melakukan sign_out pada Supabase Auth: %s", type(exc).__name__)
+            return False
+
     def list_profiles(self) -> list[dict[str, Any]]:
-        resp = self._client.table("profiles").select("*").execute()
-        return list(resp.data or [])
+        client = self._get_client()
+        try:
+            resp = client.table("profiles").select("*").execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_profiles")
+        return [dict(p) for p in (resp.data or [])]
 
     def get_profile_by_id(self, profile_id: str) -> dict[str, Any] | None:
-        resp = self._client.table("profiles").select("*").eq("id", profile_id).limit(1).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        try:
+            resp = client.table("profiles").select("*").eq("id", profile_id).limit(1).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_profile_by_id")
+        return dict(resp.data[0]) if resp.data else None
+
+    def get_profile_by_auth_user_id(self, auth_user_id: str) -> dict[str, Any] | None:
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("profiles")
+                .select("*")
+                .eq("auth_user_id", auth_user_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_profile_by_auth_user_id")
+        return dict(resp.data[0]) if resp.data else None
 
     def get_profile_by_email(self, email: str) -> dict[str, Any] | None:
-        resp = self._client.table("profiles").select("*").eq("email", email.lower()).limit(1).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("profiles")
+                .select("*")
+                .eq("email", email.strip().lower())
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_profile_by_email")
+        return dict(resp.data[0]) if resp.data else None
 
     def get_profile_by_username(self, username: str) -> dict[str, Any] | None:
-        resp = self._client.table("profiles").select("*").eq("username", username).limit(1).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("profiles")
+                .select("*")
+                .eq("username", username.strip())
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_profile_by_username")
+        return dict(resp.data[0]) if resp.data else None
 
     def create_profile(self, data: dict[str, Any]) -> dict[str, Any]:
-        payload = {k: v for k, v in data.items() if k != "password_hash"}
-        resp = self._client.table("profiles").insert(payload).execute()
-        return resp.data[0]
+        payload = {k: v for k, v in data.items() if k not in ("password_hash", "access_token")}
+        scoped_client = self._get_client(data.get("access_token"))
+        try:
+            resp = scoped_client.table("profiles").insert(payload).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_profile")
+        if not resp.data:
+            raise DomainValidationError("Gagal menyimpan profil pengguna baru.")
+        return dict(resp.data[0])
 
     def update_profile(self, profile_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        resp = self._client.table("profiles").update(data).eq("id", profile_id).execute()
-        return resp.data[0] if resp.data else None
+        payload = {
+            k: v
+            for k, v in data.items()
+            if k not in ("id", "password_hash", "access_token")
+        }
+        scoped_client = self._get_client(data.get("access_token"))
+        try:
+            resp = scoped_client.table("profiles").update(payload).eq("id", profile_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_profile")
+        return dict(resp.data[0]) if resp.data else None
 
     def list_games(self) -> list[dict[str, Any]]:
-        resp = self._client.table("games").select("*").eq("is_active", True).execute()
+        client = self._get_client()
+        try:
+            resp = client.table("games").select("*").eq("is_active", True).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_games")
         return list(resp.data or [])
 
     def get_game_by_id(self, game_id: str) -> dict[str, Any] | None:
-        resp = self._client.table("games").select("*").eq("id", game_id).limit(1).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        column = "id" if _is_uuid(game_id) else "slug"
+        try:
+            resp = client.table("games").select("*").eq(column, game_id).limit(1).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_game_by_id")
+        return dict(resp.data[0]) if resp.data else None
+
+    def _enrich_tournament(
+        self,
+        tournament: dict[str, Any],
+        games_by_id: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        enriched = dict(tournament)
+        if games_by_id is not None:
+            game = games_by_id.get(str(tournament.get("game_id") or ""))
+        else:
+            game = self.get_game_by_id(str(tournament.get("game_id") or ""))
+        enriched["game_name"] = game["name"] if game else "Unknown Game"
+        regs = self.list_registrations_by_tournament(str(tournament["id"]))
+        enriched["registered_teams_count"] = len(regs)
+        enriched["approved_teams_count"] = sum(
+            1 for r in regs if r.get("status") == "approved"
+        )
+        return enriched
 
     def list_tournaments(
         self, status: str | None = None, game_id: str | None = None
     ) -> list[dict[str, Any]]:
-        query = self._client.table("tournaments").select("*")
+        client = self._get_client()
+        query = client.table("tournaments").select("*")
         if status:
             query = query.eq("status", status)
         if game_id:
             query = query.eq("game_id", game_id)
-        resp = query.order("start_date", desc=False).execute()
-        return list(resp.data or [])
+        try:
+            resp = query.order("start_date", desc=False).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_tournaments")
+        games_by_id = {str(g["id"]): g for g in self.list_games()}
+        return [self._enrich_tournament(t, games_by_id) for t in (resp.data or [])]
 
     def get_tournament_by_id(self, tournament_id: str) -> dict[str, Any] | None:
-        resp = self._client.table("tournaments").select("*").eq("id", tournament_id).limit(1).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        column = "id" if _is_uuid(tournament_id) else "slug"
+        try:
+            resp = client.table("tournaments").select("*").eq(column, tournament_id).limit(1).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_tournament_by_id")
+        if not resp.data:
+            return None
+        return self._enrich_tournament(resp.data[0])
 
     def create_tournament(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("tournaments").insert(data).execute()
-        return resp.data[0]
+        client = self._get_client()
+        try:
+            resp = client.table("tournaments").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_tournament")
+        if not resp.data:
+            raise DomainForbiddenError("Operasi pembuatan turnamen ditolak oleh kebijakan RLS.")
+        return self._enrich_tournament(resp.data[0])
 
     def update_tournament(
         self, tournament_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        resp = self._client.table("tournaments").update(data).eq("id", tournament_id).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        try:
+            resp = client.table("tournaments").update(data).eq("id", tournament_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_tournament")
+        return self._enrich_tournament(resp.data[0]) if resp.data else None
 
     def delete_tournament(self, tournament_id: str) -> bool:
-        resp = self._client.table("tournaments").delete().eq("id", tournament_id).execute()
+        client = self._get_client()
+        try:
+            resp = client.table("tournaments").delete().eq("id", tournament_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "delete_tournament")
         return bool(resp.data)
 
     def is_staff_assigned(self, tournament_id: str, user_id: str) -> bool:
-        resp = (
-            self._client.table("tournament_staff")
-            .select("id")
-            .eq("tournament_id", tournament_id)
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("tournament_staff")
+                .select("id")
+                .eq("tournament_id", tournament_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "is_staff_assigned")
         return bool(resp.data)
 
+    def _enrich_team(
+        self,
+        team: dict[str, Any],
+        games_by_id: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        enriched = dict(team)
+        members = self.list_team_members(str(team["id"]))
+        enriched["members"] = members
+        enriched["member_count"] = len(members)
+        if games_by_id is not None:
+            game = games_by_id.get(str(team.get("game_id") or ""))
+        else:
+            game = self.get_game_by_id(str(team.get("game_id") or ""))
+        enriched["game_name"] = game["name"] if game else "Unknown Game"
+        return enriched
+
     def list_teams(self, game_id: str | None = None) -> list[dict[str, Any]]:
-        query = self._client.table("teams").select("*")
+        client = self._get_client()
+        query = client.table("teams").select("*")
         if game_id:
             query = query.eq("game_id", game_id)
-        resp = query.execute()
-        return list(resp.data or [])
+        try:
+            resp = query.execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_teams")
+        games_by_id = {str(g["id"]): g for g in self.list_games()}
+        return [self._enrich_team(t, games_by_id) for t in (resp.data or [])]
 
     def get_team_by_id(self, team_id: str) -> dict[str, Any] | None:
-        resp = self._client.table("teams").select("*").eq("id", team_id).limit(1).execute()
+        client = self._get_client()
+        try:
+            resp = client.table("teams").select("*").eq("id", team_id).limit(1).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_team_by_id")
         if not resp.data:
             return None
-        team = dict(resp.data[0])
-        team["members"] = self.list_team_members(team_id)
-        return team
+        return self._enrich_team(resp.data[0])
 
     def create_team(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("teams").insert(data).execute()
-        return resp.data[0]
+        client = self._get_client()
+        try:
+            resp = client.table("teams").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_team")
+        if not resp.data:
+            raise DomainForbiddenError("Operasi pembuatan tim ditolak oleh kebijakan RLS.")
+        return self._enrich_team(resp.data[0])
 
     def update_team(self, team_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        resp = self._client.table("teams").update(data).eq("id", team_id).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        try:
+            resp = client.table("teams").update(data).eq("id", team_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_team")
+        return self._enrich_team(resp.data[0]) if resp.data else None
 
     def list_team_members(self, team_id: str) -> list[dict[str, Any]]:
-        resp = (
-            self._client.table("team_members")
-            .select("*")
-            .eq("team_id", team_id)
-            .eq("is_active", True)
-            .execute()
-        )
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("team_members")
+                .select("*")
+                .eq("team_id", team_id)
+                .eq("is_active", True)
+                .execute()
+            )
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_team_members")
         return list(resp.data or [])
 
     def add_team_member(self, team_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        client = self._get_client()
         payload = {**data, "team_id": team_id}
-        resp = self._client.table("team_members").insert(payload).execute()
-        return resp.data[0]
+        try:
+            resp = client.table("team_members").insert(payload).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "add_team_member")
+        if not resp.data:
+            raise DomainForbiddenError("Operasi penambahan anggota tim ditolak oleh kebijakan RLS.")
+        return dict(resp.data[0])
 
     def list_registrations_by_tournament(self, tournament_id: str) -> list[dict[str, Any]]:
-        resp = (
-            self._client.table("registrations")
-            .select("*")
-            .eq("tournament_id", tournament_id)
-            .execute()
-        )
-        return list(resp.data or [])
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("registrations")
+                .select("*")
+                .eq("tournament_id", tournament_id)
+                .execute()
+            )
+            teams_resp = client.table("teams").select("id,name,tag").execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_registrations_by_tournament")
+        teams_by_id = {str(t["id"]): t for t in (teams_resp.data or [])}
+        results: list[dict[str, Any]] = []
+        for reg in resp.data or []:
+            enriched = dict(reg)
+            team = teams_by_id.get(str(reg.get("team_id") or ""))
+            enriched["team_name"] = team["name"] if team else "Unknown Team"
+            enriched["team_tag"] = team["tag"] if team else "---"
+            results.append(enriched)
+        results.sort(key=lambda r: (r.get("seed_number") or 999, r.get("registered_at") or ""))
+        return results
 
     def get_registration_by_id(self, registration_id: str) -> dict[str, Any] | None:
-        resp = (
-            self._client.table("registrations")
-            .select("*")
-            .eq("id", registration_id)
-            .limit(1)
-            .execute()
-        )
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("registrations")
+                .select("*")
+                .eq("id", registration_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_registration_by_id")
+        return dict(resp.data[0]) if resp.data else None
 
     def create_registration(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("registrations").insert(data).execute()
-        return resp.data[0]
+        client = self._get_client()
+        try:
+            resp = client.table("registrations").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_registration")
+        if not resp.data:
+            raise DomainForbiddenError("Operasi pendaftaran tim ditolak oleh kebijakan RLS.")
+        return dict(resp.data[0])
 
     def update_registration_status(
         self, registration_id: str, status: str, verified_by: str, notes: str = ""
     ) -> dict[str, Any] | None:
-        resp = (
-            self._client.table("registrations")
-            .update({"status": status, "verified_by": verified_by, "notes": notes})
-            .eq("id", registration_id)
-            .execute()
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("registrations")
+                .update({"status": status, "verified_by": verified_by, "notes": notes})
+                .eq("id", registration_id)
+                .execute()
+            )
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_registration_status")
+        return dict(resp.data[0]) if resp.data else None
+
+    def _enrich_match(
+        self,
+        match: dict[str, Any],
+        teams_by_id: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        enriched = dict(match)
+        if teams_by_id is None:
+            client = self._get_client()
+            teams_resp = client.table("teams").select("id,name,tag").execute()
+            teams_by_id = {str(t["id"]): t for t in (teams_resp.data or [])}
+        team_a = teams_by_id.get(str(match.get("team_a_id") or ""))
+        team_b = teams_by_id.get(str(match.get("team_b_id") or ""))
+        winner = teams_by_id.get(str(match.get("winner_team_id") or ""))
+        enriched["team_a_name"] = (
+            team_a["name"]
+            if team_a
+            else ("BYE" if match.get("status") == "bye" and not team_a else "TBD")
         )
-        return resp.data[0] if resp.data else None
+        enriched["team_a_tag"] = team_a["tag"] if team_a else "---"
+        enriched["team_b_name"] = (
+            team_b["name"]
+            if team_b
+            else ("BYE" if match.get("status") == "bye" and not team_b else "TBD")
+        )
+        enriched["team_b_tag"] = team_b["tag"] if team_b else "---"
+        enriched["winner_team_name"] = winner["name"] if winner else None
+        return enriched
 
     def list_matches_by_tournament(self, tournament_id: str) -> list[dict[str, Any]]:
-        resp = (
-            self._client.table("matches")
-            .select("*")
-            .eq("tournament_id", tournament_id)
-            .order("round_number")
-            .order("match_number")
-            .execute()
-        )
-        return list(resp.data or [])
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("matches")
+                .select("*")
+                .eq("tournament_id", tournament_id)
+                .order("round_number")
+                .order("match_number")
+                .execute()
+            )
+            teams_resp = client.table("teams").select("id,name,tag").execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_matches_by_tournament")
+        teams_by_id = {str(t["id"]): t for t in (teams_resp.data or [])}
+        return [self._enrich_match(m, teams_by_id) for m in (resp.data or [])]
 
     def get_match_by_id(self, match_id: str) -> dict[str, Any] | None:
-        resp = self._client.table("matches").select("*").eq("id", match_id).limit(1).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        try:
+            resp = client.table("matches").select("*").eq("id", match_id).limit(1).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "get_match_by_id")
+        if not resp.data:
+            return None
+        return self._enrich_match(resp.data[0])
 
     def replace_tournament_matches(
         self, tournament_id: str, matches: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        self._client.table("matches").delete().eq("tournament_id", tournament_id).execute()
-        if matches:
-            self._client.table("matches").insert(matches).execute()
+        """Atomically replace bracket matches for a tournament using PostgreSQL RPC transaction."""
+        if not tournament_id or not isinstance(tournament_id, str):
+            raise DomainValidationError(
+                "Parameter 'tournament_id' wajib diisi.",
+                {"field": "tournament_id"},
+            )
+        if matches is None or not isinstance(matches, list):
+            raise DomainValidationError(
+                "Parameter 'matches' wajib berupa JSON array / list.",
+                {"field": "matches"},
+            )
+        if not self.get_tournament_by_id(tournament_id):
+            raise DomainNotFoundError("Turnamen tidak ditemukan.", {"tournament_id": tournament_id})
+
+        prepared: list[dict[str, Any]] = []
+        for idx, match in enumerate(matches):
+            if not isinstance(match, dict) or "round_number" not in match or "match_number" not in match:
+                raise DomainValidationError(
+                    "Struktur data pertandingan pada bracket tidak valid.",
+                    {"index": idx},
+                )
+            if (
+                isinstance(match["round_number"], bool)
+                or not isinstance(match["round_number"], int)
+                or match["round_number"] < 1
+                or isinstance(match["match_number"], bool)
+                or not isinstance(match["match_number"], int)
+                or match["match_number"] < 1
+            ):
+                raise DomainValidationError(
+                    "Field 'round_number' dan 'match_number' wajib berupa integer positif.",
+                    {"index": idx},
+                )
+            item = dict(match)
+            item.setdefault("id", str(uuid.uuid4()))
+            item["tournament_id"] = tournament_id
+            prepared.append(item)
+
+        client = self._get_client()
+        try:
+            client.rpc(
+                "replace_tournament_matches",
+                {"p_tournament_id": tournament_id, "p_matches": prepared},
+            ).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "replace_tournament_matches")
+
         return self.list_matches_by_tournament(tournament_id)
 
     def update_match(self, match_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        resp = self._client.table("matches").update(data).eq("id", match_id).execute()
-        return resp.data[0] if resp.data else None
+        client = self._get_client()
+        try:
+            resp = client.table("matches").update(data).eq("id", match_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "update_match")
+        if not resp.data:
+            return None
+        return self._enrich_match(resp.data[0])
 
     def record_match_result(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("match_results").insert(data).execute()
-        return resp.data[0]
+        client = self._get_client()
+        try:
+            resp = client.table("match_results").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "record_match_result")
+        if not resp.data:
+            raise DomainForbiddenError("Operasi pencatatan hasil pertandingan ditolak oleh kebijakan RLS.")
+        return dict(resp.data[0])
 
     def list_match_results(self, match_id: str) -> list[dict[str, Any]]:
-        resp = self._client.table("match_results").select("*").eq("match_id", match_id).execute()
+        client = self._get_client()
+        try:
+            resp = client.table("match_results").select("*").eq("match_id", match_id).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_match_results")
         return list(resp.data or [])
 
     def list_announcements_by_tournament(self, tournament_id: str) -> list[dict[str, Any]]:
-        resp = (
-            self._client.table("announcements")
-            .select("*")
-            .eq("tournament_id", tournament_id)
-            .order("is_pinned", desc=True)
-            .order("published_at", desc=True)
-            .execute()
-        )
-        return list(resp.data or [])
+        client = self._get_client()
+        try:
+            resp = (
+                client.table("announcements")
+                .select("*")
+                .eq("tournament_id", tournament_id)
+                .order("is_pinned", desc=True)
+                .order("published_at", desc=True)
+                .execute()
+            )
+            profiles_resp = client.table("profiles").select("id,full_name").execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_announcements_by_tournament")
+        profiles_by_id = {str(p["id"]): p for p in (profiles_resp.data or [])}
+        results: list[dict[str, Any]] = []
+        for ann in resp.data or []:
+            enriched = dict(ann)
+            author = profiles_by_id.get(str(ann.get("author_id") or ""))
+            enriched["author_name"] = author["full_name"] if author else "Panitia"
+            results.append(enriched)
+        return results
 
     def create_announcement(self, data: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.table("announcements").insert(data).execute()
-        return resp.data[0]
+        client = self._get_client()
+        try:
+            resp = client.table("announcements").insert(data).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "create_announcement")
+        if not resp.data:
+            raise DomainForbiddenError("Operasi publikasi pengumuman ditolak oleh kebijakan RLS.")
+        return dict(resp.data[0])
 
     def log_activity(
         self,
@@ -237,12 +743,31 @@ class SupabaseDataStoreRepository(DataStoreRepositoryProtocol):
             "action": action,
             "details": details,
         }
-        resp = self._client.table("activity_logs").insert(payload).execute()
-        return resp.data[0]
+        client = self._get_client()
+        try:
+            resp = client.table("activity_logs").insert(payload).execute()
+            if resp.data:
+                return dict(resp.data[0])
+        except Exception as exc:
+            logger.warning(
+                "Gagal menyimpan activity_log ke Supabase (action=%s, entity_type=%s): %s",
+                action,
+                entity_type,
+                type(exc).__name__,
+            )
+        return {
+            "id": str(uuid.uuid4()),
+            **payload,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     def list_activity_logs(self, tournament_id: str | None = None) -> list[dict[str, Any]]:
-        query = self._client.table("activity_logs").select("*")
+        client = self._get_client()
+        query = client.table("activity_logs").select("*")
         if tournament_id:
             query = query.eq("tournament_id", tournament_id)
-        resp = query.order("created_at", desc=True).execute()
+        try:
+            resp = query.order("created_at", desc=True).execute()
+        except Exception as exc:
+            _raise_domain_error_from_postgrest(exc, "list_activity_logs")
         return list(resp.data or [])
