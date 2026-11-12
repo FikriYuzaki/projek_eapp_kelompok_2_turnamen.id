@@ -1,6 +1,6 @@
-# Dokumentasi Skema Database PostgreSQL — Turnamen.in
+# Dokumentasi Skema Database PostgreSQL: Turnamen.in
 
-Dokumen ini menjelaskan rancangan **Entity-Relationship Diagram (ERD)**, relasi, kardinalitas, constraint, index, dan aturan integritas untuk 12 tabel utama Turnamen.in. File migrasi SQL fisik tersedia di [`supabase/migrations/0001_initial_schema.sql`](file:///C:/Turnamen.in/supabase/migrations/0001_initial_schema.sql) dan data demo tersedia di [`supabase/seed.sql`](file:///C:/Turnamen.in/supabase/seed.sql).
+Dokumen ini menjelaskan rancangan **Entity-Relationship Diagram (ERD)**, relasi, kardinalitas, constraint, index, dan aturan integritas untuk 12 tabel utama Turnamen.in. File migrasi SQL fisik tersedia di [`supabase/migrations/0001_initial_schema.sql`](../supabase/migrations/0001_initial_schema.sql) dan data demo tersedia di [`supabase/seed.sql`](../supabase/seed.sql).
 
 ---
 
@@ -140,3 +140,16 @@ erDiagram
   - `actor_id` → `profiles(id)` (`ON DELETE SET NULL ON UPDATE CASCADE`)
   - `tournament_id` → `tournaments(id)` (`ON DELETE CASCADE ON UPDATE CASCADE`)
 - **Kolom Audit:** `entity_type`, `entity_id`, `action`, `details (JSONB)`, `created_at`
+
+---
+
+## 3. Trigger Otomatis dan Kebijakan Row Level Security (RLS)
+
+1. **Trigger `set_updated_at()`:**
+   - Diterapkan pada `profiles`, `games`, `tournaments`, `teams`, `team_members`, `registrations`, `matches`, `payments`, dan `announcements` agar kolom `updated_at` diperbarui otomatis setiap kali terjadi operasi `UPDATE`.
+2. **Aktivasi RLS Menyeluruh:**
+   - Seluruh 12 tabel pada skema `public` mengaktifkan `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`.
+3. **Fungsi Pemeriksa Role (`public.current_user_role()`):**
+   - Membaca role langsung dari `public.profiles` berdasarkan `auth.uid()` dengan `SECURITY DEFINER`, bukan dari `user_metadata` yang dapat dimanipulasi klien.
+4. **Perlindungan Registrasi Mandiri:**
+   - Kebijakan `Self register player or captain only` pada `public.profiles` memastikan operasi `INSERT` profil baru hanya mengizinkan `role IN ('player', 'team_captain')`.

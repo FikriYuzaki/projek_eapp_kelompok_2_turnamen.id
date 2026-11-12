@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from backend.core.exceptions import DomainNotFoundError
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
 from backend.repositories.mock.mock_data import build_initial_mock_store
 
@@ -25,9 +26,6 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
         """Reset all in-memory tables back to the initial demo seed state."""
         self._store = build_initial_mock_store()
 
-    # -------------------------------------------------------------------------
-    # Profiles
-    # -------------------------------------------------------------------------
     def list_profiles(self) -> list[dict[str, Any]]:
         return [copy.deepcopy(p) for p in self._store["profiles"]]
 
@@ -81,9 +79,6 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
                 return copy.deepcopy(p)
         return None
 
-    # -------------------------------------------------------------------------
-    # Games
-    # -------------------------------------------------------------------------
     def list_games(self) -> list[dict[str, Any]]:
         return [copy.deepcopy(g) for g in self._store["games"] if g.get("is_active", True)]
 
@@ -93,9 +88,6 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
                 return copy.deepcopy(g)
         return None
 
-    # -------------------------------------------------------------------------
-    # Tournaments & Staff
-    # -------------------------------------------------------------------------
     def list_tournaments(
         self, status: str | None = None, game_id: str | None = None
     ) -> list[dict[str, Any]]:
@@ -132,6 +124,11 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
         return None
 
     def create_tournament(self, data: dict[str, Any]) -> dict[str, Any]:
+        if not self.get_game_by_id(data["game_id"]):
+            raise DomainNotFoundError("Game tidak ditemukan.", {"game_id": data["game_id"]})
+        if not self.get_profile_by_id(data["organizer_id"]):
+            raise DomainNotFoundError("Profil organizer tidak ditemukan.", {"organizer_id": data["organizer_id"]})
+
         now = _now_iso()
         tournament_id = data.get("id") or str(uuid.uuid4())
         record: dict[str, Any] = {
@@ -164,6 +161,8 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
     def update_tournament(
         self, tournament_id: str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
+        if "game_id" in data and not self.get_game_by_id(data["game_id"]):
+            raise DomainNotFoundError("Game tidak ditemukan.", {"game_id": data["game_id"]})
         for t in self._store["tournaments"]:
             if t["id"] == tournament_id:
                 for key, value in data.items():
@@ -186,9 +185,6 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
             for s in self._store["tournament_staff"]
         )
 
-    # -------------------------------------------------------------------------
-    # Teams & Members
-    # -------------------------------------------------------------------------
     def list_teams(self, game_id: str | None = None) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for team in self._store["teams"]:
@@ -215,6 +211,11 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
         return None
 
     def create_team(self, data: dict[str, Any]) -> dict[str, Any]:
+        if not self.get_game_by_id(data["game_id"]):
+            raise DomainNotFoundError("Game tidak ditemukan.", {"game_id": data["game_id"]})
+        if not self.get_profile_by_id(data["captain_id"]):
+            raise DomainNotFoundError("Profil kapten tim tidak ditemukan.", {"captain_id": data["captain_id"]})
+
         now = _now_iso()
         team_id = data.get("id") or str(uuid.uuid4())
         record: dict[str, Any] = {
@@ -250,6 +251,9 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
         ]
 
     def add_team_member(self, team_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        if not self.get_team_by_id(team_id):
+            raise DomainNotFoundError("Tim tidak ditemukan.", {"team_id": team_id})
+
         member_id = data.get("id") or str(uuid.uuid4())
         record: dict[str, Any] = {
             "id": member_id,
@@ -263,9 +267,6 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
         self._store["team_members"].append(record)
         return copy.deepcopy(record)
 
-    # -------------------------------------------------------------------------
-    # Registrations
-    # -------------------------------------------------------------------------
     def list_registrations_by_tournament(self, tournament_id: str) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         teams_by_id = {t["id"]: t for t in self._store["teams"]}
@@ -286,6 +287,11 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
         return None
 
     def create_registration(self, data: dict[str, Any]) -> dict[str, Any]:
+        if not self.get_tournament_by_id(data["tournament_id"]):
+            raise DomainNotFoundError("Turnamen tidak ditemukan.", {"tournament_id": data["tournament_id"]})
+        if not self.get_team_by_id(data["team_id"]):
+            raise DomainNotFoundError("Tim tidak ditemukan.", {"team_id": data["team_id"]})
+
         now = _now_iso()
         reg_id = data.get("id") or str(uuid.uuid4())
         record: dict[str, Any] = {
@@ -319,9 +325,6 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
                 return copy.deepcopy(reg)
         return None
 
-    # -------------------------------------------------------------------------
-    # Matches & Bracket
-    # -------------------------------------------------------------------------
     def _enrich_match(self, match: dict[str, Any]) -> dict[str, Any]:
         enriched = copy.deepcopy(match)
         teams_by_id = {t["id"]: t for t in self._store["teams"]}
@@ -353,6 +356,8 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
     def replace_tournament_matches(
         self, tournament_id: str, matches: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
+        if not self.get_tournament_by_id(tournament_id):
+            raise DomainNotFoundError("Turnamen tidak ditemukan.", {"tournament_id": tournament_id})
         self._store["matches"] = [
             m for m in self._store["matches"] if m["tournament_id"] != tournament_id
         ]
@@ -371,6 +376,9 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
         return None
 
     def record_match_result(self, data: dict[str, Any]) -> dict[str, Any]:
+        if not self.get_match_by_id(data["match_id"]):
+            raise DomainNotFoundError("Pertandingan tidak ditemukan.", {"match_id": data["match_id"]})
+
         result_id = data.get("id") or str(uuid.uuid4())
         record: dict[str, Any] = {
             "id": result_id,
@@ -394,9 +402,6 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
             if r["match_id"] == match_id
         ]
 
-    # -------------------------------------------------------------------------
-    # Announcements & Activity Logs
-    # -------------------------------------------------------------------------
     def list_announcements_by_tournament(self, tournament_id: str) -> list[dict[str, Any]]:
         profiles_by_id = {p["id"]: p for p in self._store["profiles"]}
         items: list[dict[str, Any]] = []
@@ -410,6 +415,9 @@ class MockDataStoreRepository(DataStoreRepositoryProtocol):
         return items
 
     def create_announcement(self, data: dict[str, Any]) -> dict[str, Any]:
+        if not self.get_tournament_by_id(data["tournament_id"]):
+            raise DomainNotFoundError("Turnamen tidak ditemukan.", {"tournament_id": data["tournament_id"]})
+
         now = _now_iso()
         ann_id = data.get("id") or str(uuid.uuid4())
         record: dict[str, Any] = {

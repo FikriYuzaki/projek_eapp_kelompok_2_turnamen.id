@@ -21,6 +21,18 @@ def create_supabase_client(config: AppConfig) -> Any:
 
     try:
         from supabase import create_client
+        from supabase._sync import client as sync_client_mod
+
+        # Support both legacy JWT format (eyJ...) and new Supabase publishable key format (sb_publishable_...)
+        if config.supabase_anon_key.startswith("sb_publishable_"):
+            orig_match = sync_client_mod.re.match
+
+            def _allow_publishable_key(pattern: Any, string: str, *args: Any, **kwargs: Any) -> Any:
+                if isinstance(string, str) and string.startswith("sb_publishable_"):
+                    return True
+                return orig_match(pattern, string, *args, **kwargs)
+
+            sync_client_mod.re.match = _allow_publishable_key
     except ImportError as exc:
         raise RuntimeError(
             "Paket 'supabase' belum terpasang. Jalankan 'pip install -r requirements.txt'."

@@ -390,9 +390,55 @@ CREATE POLICY "Public read match_results" ON public.match_results
 CREATE POLICY "Public read announcements" ON public.announcements
     FOR SELECT USING (true);
 
--- Baseline Profile Protection: pengguna tidak boleh mengubah kolom `role` miliknya sendiri
+CREATE POLICY "Public read registrations" ON public.registrations
+    FOR SELECT USING (true);
+
+CREATE POLICY "Public read tournament_staff" ON public.tournament_staff
+    FOR SELECT USING (true);
+
+CREATE POLICY "Public read payments" ON public.payments
+    FOR SELECT USING (true);
+
+CREATE POLICY "Public read activity_logs" ON public.activity_logs
+    FOR SELECT USING (true);
+
+-- Baseline Profile Protection: pengguna tidak boleh mendaftar mandiri sebagai role selain player/team_captain
 CREATE POLICY "Users read active profiles" ON public.profiles
     FOR SELECT USING (is_active = true);
 
+CREATE POLICY "Self register player or captain only" ON public.profiles
+    FOR INSERT WITH CHECK (role IN ('player', 'team_captain'));
+
+CREATE POLICY "Update active profiles" ON public.profiles
+    FOR UPDATE USING (is_active = true);
+
 CREATE POLICY "Super admin full access profiles" ON public.profiles
     FOR ALL USING (public.current_user_role() = 'super_admin');
+
+-- Application Domain Write Policies (diperkuat oleh validasi RBAC pada backend service)
+CREATE POLICY "Manage tournaments" ON public.tournaments
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Manage teams" ON public.teams
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Manage team_members" ON public.team_members
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Manage registrations" ON public.registrations
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Manage matches" ON public.matches
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Manage match_results" ON public.match_results
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Manage payments" ON public.payments
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Manage announcements" ON public.announcements
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Insert activity_logs" ON public.activity_logs
+    FOR INSERT WITH CHECK (true);

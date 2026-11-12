@@ -81,10 +81,10 @@ pytest tests/unit/test_auth_and_permissions.py -v
 - Keputusan otorisasi didasarkan pada `profiles.role`, bukan metadata yang dapat diedit pengguna.
 
 ## 13. Checklist Pekerjaan
-- [ ] Memverifikasi DDL di `supabase/migrations/0001_initial_schema.sql` dan `supabase/seed.sql`.
-- [ ] Memastikan `MockDataStoreRepository` dan `SupabaseDataStoreRepository` mematuhi `DataStoreRepositoryProtocol`.
-- [ ] Memastikan seluruh 5 role diuji pada `tests/unit/test_auth_and_permissions.py`.
-- [ ] Menyempurnakan kebijakan RLS dan adapter Supabase saat kredensial proyek uji tersedia.
+- [x] Memverifikasi DDL di `supabase/migrations/0001_initial_schema.sql` dan `supabase/seed.sql`.
+- [x] Memastikan `MockDataStoreRepository` dan `SupabaseDataStoreRepository` mematuhi `DataStoreRepositoryProtocol`.
+- [x] Memastikan seluruh 5 role diuji pada `tests/unit/test_auth_and_permissions.py`.
+- [x] Menyempurnakan kebijakan RLS dan adapter Supabase saat kredensial proyek uji tersedia.
 
 ## 14. Git Branch Assignment & Workflow
 

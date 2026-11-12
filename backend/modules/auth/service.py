@@ -15,6 +15,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from backend.contracts.dtos import (
     ALL_ROLES,
     ROLE_PLAYER,
+    ROLE_SUPER_ADMIN,
     SELF_REGISTRABLE_ROLES,
 )
 from backend.core.exceptions import (
@@ -24,6 +25,7 @@ from backend.core.exceptions import (
     DomainUnauthorizedError,
     DomainValidationError,
 )
+from backend.modules.auth.permissions import require_authenticated, require_permission
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
 
 
@@ -152,3 +154,77 @@ class AuthService:
         if not profile:
             raise DomainNotFoundError("Profil pengguna tidak ditemukan.", {"user_id": user_id})
         return _sanitize_profile(profile)
+
+    def update_profile(
+        self,
+        actor: dict[str, Any] | None,
+        target_user_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        active_actor = require_authenticated(actor)
+        is_super_admin = active_actor.get("role") == ROLE_SUPER_ADMIN
+        if active_actor["id"] != target_user_id and not is_super_admin:
+            raise DomainForbiddenError(
+                "Anda hanya diizinkan memperbarui profil milik sendiri.",
+                details={"actor_id": active_actor["id"], "target_user_id": target_user_id},
+            )
+
+        existing = self._repo.get_profile_by_id(target_user_id)
+        if not existing:
+            raise DomainNotFoundError("Profil pengguna tidak ditemukan.", {"user_id": target_user_id})
+
+        if "role" in payload and payload["role"] != existing.get("role") and not is_super_admin:
+            raise DomainForbiddenError(
+                "Pengguna biasa tidak diizinkan mengubah role miliknya sendiri.",
+                details={"requested_role": payload["role"]},
+            )
+
+        updates: dict[str, Any] = {}
+        if "full_name" in payload and payload["full_name"] is not None:
+            full_name = str(payload["full_name"]).strip()
+            if len(full_name) < 2:
+                raise DomainValidationError("Nama lengkap minimal terdiri dari 2 karakter.", {"field": "full_name"})
+            updates["full_name"] = full_name
+        if "phone" in payload:
+            updates["phone"] = str(payload["phone"]).strip() if payload["phone"] else None
+        if "avatar_url" in payload:
+            updates["avatar_url"] = str(payload["avatar_url"]).strip() if payload["avatar_url"] else None
+
+        updated = self._repo.update_profile(target_user_id, updates) if updates else existing
+        assert updated is not None
+        self._repo.log_activity(
+            actor_id=active_actor["id"],
+            tournament_id=None,
+            entity_type="profile",
+            entity_id=target_user_id,
+            action="PROFILE_UPDATED",
+            details={"updated_fields": list(updates.keys())},
+        )
+        return _sanitize_profile(updated)
+
+    def assign_role(
+        self,
+        actor: dict[str, Any] | None,
+        target_user_id: str,
+        new_role: str,
+    ) -> dict[str, Any]:
+        active_actor = require_permission(actor, "user:assign_role")
+        normalized_role = str(new_role or "").strip().lower()
+        if normalized_role not in ALL_ROLES:
+            raise DomainValidationError(f"Role '{normalized_role}' tidak dikenali.", {"field": "role"})
+
+        existing = self._repo.get_profile_by_id(target_user_id)
+        if not existing:
+            raise DomainNotFoundError("Profil pengguna tidak ditemukan.", {"user_id": target_user_id})
+
+        updated = self._repo.update_profile(target_user_id, {"role": normalized_role})
+        assert updated is not None
+        self._repo.log_activity(
+            actor_id=active_actor["id"],
+            tournament_id=None,
+            entity_type="profile",
+            entity_id=target_user_id,
+            action="USER_ROLE_ASSIGNED",
+            details={"old_role": existing.get("role"), "new_role": normalized_role},
+        )
+        return _sanitize_profile(updated)
