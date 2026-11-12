@@ -50,20 +50,42 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    overrides = {}
-    if args.mode:
+    overrides: dict[str, object] = {}
+    if args.mode is not None:
         overrides["app_mode"] = args.mode
-    if args.port:
+    if args.port is not None:
         overrides["api_port"] = args.port
 
-    config = load_config(overrides=overrides or None)
+    try:
+        config = load_config(overrides=overrides or None)
+    except ValueError as exc:
+        if args.check:
+            print(
+                json.dumps(
+                    {
+                        "config": None,
+                        "health_ok": False,
+                        "repository_ok": False,
+                        "games_count": 0,
+                        "tournaments_count": 0,
+                        "error": str(exc),
+                    },
+                    indent=2,
+                )
+            )
+            return 1
+        print(f"Error konfigurasi: {exc}", file=sys.stderr)
+        return 1
 
     if args.check:
         summary = run_smoke_check(config)
         print(json.dumps(summary, indent=2))
         return 0 if summary.get("health_ok") else 1
 
-    return launch_application(api_only=args.api_only, config=config)
+    try:
+        return launch_application(api_only=args.api_only, config=config)
+    except KeyboardInterrupt:
+        return 0
 
 
 if __name__ == "__main__":
