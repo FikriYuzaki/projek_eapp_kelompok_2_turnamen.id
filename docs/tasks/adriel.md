@@ -91,7 +91,7 @@ pytest tests/unit/test_bracket_engine.py -v
 
 ## 14. Git Branch Assignment & Workflow
 
-Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](../GIT_WORKFLOW.md).
 
 ### 1. Nama Branch Resmi
 `feature/adriel-tournament-match`
@@ -108,13 +108,12 @@ Mengembangkan dan memelihara logika domain turnamen dan registrasi (`backend/mod
   git switch -c feature/adriel-tournament-match
   git push -u origin feature/adriel-tournament-match
   ```
-- **Jika branch sudah ada di remote (`origin`):**
+- **Jika branch sudah tersedia di remote (`origin`), tetapi belum ada di lokal:**
   ```powershell
   git fetch origin
-  git switch feature/adriel-tournament-match
-  git pull --ff-only
+  git switch --track origin/feature/adriel-tournament-match
   ```
-- **Jika branch sudah ada di komputer lokal:**
+- **Jika branch sudah tersedia secara lokal di komputer Anda:**
   ```powershell
   git switch feature/adriel-tournament-match
   git pull --ff-only

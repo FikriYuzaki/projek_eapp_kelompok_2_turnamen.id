@@ -22,7 +22,7 @@ Menyediakan lapisan REST API `/api/v1` yang konsisten, tervalidasi, aman, dan te
 3. Mengembangkan dan memelihara blueprint route di `backend/api/routes/v1_routes.py` untuk seluruh grup kontrak:
    - `Health`, `Authentication`, `Games`, `Tournaments`, `Teams`, `Registrations`, `Matches`, `Announcements`, dan `Reports`.
 4. Mengembangkan `AnnouncementService` (`backend/modules/announcements/service.py`) dan `ReportService` (`backend/modules/reports/service.py` untuk laporan statistik & klasemen `standings`).
-5. Memelihara dokumentasi endpoint di [`docs/api/openapi-overview.md`](file:///C:/Turnamen.in/docs/api/openapi-overview.md) dan suite pengujian integrasi di `tests/integration/test_api_endpoints.py`.
+5. Memelihara dokumentasi endpoint di [`docs/api/openapi-overview.md`](../api/openapi-overview.md) dan suite pengujian integrasi di `tests/integration/test_api_endpoints.py`.
 
 ## 4. Folder yang Menjadi Tanggung Jawab
 - `backend/app.py`
@@ -55,7 +55,7 @@ Menyediakan lapisan REST API `/api/v1` yang konsisten, tervalidasi, aman, dan te
 - Dikonsumsi oleh `api-client.js` (Fikri) dan komponen UI (Ferlita).
 
 ## 8. Kontrak Input / Output
-Wajib mematuhi struktur JSON pada [`docs/contracts/api-contract.md`](file:///C:/Turnamen.in/docs/contracts/api-contract.md):
+Wajib mematuhi struktur JSON pada [`docs/contracts/api-contract.md`](../contracts/api-contract.md):
 - **Response Sukses:** `{"success": true, "message": "...", "data": ...}`
 - **Response Error:** `{"success": false, "message": "...", "error": {"code": "...", "details": ...}}`
 
@@ -94,7 +94,7 @@ python run.py --api-only
 
 ## 14. Git Branch Assignment & Workflow
 
-Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](../GIT_WORKFLOW.md).
 
 ### 1. Nama Branch Resmi
 `feature/anisa-api-report`
@@ -111,13 +111,12 @@ Mengembangkan dan memelihara Flask application factory (`backend/app.py`), route
   git switch -c feature/anisa-api-report
   git push -u origin feature/anisa-api-report
   ```
-- **Jika branch sudah ada di remote (`origin`):**
+- **Jika branch sudah tersedia di remote (`origin`), tetapi belum ada di lokal:**
   ```powershell
   git fetch origin
-  git switch feature/anisa-api-report
-  git pull --ff-only
+  git switch --track origin/feature/anisa-api-report
   ```
-- **Jika branch sudah ada di komputer lokal:**
+- **Jika branch sudah tersedia secara lokal di komputer Anda:**
   ```powershell
   git switch feature/anisa-api-report
   git pull --ff-only

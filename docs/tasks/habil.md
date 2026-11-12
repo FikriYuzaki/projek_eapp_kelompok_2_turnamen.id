@@ -17,8 +17,8 @@
 Menyediakan fondasi penyimpanan data dan keamanan identitas yang kokoh, di mana seluruh modul memiliki kontrak repository yang konsisten, dapat diuji secara penuh menggunakan `MockDataStoreRepository` (`APP_MODE=mock`), dan siap dihubungkan ke Supabase PostgreSQL (`APP_MODE=supabase`) dengan perlindungan RBAC dan RLS.
 
 ## 3. Daftar Tugas Terperinci
-1. Memelihara skema 12 tabel di [`supabase/migrations/0001_initial_schema.sql`](file:///C:/Turnamen.in/supabase/migrations/0001_initial_schema.sql) dan dokumentasi [`docs/database-schema.md`](file:///C:/Turnamen.in/docs/database-schema.md).
-2. Memelihara data seed SQL di [`supabase/seed.sql`](file:///C:/Turnamen.in/supabase/seed.sql) agar selaras dengan data mock Python.
+1. Memelihara skema 12 tabel di [`supabase/migrations/0001_initial_schema.sql`](../../supabase/migrations/0001_initial_schema.sql) dan dokumentasi [`docs/database-schema.md`](../database-schema.md).
+2. Memelihara data seed SQL di [`supabase/seed.sql`](../../supabase/seed.sql) agar selaras dengan data mock Python.
 3. Mengembangkan dan menyempurnakan kontrak repository di `backend/repositories/interfaces/repository_protocol.py`.
 4. Memelihara implementasi `MockDataStoreRepository` di `backend/repositories/mock/` dan mengimplementasikan query nyata pada `SupabaseDataStoreRepository` di `backend/repositories/supabase/` saat proyek cloud siap diuji.
 5. Mengembangkan layanan autentikasi dan otorisasi 5 role di `backend/modules/auth/` (`service.py` dan `permissions.py`).
@@ -54,9 +54,9 @@ Menyediakan fondasi penyimpanan data dan keamanan identitas yang kokoh, di mana 
 - Menyediakan layanan `AuthService` dan helper `RolePermissionGuard` bagi endpoint Flask API milik Anisa.
 
 ## 8. Kontrak Input / Output
-- **Kontrak Database:** Sesuai [`docs/contracts/database-contract.md`](file:///C:/Turnamen.in/docs/contracts/database-contract.md).
+- **Kontrak Database:** Sesuai [`docs/contracts/database-contract.md`](../contracts/database-contract.md).
 - **Kontrak Repository:** Seluruh method di `DataStoreRepositoryProtocol` mengembalikan `dict` atau `list[dict]` dengan nama field yang identik antara mode `mock` dan `supabase`.
-- **Kontrak Role & Izin:** Sesuai [`docs/contracts/role-permissions.md`](file:///C:/Turnamen.in/docs/contracts/role-permissions.md).
+- **Kontrak Role & Izin:** Sesuai [`docs/contracts/role-permissions.md`](../contracts/role-permissions.md).
 
 ## 9. Mock Data yang Tersedia
 File `backend/repositories/mock/mock_data.py` menyediakan dataset awal yang konsisten:
@@ -88,7 +88,7 @@ pytest tests/unit/test_auth_and_permissions.py -v
 
 ## 14. Git Branch Assignment & Workflow
 
-Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](../GIT_WORKFLOW.md).
 
 ### 1. Nama Branch Resmi
 `feature/habil-database-auth`
@@ -105,13 +105,12 @@ Mengembangkan dan memelihara skema migrasi dan seed Supabase (`supabase/`), infr
   git switch -c feature/habil-database-auth
   git push -u origin feature/habil-database-auth
   ```
-- **Jika branch sudah ada di remote (`origin`):**
+- **Jika branch sudah tersedia di remote (`origin`), tetapi belum ada di lokal:**
   ```powershell
   git fetch origin
-  git switch feature/habil-database-auth
-  git pull --ff-only
+  git switch --track origin/feature/habil-database-auth
   ```
-- **Jika branch sudah ada di komputer lokal:**
+- **Jika branch sudah tersedia secara lokal di komputer Anda:**
   ```powershell
   git switch feature/habil-database-auth
   git pull --ff-only

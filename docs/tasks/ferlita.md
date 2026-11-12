@@ -16,7 +16,7 @@
 Menghasilkan antarmuka desktop **Turnamen.in** bertema *Modern Dark Esports Management Dashboard* yang bersih, mudah dipahami panitia maupun pemain, memiliki komponen UI yang konsisten, menampilkan indikator jelas saat mode simulasi (`APP_MODE=mock`), dan terhubung secara rapi ke `window.TurnamenAPI`.
 
 ## 3. Daftar Tugas Terperinci
-1. Meninjau dan menyempurnakan dokumen arahan visual [`DESIGN.md`](file:///C:/Turnamen.in/DESIGN.md) serta variabel CSS di `desktop/web/assets/css/variables.css`.
+1. Meninjau dan menyempurnakan dokumen arahan visual [`DESIGN.md`](../../DESIGN.md) serta variabel CSS di `desktop/web/assets/css/variables.css`.
 2. Mengembangkan dan memoles komponen dasar di `desktop/web/assets/css/components.css` dan `desktop/web/assets/js/components/ui-components.js`:
    - Sidebar & Topbar.
    - Dashboard summary cards.
@@ -56,7 +56,7 @@ Menghasilkan antarmuka desktop **Turnamen.in** bertema *Modern Dark Esports Mana
 
 ## 7. Dependensi Modul
 - Bergantung pada `window.TurnamenConfig`, `window.TurnamenAPI`, dan `window.TurnamenBridge` di `desktop/web/assets/js/core/` yang disediakan Fikri.
-- Mengonsumsi struktur JSON yang didefinisikan pada [`docs/contracts/frontend-contract.md`](file:///C:/Turnamen.in/docs/contracts/frontend-contract.md) dan [`docs/contracts/api-contract.md`](file:///C:/Turnamen.in/docs/contracts/api-contract.md).
+- Mengonsumsi struktur JSON yang didefinisikan pada [`docs/contracts/frontend-contract.md`](../contracts/frontend-contract.md) dan [`docs/contracts/api-contract.md`](../contracts/api-contract.md).
 
 ## 8. Kontrak Input / Output
 - **Input ke UI:** Objek respons `{ success: true, message: "...", data: ... }` dari `window.TurnamenAPI`.
@@ -105,7 +105,7 @@ python run.py --api-only
 
 ## 14. Git Branch Assignment & Workflow
 
-Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](../GIT_WORKFLOW.md).
 
 ### 1. Nama Branch Resmi
 `feature/ferlita-ui-ux`
@@ -122,13 +122,12 @@ Mengembangkan dan menyempurnakan arahan desain (`DESIGN.md`), template halaman H
   git switch -c feature/ferlita-ui-ux
   git push -u origin feature/ferlita-ui-ux
   ```
-- **Jika branch sudah ada di remote (`origin`):**
+- **Jika branch sudah tersedia di remote (`origin`), tetapi belum ada di lokal:**
   ```powershell
   git fetch origin
-  git switch feature/ferlita-ui-ux
-  git pull --ff-only
+  git switch --track origin/feature/ferlita-ui-ux
   ```
-- **Jika branch sudah ada di komputer lokal:**
+- **Jika branch sudah tersedia secara lokal di komputer Anda:**
   ```powershell
   git switch feature/ferlita-ui-ux
   git pull --ff-only

@@ -54,7 +54,7 @@ Menyediakan fondasi desktop dan integrasi sistem yang stabil pada Windows 10/11,
 
 ## 8. Kontrak Input / Output
 - **Input Konfigurasi:** Variabel environment dari `.env` (atau nilai default aman dari `AppConfig` jika `.env` belum dibuat).
-- **Output Bridge & API Client:** Objek response terstandarisasi `{ success: bool, message: str, data: any, error: dict | null }` sesuai [`docs/contracts/frontend-contract.md`](file:///C:/Turnamen.in/docs/contracts/frontend-contract.md).
+- **Output Bridge & API Client:** Objek response terstandarisasi `{ success: bool, message: str, data: any, error: dict | null }` sesuai [`docs/contracts/frontend-contract.md`](../contracts/frontend-contract.md).
 
 ## 9. Mock Data yang Tersedia
 Saat `APP_MODE=mock` (default), launcher dan API client otomatis terhubung ke `MockDataStoreRepository` yang berisi 5 akun role, 3 game, 2 turnamen, 8 tim, dan bracket 8 tim.
@@ -91,7 +91,7 @@ python run.py
 
 ## 14. Git Branch Assignment & Workflow
 
-Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+Lihat panduan lengkap Git di [`docs/GIT_WORKFLOW.md`](../GIT_WORKFLOW.md).
 
 ### 1. Nama Branch Resmi
 `feature/fikri-eel`
@@ -108,13 +108,12 @@ Mengembangkan dan memelihara application launcher (`run.py`, `desktop/launcher/`
   git switch -c feature/fikri-eel
   git push -u origin feature/fikri-eel
   ```
-- **Jika branch sudah ada di remote (`origin`):**
+- **Jika branch sudah tersedia di remote (`origin`), tetapi belum ada di lokal:**
   ```powershell
   git fetch origin
-  git switch feature/fikri-eel
-  git pull --ff-only
+  git switch --track origin/feature/fikri-eel
   ```
-- **Jika branch sudah ada di komputer lokal:**
+- **Jika branch sudah tersedia secara lokal di komputer Anda:**
   ```powershell
   git switch feature/fikri-eel
   git pull --ff-only

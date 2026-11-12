@@ -1,6 +1,6 @@
 # Panduan Kontribusi: Turnamen.in
 
-Proyek **Turnamen.in** dikerjakan secara paralel oleh **5 anggota kelompok** menggunakan sistem **branch terpisah untuk setiap anggota** dan **`main` sebagai branch integrasi utama**. Panduan lengkap penggunaan Git langkah demi langkah juga tersedia di [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+Proyek **Turnamen.in** dikerjakan secara paralel oleh **5 anggota kelompok** menggunakan sistem **branch terpisah untuk setiap anggota** dan **`main` sebagai branch integrasi utama**. Panduan lengkap penggunaan Git langkah demi langkah juga tersedia di [`docs/GIT_WORKFLOW.md`](docs/GIT_WORKFLOW.md).
 
 > [!IMPORTANT]
 > Setiap anggota wajib bekerja pada branch khusus miliknya. Jangan mengerjakan fitur langsung pada branch `main`, jangan mengubah kontrak bersama secara sepihak, dan jangan pernah menggunakan `git push --force`.
@@ -62,10 +62,18 @@ Daftar nama branch anggota:
 - Adriel: `feature/adriel-tournament-match`
 - Anisa: `feature/anisa-api-report`
 
-**Catatan penting untuk pemula:**
-- Gunakan `git switch -c <nama-branch>` **hanya satu kali** saat branch belum pernah dibuat.
-- Jika branch sudah ada di GitHub (remote), jalankan `git fetch origin` lalu `git switch <nama-branch>` tanpa `-c`.
-- Jika branch sudah ada di komputer lokal Anda, cukup jalankan `git switch <nama-branch>`.
+**Catatan penting untuk pemula (perbedaan kondisi branch):**
+- **Kondisi 1 (Branch belum ada di lokal maupun remote):** Gunakan `git switch -c <nama-branch>` **hanya satu kali** saat branch belum pernah dibuat sama sekali.
+- **Kondisi 2 (Branch sudah tersedia di remote GitHub, tetapi belum ada di lokal):** Jangan gunakan `-c`. Jalankan perintah eksplisit berikut untuk mengambil dan melacak branch remote:
+  ```powershell
+  git fetch origin
+  git switch --track origin/<nama-branch-anggota>
+  ```
+- **Kondisi 3 (Branch sudah tersedia secara lokal di komputer Anda):** Cukup berpindah ke branch tersebut lalu tarik pembaruan terbaru:
+  ```powershell
+  git switch <nama-branch-anggota>
+  git pull --ff-only
+  ```
 
 ### D. Cara Commit dan Push Pekerjaan Harian
 
@@ -163,7 +171,7 @@ Bagi anggota yang lebih nyaman menggunakan antarmuka grafis (**GitHub Desktop**)
 
 ## 4. AI Agent Skills & Engineering Standards
 
-Seluruh anggota dan AI Agent yang membantu di repository ini wajib mematuhi standar yang didefinisikan pada [`AGENTS.md`](file:///C:/Turnamen.in/AGENTS.md) dan folder `.agents/skills/`.
+Seluruh anggota dan AI Agent yang membantu di repository ini wajib mematuhi standar yang didefinisikan pada [`AGENTS.md`](AGENTS.md) dan folder `.agents/skills/`.
 
 ### A. Daftar Skill Project-Level
 Folder `.agents/skills/` disimpan langsung di dalam Git agar seluruh anggota mendapatkan aturan yang sama setelah melakukan `git clone` atau sinkronisasi dari `main`.

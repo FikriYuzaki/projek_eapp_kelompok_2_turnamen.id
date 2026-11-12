@@ -43,7 +43,7 @@ git clone https://github.com/FikriYuzaki/projek_eapp_kelompok_2_turnamen.id.git
 cd projek_eapp_kelompok_2_turnamen.id
 ```
 
-Setelah proses clone selesai, buat virtual environment Python dan pasang dependensi sesuai panduan di [`README.md`](file:///C:/Turnamen.in/README.md).
+Setelah proses clone selesai, buat virtual environment Python dan pasang dependensi sesuai panduan di [`README.md`](../README.md).
 
 ---
 
@@ -51,8 +51,8 @@ Setelah proses clone selesai, buat virtual environment Python dan pasang depende
 
 > [!IMPORTANT]
 > - Perintah `git switch -c <nama-branch>` **hanya digunakan satu kali** ketika branch tersebut belum ada di lokal maupun di remote (`origin`).
-> - Jika branch sudah dibuat di GitHub (remote), jangan gunakan `-c` agar tidak membuat branch duplikat. Cukup jalankan `git fetch origin` lalu `git switch <nama-branch>`.
-> - Jika branch sudah ada di komputer lokal Anda, cukup berpindah menggunakan `git switch <nama-branch>`.
+> - Jika branch sudah tersedia di GitHub (`origin`) tetapi belum ada di komputer lokal Anda (misalnya baru melakukan `git clone`), gunakan `git fetch origin` lalu `git switch --track origin/<nama-branch>` agar branch lokal otomatis terhubung ke branch remote tanpa membuat branch duplikat.
+> - Jika branch sudah tersedia di komputer lokal Anda, cukup berpindah dengan `git switch <nama-branch>` lalu tarik pembaruan menggunakan `git pull --ff-only`.
 
 #### 1. Ferlita (`feature/ferlita-ui-ux`)
 ```powershell
@@ -99,20 +99,26 @@ git switch -c feature/anisa-api-report
 git push -u origin feature/anisa-api-report
 ```
 
-#### Cara Checkout jika Branch Sudah Ada di Remote (`origin`)
-Apabila branch Anda sudah pernah dibuat di GitHub (misalnya saat berpindah perangkat atau dibuatkan oleh koordinator):
+#### Cara Checkout jika Branch Tersedia di Remote (`origin`) tetapi Belum Ada di Lokal
+Apabila branch Anda sudah tersedia di GitHub (saat ini kelima branch anggota sudah dipublikasikan di GitHub), tetapi belum ada pada daftar branch lokal di komputer Anda:
 
 ```powershell
 git fetch origin
-git switch <nama-branch-anda>
-git pull --ff-only
+git switch --track origin/<nama-branch-anda>
 ```
 
-#### Cara Berpindah jika Branch Sudah Ada di Lokal
-Apabila branch sudah tersedia di komputer Anda:
+Contoh untuk Ferlita:
+```powershell
+git fetch origin
+git switch --track origin/feature/ferlita-ui-ux
+```
+
+#### Cara Berpindah jika Branch Sudah Tersedia di Lokal
+Apabila branch sudah pernah di-checkout dan tersedia di komputer lokal Anda, gunakan perintah berikut untuk berpindah sekaligus menarik pembaruan terbaru:
 
 ```powershell
 git switch <nama-branch-anda>
+git pull --ff-only
 ```
 
 ---

@@ -24,11 +24,11 @@ Sistem dirancang bersifat **game-agnostic** (mendukung *Mobile Legends: Bang Ban
 
 | Anggota | Peran | Branch Resmi | Folder Tanggung Jawab Utama | File Instruksi Mandiri |
 | :--- | :--- | :--- | :--- | :--- |
-| **Ferlita** | Project Coordinator & UI/UX Designer | `feature/ferlita-ui-ux` | `desktop/web/pages/`, `desktop/web/assets/css/`, `desktop/web/assets/images/`, `DESIGN.md` | [`docs/tasks/ferlita.md`](file:///C:/Turnamen.in/docs/tasks/ferlita.md) |
-| **Fikri** | System Integration & Python Eel Developer | `feature/fikri-eel` | `desktop/launcher/`, `desktop/bridge/`, `desktop/web/assets/js/core/`, `run.py` | [`docs/tasks/fikri.md`](file:///C:/Turnamen.in/docs/tasks/fikri.md) |
-| **Habil** | Database & Authentication Developer | `feature/habil-database-auth` | `supabase/`, `backend/modules/auth/`, `backend/infrastructure/supabase/`, `backend/repositories/` | [`docs/tasks/habil.md`](file:///C:/Turnamen.in/docs/tasks/habil.md) |
-| **Adriel** | Tournament & Match System Developer | `feature/adriel-tournament-match` | `backend/modules/tournaments/`, `backend/modules/teams/`, `backend/modules/matches/` | [`docs/tasks/adriel.md`](file:///C:/Turnamen.in/docs/tasks/adriel.md) |
-| **Anisa** | REST API, Reporting & Testing Developer | `feature/anisa-api-report` | `backend/api/`, `backend/modules/reports/`, `backend/modules/announcements/`, `tests/`, `docs/api/` | [`docs/tasks/anisa.md`](file:///C:/Turnamen.in/docs/tasks/anisa.md) |
+| **Ferlita** | Project Coordinator & UI/UX Designer | `feature/ferlita-ui-ux` | `desktop/web/pages/`, `desktop/web/assets/css/`, `desktop/web/assets/images/`, `DESIGN.md` | [`docs/tasks/ferlita.md`](docs/tasks/ferlita.md) |
+| **Fikri** | System Integration & Python Eel Developer | `feature/fikri-eel` | `desktop/launcher/`, `desktop/bridge/`, `desktop/web/assets/js/core/`, `run.py` | [`docs/tasks/fikri.md`](docs/tasks/fikri.md) |
+| **Habil** | Database & Authentication Developer | `feature/habil-database-auth` | `supabase/`, `backend/modules/auth/`, `backend/infrastructure/supabase/`, `backend/repositories/` | [`docs/tasks/habil.md`](docs/tasks/habil.md) |
+| **Adriel** | Tournament & Match System Developer | `feature/adriel-tournament-match` | `backend/modules/tournaments/`, `backend/modules/teams/`, `backend/modules/matches/` | [`docs/tasks/adriel.md`](docs/tasks/adriel.md) |
+| **Anisa** | REST API, Reporting & Testing Developer | `feature/anisa-api-report` | `backend/api/`, `backend/modules/reports/`, `backend/modules/announcements/`, `tests/`, `docs/api/` | [`docs/tasks/anisa.md`](docs/tasks/anisa.md) |
 
 ---
 
@@ -144,7 +144,7 @@ Saat berjalan dalam mode mock, Topbar aplikasi akan menampilkan badge **`MOCK MO
 ## 6. Cara Konfigurasi Supabase (`APP_MODE=supabase`)
 
 Apabila tim siap menguji integrasi cloud bersama Habil:
-1. Buat proyek di Supabase dan jalankan skrip [`supabase/migrations/0001_initial_schema.sql`](file:///C:/Turnamen.in/supabase/migrations/0001_initial_schema.sql) diikuti [`supabase/seed.sql`](file:///C:/Turnamen.in/supabase/seed.sql) pada SQL Editor Supabase.
+1. Buat proyek di Supabase dan jalankan skrip [`supabase/migrations/0001_initial_schema.sql`](supabase/migrations/0001_initial_schema.sql) diikuti [`supabase/seed.sql`](supabase/seed.sql) pada SQL Editor Supabase.
 2. Buka file `.env` lokal Anda (jangan pernah di-commit ke Git) dan ubah:
    ```ini
    APP_MODE=supabase
@@ -179,24 +179,24 @@ Repository ini menggunakan sistem **branch terpisah untuk setiap anggota**:
 - Anggota tidak mengerjakan fitur langsung di `main` dan tidak menggunakan `git push --force`.
 - Seluruh perubahan dikirimkan ke branch masing-masing lalu digabungkan ke `main` melalui **Pull Request (PR)**.
 
-Detail lengkap workflow, perintah Git harian, sinkronisasi branch, dan penanganan konflik tersedia di [`CONTRIBUTING.md`](file:///C:/Turnamen.in/CONTRIBUTING.md) dan [`docs/GIT_WORKFLOW.md`](file:///C:/Turnamen.in/docs/GIT_WORKFLOW.md).
+Detail lengkap workflow, perintah Git harian, sinkronisasi branch, dan penanganan konflik tersedia di [`CONTRIBUTING.md`](CONTRIBUTING.md) dan [`docs/GIT_WORKFLOW.md`](docs/GIT_WORKFLOW.md).
 
 ---
 
 ## 9. Cara Membaca File Tugas Anggota
 
 Setiap anggota memiliki dokumen panduan mandiri di `docs/tasks/`:
-- **Ferlita:** [`docs/tasks/ferlita.md`](file:///C:/Turnamen.in/docs/tasks/ferlita.md)
-- **Fikri:** [`docs/tasks/fikri.md`](file:///C:/Turnamen.in/docs/tasks/fikri.md)
-- **Habil:** [`docs/tasks/habil.md`](file:///C:/Turnamen.in/docs/tasks/habil.md)
-- **Adriel:** [`docs/tasks/adriel.md`](file:///C:/Turnamen.in/docs/tasks/adriel.md)
-- **Anisa:** [`docs/tasks/anisa.md`](file:///C:/Turnamen.in/docs/tasks/anisa.md)
+- **Ferlita:** [`docs/tasks/ferlita.md`](docs/tasks/ferlita.md)
+- **Fikri:** [`docs/tasks/fikri.md`](docs/tasks/fikri.md)
+- **Habil:** [`docs/tasks/habil.md`](docs/tasks/habil.md)
+- **Adriel:** [`docs/tasks/adriel.md`](docs/tasks/adriel.md)
+- **Anisa:** [`docs/tasks/anisa.md`](docs/tasks/anisa.md)
 
 ---
 
 ## AI Agent Skills & Engineering Standards
 
-Proyek ini dilengkapi dengan sistem **Agent Skills** tingkat proyek di `.agents/skills/` yang ikut disimpan ke GitHub (tidak diabaikan oleh `.gitignore`), sehingga seluruh anggota langsung memperoleh standar AI Agent yang seragam setelah melakukan `git clone` atau sinkronisasi dari `main`. Rincian lisensi, commit SHA, dan sumber repositori tercatat di [`docs/skill-sources.md`](file:///C:/Turnamen.in/docs/skill-sources.md).
+Proyek ini dilengkapi dengan sistem **Agent Skills** tingkat proyek di `.agents/skills/` yang ikut disimpan ke GitHub (tidak diabaikan oleh `.gitignore`), sehingga seluruh anggota langsung memperoleh standar AI Agent yang seragam setelah melakukan `git clone` atau sinkronisasi dari `main`. Rincian lisensi, commit SHA, dan sumber repositori tercatat di [`docs/skill-sources.md`](docs/skill-sources.md).
 
 ### 1. External Skills (Terpasang di `.agents/skills/`)
 - **Anti-Slop (`miqdadbadjuber/anti-slop` v3.2.28):** `antislop`, `antislop-ui`, `antislop-human`, `antislop-code`, `antislop-copywriting` (Catatan: `antislop-layoutmobile` sengaja tidak dipasang karena aplikasi bersifat desktop-first).

@@ -42,7 +42,9 @@ Seluruh AI Agent yang bekerja di repository ini wajib mematuhi aturan Git beriku
 
 1. **Periksa Branch Aktif Sebelum Mengubah File:** Jalankan pemeriksaan branch (`git branch --show-current` dan `git status`) sebelum mengedit file apa pun.
 2. **Dilarang Mengerjakan Fitur Langsung di `main`:** Branch `main` adalah branch integrasi. Seluruh pengembangan fitur atau perbaikan modul anggota wajib dilakukan pada branch resmi anggota yang bersangkutan.
-3. **Peringatan Saat Branch Tidak Sesuai:** Jika agent dijalankan pada branch `main` atau pada branch milik anggota lain yang tidak sesuai dengan tugas yang sedang dikerjakan, **agent wajib memberikan peringatan kepada pengguna dan meminta pengguna berpindah ke branch yang benar (`git switch <nama-branch>`) sebelum melakukan perubahan kode**.
+3. **Peringatan Saat Branch Tidak Sesuai:** Jika agent dijalankan pada branch `main` atau pada branch milik anggota lain yang tidak sesuai dengan tugas yang sedang dikerjakan, **agent wajib memberikan peringatan kepada pengguna dan meminta pengguna berpindah ke branch yang benar sebelum melakukan perubahan kode**:
+   - Jika branch sudah tersedia di lokal: `git switch <nama-branch>` lalu `git pull --ff-only`.
+   - Jika branch sudah tersedia di remote (`origin`) tetapi belum ada di lokal: `git fetch origin` lalu `git switch --track origin/<nama-branch>`.
 4. **Hormati Tanggung Jawab Pemilik Branch:** Hanya ubah file yang termasuk dalam cakupan pemilik branch aktif.
 5. **Jangan Mengubah File Anggota Lain Tanpa Koordinasi:** Apabila suatu tugas membutuhkan perubahan pada file milik anggota lain atau file konfigurasi bersama, laporkan terlebih dahulu kepada pengguna untuk dikoordinasikan.
 6. **Periksa Status Git Sebelum dan Sesudah Perubahan:** Selalu jalankan `git status` dan `git diff --check` sebelum memulai dan setelah menyelesaikan perubahan untuk memastikan tidak ada perubahan liar atau error whitespace.
