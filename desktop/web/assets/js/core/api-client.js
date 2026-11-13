@@ -30,8 +30,7 @@
     }
     if (typeof window.TurnamenConfig.clearAuthSession === "function") {
       window.TurnamenConfig.clearAuthSession();
-    }
-    if (typeof window.TurnamenConfig.setAuthSession === "function") {
+    } else if (typeof window.TurnamenConfig.setAuthSession === "function") {
       window.TurnamenConfig.setAuthSession(null, null);
     }
   }
@@ -289,14 +288,33 @@
 
     async login(email, password) {
       const res = await request("POST", "/auth/login", { email, password });
-      if (res.success && isPlainObject(res.data)) {
-        const token =
-          typeof res.data.token === "string" && res.data.token.trim()
-            ? res.data.token.trim()
-            : null;
-        if (token && hasValidUserIdentity(res.data.user) && window.TurnamenConfig) {
-          window.TurnamenConfig.setAuthSession(token, res.data.user);
-        }
+      if (!res.success) {
+        return res;
+      }
+
+      const rawData = isPlainObject(res.data) ? res.data : {};
+      const requiresEmailConfirmation =
+        rawData.requires_email_confirmation === true;
+      const token =
+        typeof rawData.token === "string" && rawData.token.trim()
+          ? rawData.token.trim()
+          : null;
+      const validUser = hasValidUserIdentity(rawData.user) ? rawData.user : null;
+      const shouldCreateSession = Boolean(
+        !requiresEmailConfirmation && token && validUser
+      );
+
+      if (isPlainObject(res.data)) {
+        res.data = {
+          ...rawData,
+          token: shouldCreateSession ? token : null,
+        };
+      }
+
+      if (shouldCreateSession && window.TurnamenConfig) {
+        window.TurnamenConfig.setAuthSession(token, validUser);
+      } else {
+        clearLocalAuthSession();
       }
       return res;
     },

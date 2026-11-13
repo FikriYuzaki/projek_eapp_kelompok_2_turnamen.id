@@ -364,6 +364,10 @@ def test_frontend_register_email_confirmation_vs_mock_token() -> None:
             }),
           }),
         });
+        envIncomplete.window.TurnamenConfig.setRuntimeInfo({
+          app_mode: "supabase",
+          is_simulation: false,
+        });
         envIncomplete.window.TurnamenConfig.setAuthSession("tok_prev", {
           id: "u-prev",
           email: "prev@turnamen.in",
@@ -402,6 +406,194 @@ def test_frontend_register_email_confirmation_vs_mock_token() -> None:
     assert result["incompleteRes"]["data"]["token"] is None
     assert result["stateAfterIncomplete"]["token"] is None
     assert result["stateAfterIncomplete"]["currentUser"] is None
+
+
+def test_frontend_login_session_validation_and_cleanup() -> None:
+    result = _run_js_harness(
+        """
+        function makeLoginEnv(responseBody, status = 200, appMode = "supabase") {
+          const env = createEnv({
+            fetch: async () => ({
+              ok: status >= 200 && status < 300,
+              status,
+              text: async () => JSON.stringify(responseBody),
+            }),
+          });
+          env.window.TurnamenConfig.setRuntimeInfo({
+            app_mode: appMode,
+            is_simulation: appMode === "mock",
+          });
+          env.window.TurnamenConfig.setAuthSession("existing_token_abc", {
+            id: "u-existing-1",
+            email: "existing@turnamen.in",
+            username: "existing_user",
+            role: "organizer",
+          });
+          return env;
+        }
+
+        // 1. Login sukses dengan token dan user valid -> session dibuat
+        const envValid = makeLoginEnv({
+          success: true,
+          message: "Login berhasil",
+          data: {
+            token: "tok_new_valid_777",
+            user: {
+              id: "u-new-777",
+              email: "new777@turnamen.in",
+              username: "new777",
+              role: "team_captain",
+            },
+          },
+        });
+        const validRes = await envValid.window.TurnamenAPI.login("new777@turnamen.in", "pass123");
+        const stateAfterValid = envValid.window.TurnamenConfig.getState();
+
+        // 2. Login sukses dengan token kosong -> session lama dibersihkan (tanpa panggilan setAuthSession redundan)
+        const envEmptyToken = makeLoginEnv({
+          success: true,
+          message: "Login dengan token kosong",
+          data: {
+            token: "   ",
+            user: {
+              id: "u-new-777",
+              email: "new777@turnamen.in",
+            },
+          },
+        });
+        let clearCalls = 0;
+        let setCallsAfterInit = 0;
+        const origClear = envEmptyToken.window.TurnamenConfig.clearAuthSession;
+        const origSet = envEmptyToken.window.TurnamenConfig.setAuthSession;
+        envEmptyToken.window.TurnamenConfig.clearAuthSession = function () {
+          clearCalls += 1;
+          return origClear.apply(this, arguments);
+        };
+        envEmptyToken.window.TurnamenConfig.setAuthSession = function () {
+          setCallsAfterInit += 1;
+          return origSet.apply(this, arguments);
+        };
+        const emptyTokenRes = await envEmptyToken.window.TurnamenAPI.login("new777@turnamen.in", "pass123");
+        const stateAfterEmptyToken = envEmptyToken.window.TurnamenConfig.getState();
+
+        // 3. Login sukses dengan user tanpa id/email -> session lama dibersihkan (juga uji konsistensi mode mock)
+        const envInvalidUserSupabase = makeLoginEnv({
+          success: true,
+          message: "Login tanpa identitas user",
+          data: {
+            token: "tok_valid_but_no_user_identity",
+            user: { username: "anonymous_only", role: "player" },
+          },
+        }, 200, "supabase");
+        await envInvalidUserSupabase.window.TurnamenAPI.login("anon@turnamen.in", "pass123");
+        const stateAfterInvalidUserSupabase = envInvalidUserSupabase.window.TurnamenConfig.getState();
+
+        const envInvalidUserMock = makeLoginEnv({
+          success: true,
+          message: "Login tanpa identitas user (mock)",
+          data: {
+            token: "tok_valid_but_no_user_identity",
+            user: { username: "anonymous_only" },
+          },
+        }, 200, "mock");
+        await envInvalidUserMock.window.TurnamenAPI.login("anon@turnamen.in", "pass123");
+        const stateAfterInvalidUserMock = envInvalidUserMock.window.TurnamenConfig.getState();
+
+        // 4. Login sukses dengan data null atau objek tidak lengkap -> session lama dibersihkan
+        const envNullData = makeLoginEnv({
+          success: true,
+          message: "Data null",
+          data: null,
+        });
+        await envNullData.window.TurnamenAPI.login("null@turnamen.in", "pass123");
+        const stateAfterNullData = envNullData.window.TurnamenConfig.getState();
+
+        const envIncompleteData = makeLoginEnv({
+          success: true,
+          message: "Data objek kosong",
+          data: {},
+        });
+        await envIncompleteData.window.TurnamenAPI.login("empty@turnamen.in", "pass123");
+        const stateAfterIncompleteData = envIncompleteData.window.TurnamenConfig.getState();
+
+        // 5. Login gagal (success: false) -> session lama TIDAK diubah
+        const envFailedLogin = makeLoginEnv({
+          success: false,
+          message: "Email atau password tidak sesuai.",
+          error: { code: "UNAUTHORIZED", details: {} },
+        }, 401);
+        const failedLoginRes = await envFailedLogin.window.TurnamenAPI.login("wrong@turnamen.in", "wrong");
+        const stateAfterFailedLogin = envFailedLogin.window.TurnamenConfig.getState();
+
+        // 6. Konfirmasi email diperlukan (requires_email_confirmation: true) -> session tidak dibuat & sesi lama dibersihkan
+        const envEmailConfirm = makeLoginEnv({
+          success: true,
+          message: "Verifikasi email diperlukan",
+          data: {
+            token: "tok_unverified_999",
+            requires_email_confirmation: true,
+            user: {
+              id: "u-unverified",
+              email: "unverified@turnamen.in",
+              role: "player",
+            },
+          },
+        });
+        const emailConfirmRes = await envEmailConfirm.window.TurnamenAPI.login("unverified@turnamen.in", "pass123");
+        const stateAfterEmailConfirm = envEmailConfirm.window.TurnamenConfig.getState();
+
+        return {
+          validRes,
+          stateAfterValid,
+          emptyTokenRes,
+          stateAfterEmptyToken,
+          clearCalls,
+          setCallsAfterInit,
+          stateAfterInvalidUserSupabase,
+          stateAfterInvalidUserMock,
+          stateAfterNullData,
+          stateAfterIncompleteData,
+          failedLoginRes,
+          stateAfterFailedLogin,
+          emailConfirmRes,
+          stateAfterEmailConfirm,
+        };
+        """
+    )
+
+    assert result["validRes"]["success"] is True
+    assert result["stateAfterValid"]["token"] == "tok_new_valid_777"
+    assert result["stateAfterValid"]["currentUser"]["id"] == "u-new-777"
+    assert result["stateAfterValid"]["currentUser"]["email"] == "new777@turnamen.in"
+
+    assert result["emptyTokenRes"]["success"] is True
+    assert result["emptyTokenRes"]["data"]["token"] is None
+    assert result["stateAfterEmptyToken"]["token"] is None
+    assert result["stateAfterEmptyToken"]["currentUser"] is None
+    assert result["clearCalls"] == 1
+    assert result["setCallsAfterInit"] == 0
+
+    assert result["stateAfterInvalidUserSupabase"]["token"] is None
+    assert result["stateAfterInvalidUserSupabase"]["currentUser"] is None
+
+    assert result["stateAfterInvalidUserMock"]["token"] is None
+    assert result["stateAfterInvalidUserMock"]["currentUser"]["id"] != "u-existing-1"
+    assert result["stateAfterInvalidUserMock"]["currentUser"]["role"] == "player"
+
+    assert result["stateAfterNullData"]["token"] is None
+    assert result["stateAfterNullData"]["currentUser"] is None
+    assert result["stateAfterIncompleteData"]["token"] is None
+    assert result["stateAfterIncompleteData"]["currentUser"] is None
+
+    assert result["failedLoginRes"]["success"] is False
+    assert result["stateAfterFailedLogin"]["token"] == "existing_token_abc"
+    assert result["stateAfterFailedLogin"]["currentUser"]["id"] == "u-existing-1"
+    assert result["stateAfterFailedLogin"]["currentUser"]["email"] == "existing@turnamen.in"
+
+    assert result["emailConfirmRes"]["success"] is True
+    assert result["emailConfirmRes"]["data"]["token"] is None
+    assert result["stateAfterEmailConfirm"]["token"] is None
+    assert result["stateAfterEmailConfirm"]["currentUser"] is None
 
 
 def test_bridge_timeout_and_mutation_retry_safety() -> None:
