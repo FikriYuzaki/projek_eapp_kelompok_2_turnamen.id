@@ -8,7 +8,33 @@
 
   const REQUEST_TIMEOUT_MS = 8000;
   const ALLOWED_METHODS = new Set(["GET", "POST", "PATCH", "PUT", "DELETE"]);
+  const SAFE_HTTP_FALLBACK_METHODS = new Set(["GET"]);
   let runtimeBootstrapPromise = null;
+
+  function isPlainObject(value) {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value));
+  }
+
+  function hasValidUserIdentity(user) {
+    if (!isPlainObject(user)) {
+      return false;
+    }
+    const hasId = typeof user.id === "string" && user.id.trim().length > 0;
+    const hasEmail = typeof user.email === "string" && user.email.trim().length > 0;
+    return hasId || hasEmail;
+  }
+
+  function clearLocalAuthSession() {
+    if (!window.TurnamenConfig) {
+      return;
+    }
+    if (typeof window.TurnamenConfig.clearAuthSession === "function") {
+      window.TurnamenConfig.clearAuthSession();
+    }
+    if (typeof window.TurnamenConfig.setAuthSession === "function") {
+      window.TurnamenConfig.setAuthSession(null, null);
+    }
+  }
 
   function buildErrorResponse(message, code, details = {}) {
     return {
@@ -99,7 +125,12 @@
     runtimeBootstrapPromise = (async () => {
       if (window.TurnamenBridge && window.TurnamenBridge.hasEel()) {
         const info = await window.TurnamenBridge.getRuntimeInfo();
-        if (info && window.TurnamenConfig) {
+        if (
+          info &&
+          typeof info === "object" &&
+          info.success !== false &&
+          window.TurnamenConfig
+        ) {
           window.TurnamenConfig.setRuntimeInfo(info.data || info);
         }
       }
@@ -148,8 +179,25 @@
         payload,
         headers
       );
-      if (bridged && typeof bridged === "object") {
-        return normalizeResponse(bridged);
+      if (bridged && typeof bridged === "object" && !Array.isArray(bridged)) {
+        const bridgeErrorCode =
+          bridged.error && typeof bridged.error === "object"
+            ? bridged.error.code
+            : null;
+        // Never retry timeouts or mutations over HTTP because the Python call may still be running.
+        const canFallbackToHttp =
+          SAFE_HTTP_FALLBACK_METHODS.has(normalizedMethod) &&
+          (bridgeErrorCode === "BRIDGE_EXECUTION_ERROR" ||
+            bridgeErrorCode === "BRIDGE_INVALID_RESPONSE");
+        if (!canFallbackToHttp) {
+          return normalizeResponse(bridged);
+        }
+      } else if (!SAFE_HTTP_FALLBACK_METHODS.has(normalizedMethod)) {
+        return buildErrorResponse(
+          "Permintaan mutasi melalui Python Eel bridge tidak mengembalikan kepastian status; proses di sisi Python mungkin masih berjalan sehingga pengulangan HTTP tidak dilakukan untuk mencegah duplikasi operasi.",
+          "BRIDGE_UNCERTAIN_STATE",
+          { method: normalizedMethod, endpoint: cleanPath }
+        );
       }
     }
 
@@ -241,15 +289,45 @@
 
     async login(email, password) {
       const res = await request("POST", "/auth/login", { email, password });
-      if (res.success && res.data) {
-        window.TurnamenConfig.setAuthSession(res.data.token, res.data.user);
+      if (res.success && isPlainObject(res.data)) {
+        const token =
+          typeof res.data.token === "string" && res.data.token.trim()
+            ? res.data.token.trim()
+            : null;
+        if (token && hasValidUserIdentity(res.data.user) && window.TurnamenConfig) {
+          window.TurnamenConfig.setAuthSession(token, res.data.user);
+        }
       }
       return res;
     },
     async register(payload) {
       const res = await request("POST", "/auth/register", payload);
-      if (res.success && res.data) {
-        window.TurnamenConfig.setAuthSession(res.data.token, res.data.user);
+      if (!res.success) {
+        return res;
+      }
+
+      const rawData = isPlainObject(res.data) ? res.data : {};
+      const requiresEmailConfirmation =
+        rawData.requires_email_confirmation === true;
+      const token =
+        typeof rawData.token === "string" && rawData.token.trim()
+          ? rawData.token.trim()
+          : null;
+      const validUser = hasValidUserIdentity(rawData.user) ? rawData.user : null;
+      const shouldCreateSession = Boolean(
+        !requiresEmailConfirmation && token && validUser
+      );
+
+      res.data = {
+        ...rawData,
+        token: shouldCreateSession ? token : null,
+        requires_email_confirmation: requiresEmailConfirmation,
+      };
+
+      if (shouldCreateSession && window.TurnamenConfig) {
+        window.TurnamenConfig.setAuthSession(token, validUser);
+      } else {
+        clearLocalAuthSession();
       }
       return res;
     },

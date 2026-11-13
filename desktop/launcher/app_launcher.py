@@ -121,48 +121,184 @@ def wait_for_api_ready(
     return False
 
 
+def _extract_config_secrets(config: AppConfig | None) -> tuple[str, ...]:
+    if not isinstance(config, AppConfig):
+        return ()
+    candidates = (
+        getattr(config, "secret_key", ""),
+        getattr(config, "supabase_anon_key", ""),
+        getattr(config, "rawg_api_key", ""),
+    )
+    return tuple(s.strip() for s in candidates if isinstance(s, str) and s.strip())
+
+
+def _format_endpoint_failure(
+    label: str,
+    status_code: int,
+    payload: Any,
+    captured_exceptions: list[str],
+) -> str:
+    if isinstance(payload, dict):
+        msg = payload.get("message")
+        if isinstance(msg, str) and msg.strip():
+            base = f"{label} gagal: {msg.strip()}"
+        else:
+            base = f"{label} gagal (HTTP {status_code})."
+    else:
+        base = f"{label} gagal (HTTP {status_code})."
+
+    if captured_exceptions:
+        detail = "; ".join(s.strip() for s in captured_exceptions if s and s.strip())
+        if detail and detail not in base:
+            return f"{base} ({detail})"
+    return base
+
+
 def run_smoke_check(config: AppConfig | None = None) -> dict[str, Any]:
-    """Verify configuration, repository initialization, and `/api/v1/health` in-process."""
+    """Verify configuration, repository queries, and `/api/v1/health` in-process."""
     try:
         cfg = config or load_config()
         cfg.validate()
     except Exception as exc:
+        extra_secrets = _extract_config_secrets(config)
         return {
             "config": config.to_safe_dict() if isinstance(config, AppConfig) else None,
             "health_ok": False,
             "repository_ok": False,
             "games_count": 0,
             "tournaments_count": 0,
-            "error": redact_sensitive_text(str(exc)),
+            "error": redact_sensitive_text(str(exc), extra_secrets=extra_secrets),
         }
 
+    extra_secrets = _extract_config_secrets(cfg)
     try:
         app = create_app(cfg)
         repo = app.config.get("TURNAMEN_REPO")
-        repo_ok = repo is not None and hasattr(repo, "list_games") and hasattr(repo, "list_tournaments")
+        repo_available = (
+            repo is not None
+            and callable(getattr(repo, "list_games", None))
+            and callable(getattr(repo, "list_tournaments", None))
+        )
+
+        captured_exceptions: list[str] = []
+        if hasattr(app, "handle_user_exception"):
+            orig_handle_user_exception = app.handle_user_exception
+
+            def _capture_user_exception(exc: Exception) -> Any:
+                captured_exceptions.append(str(exc))
+                return orig_handle_user_exception(exc)
+
+            app.handle_user_exception = _capture_user_exception  # type: ignore[method-assign]
+
+        errors: list[str] = []
+        if not repo_available:
+            errors.append(
+                "Repository tidak tersedia atau tidak memiliki method list_games dan list_tournaments."
+            )
+
+        health_ok = False
+        games_ok = False
+        games_count = 0
+        tournaments_ok = False
+        tournaments_count = 0
 
         with app.test_client() as client:
-            health_resp = client.get("/api/v1/health")
-            health_res = health_resp.get_json(silent=True) or {}
-            tournaments_res = client.get("/api/v1/tournaments").get_json(silent=True) or {}
-            games_res = client.get("/api/v1/games").get_json(silent=True) or {}
+            captured_exceptions.clear()
+            try:
+                health_resp = client.get("/api/v1/health")
+                health_res = health_resp.get_json(silent=True)
+                health_ok = bool(
+                    health_resp.status_code == 200
+                    and isinstance(health_res, dict)
+                    and health_res.get("success") is True
+                    and isinstance(health_res.get("data"), dict)
+                    and health_res["data"].get("status") == "healthy"
+                )
+                if not health_ok:
+                    errors.append(
+                        _format_endpoint_failure(
+                            "Health check",
+                            health_resp.status_code,
+                            health_res,
+                            captured_exceptions,
+                        )
+                    )
+            except Exception as exc:
+                errors.append(f"Health check gagal: {exc}")
 
-        health_ok = bool(
-            repo_ok
-            and health_resp.status_code == 200
-            and health_res.get("success") is True
-            and isinstance(health_res.get("data"), dict)
-            and health_res["data"].get("status") == "healthy"
-        )
-        return {
+            if repo_available:
+                captured_exceptions.clear()
+                try:
+                    games_resp = client.get("/api/v1/games")
+                    games_res = games_resp.get_json(silent=True)
+                    if (
+                        games_resp.status_code == 200
+                        and isinstance(games_res, dict)
+                        and games_res.get("success") is True
+                    ):
+                        games_data = games_res.get("data")
+                        if isinstance(games_data, list):
+                            games_ok = True
+                            games_count = len(games_data)
+                        else:
+                            errors.append(
+                                "Query games gagal: Data games bukan berupa list yang valid."
+                            )
+                    else:
+                        errors.append(
+                            _format_endpoint_failure(
+                                "Query games",
+                                games_resp.status_code,
+                                games_res,
+                                captured_exceptions,
+                            )
+                        )
+                except Exception as exc:
+                    errors.append(f"Query games gagal: {exc}")
+
+                captured_exceptions.clear()
+                try:
+                    tournaments_resp = client.get("/api/v1/tournaments")
+                    tournaments_res = tournaments_resp.get_json(silent=True)
+                    if (
+                        tournaments_resp.status_code == 200
+                        and isinstance(tournaments_res, dict)
+                        and tournaments_res.get("success") is True
+                    ):
+                        tournaments_data = tournaments_res.get("data")
+                        if isinstance(tournaments_data, list):
+                            tournaments_ok = True
+                            tournaments_count = len(tournaments_data)
+                        else:
+                            errors.append(
+                                "Query tournaments gagal: Data tournaments bukan berupa list yang valid."
+                            )
+                    else:
+                        errors.append(
+                            _format_endpoint_failure(
+                                "Query tournaments",
+                                tournaments_resp.status_code,
+                                tournaments_res,
+                                captured_exceptions,
+                            )
+                        )
+                except Exception as exc:
+                    errors.append(f"Query tournaments gagal: {exc}")
+
+        repository_ok = bool(repo_available and games_ok and tournaments_ok)
+        summary: dict[str, Any] = {
             "config": cfg.to_safe_dict(),
             "health_ok": health_ok,
-            "repository_ok": repo_ok,
-            "games_count": len(games_res.get("data", [])) if isinstance(games_res.get("data"), list) else 0,
-            "tournaments_count": (
-                len(tournaments_res.get("data", [])) if isinstance(tournaments_res.get("data"), list) else 0
-            ),
+            "repository_ok": repository_ok,
+            "games_count": games_count,
+            "tournaments_count": tournaments_count,
         }
+        if errors:
+            summary["error"] = redact_sensitive_text(
+                "; ".join(errors),
+                extra_secrets=extra_secrets,
+            )
+        return summary
     except Exception as exc:
         return {
             "config": cfg.to_safe_dict(),
@@ -170,7 +306,7 @@ def run_smoke_check(config: AppConfig | None = None) -> dict[str, Any]:
             "repository_ok": False,
             "games_count": 0,
             "tournaments_count": 0,
-            "error": redact_sensitive_text(str(exc)),
+            "error": redact_sensitive_text(str(exc), extra_secrets=extra_secrets),
         }
 
 
