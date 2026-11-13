@@ -14,8 +14,20 @@ import argparse
 import json
 import sys
 
-from backend.core.config import load_config
+from backend.core.config import AppConfig, load_config
+from backend.core.logging_config import redact_sensitive_text
 from desktop.launcher.app_launcher import launch_application, run_smoke_check
+
+
+def _extract_config_secrets(config: AppConfig | None) -> tuple[str, ...]:
+    if not isinstance(config, AppConfig):
+        return ()
+    candidates = (
+        getattr(config, "secret_key", ""),
+        getattr(config, "supabase_anon_key", ""),
+        getattr(config, "rawg_api_key", ""),
+    )
+    return tuple(s.strip() for s in candidates if isinstance(s, str) and s.strip())
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -50,20 +62,60 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    overrides = {}
-    if args.mode:
+    overrides: dict[str, object] = {}
+    if args.mode is not None:
         overrides["app_mode"] = args.mode
-    if args.port:
+    if args.port is not None:
         overrides["api_port"] = args.port
 
-    config = load_config(overrides=overrides or None)
+    try:
+        config = load_config(overrides=overrides or None)
+    except ValueError as exc:
+        sanitized_error = redact_sensitive_text(str(exc))
+        if args.check:
+            print(
+                json.dumps(
+                    {
+                        "config": None,
+                        "health_ok": False,
+                        "repository_ok": False,
+                        "games_count": 0,
+                        "tournaments_count": 0,
+                        "error": sanitized_error,
+                    },
+                    indent=2,
+                )
+            )
+            return 1
+        print(f"Error konfigurasi: {sanitized_error}", file=sys.stderr)
+        return 1
 
     if args.check:
-        summary = run_smoke_check(config)
-        print(json.dumps(summary, indent=2))
-        return 0 if summary.get("health_ok") else 1
+        summary = dict(run_smoke_check(config))
+        health_ok = summary.get("health_ok") is True
+        repository_ok = summary.get("repository_ok") is True
+        check_passed = health_ok and repository_ok
+        extra_secrets = _extract_config_secrets(config)
 
-    return launch_application(api_only=args.api_only, config=config)
+        if "error" in summary and summary["error"] is not None:
+            summary["error"] = redact_sensitive_text(
+                str(summary["error"]),
+                extra_secrets=extra_secrets,
+            )
+        elif not check_passed:
+            summary["error"] = (
+                "Pemeriksaan repository gagal."
+                if health_ok and not repository_ok
+                else "Pemeriksaan kesehatan layanan API gagal."
+            )
+
+        print(json.dumps(summary, indent=2))
+        return 0 if check_passed else 1
+
+    try:
+        return launch_application(api_only=args.api_only, config=config)
+    except KeyboardInterrupt:
+        return 0
 
 
 if __name__ == "__main__":
