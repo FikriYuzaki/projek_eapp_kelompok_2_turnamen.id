@@ -1,7 +1,4 @@
-"""Tournament and registration management service.
-
-Owner: Adriel (Tournament & Match System Developer)
-"""
+"""Service untuk manajemen turnamen dan pendaftaran tim."""
 
 from __future__ import annotations
 
@@ -33,7 +30,7 @@ def _slugify(value: str) -> str:
 
 
 class TournamentService:
-    """Application service for tournaments and team registrations."""
+    """Pengelolaan turnamen dan registrasi peserta."""
 
     def __init__(self, repository: DataStoreRepositoryProtocol) -> None:
         self._repo = repository
@@ -216,9 +213,6 @@ class TournamentService:
         self._repo.delete_tournament(tournament["id"])
         return {"deleted_id": tournament["id"], "title": tournament["title"]}
 
-    # -------------------------------------------------------------------------
-    # Registrations
-    # -------------------------------------------------------------------------
     def list_registrations(self, tournament_id: str) -> list[dict[str, Any]]:
         tournament = self.get_tournament(tournament_id)
         return self._repo.list_registrations_by_tournament(tournament["id"])
