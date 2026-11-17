@@ -1,51 +1,124 @@
+
 /* ============================================================================
- * Turnamen.in — Design Tokens & CSS Variables (DRAFT for Ferlita Review)
- * Owner: Ferlita (Project Coordinator & UI/UX Designer)
- * Reference: DESIGN.md
+ * Turnamen.in — Emerald Neon Design System
+ * Owner: Ferlita (UI/UX Designer)
+ * Theme: Emerald Neon Light + Soft Glassmorphism
  * ============================================================================ */
 
 :root {
-  /* Surface Palette (Dark Slate Esports Dashboard) */
-  --bg-primary: #0b0f17;
-  --bg-secondary: #111827;
-  --bg-surface: #161f30;
-  --bg-surface-elevated: #1c273c;
-  --bg-surface-hover: #23304a;
-  --border-subtle: #26334d;
-  --border-focus: #3b82f6;
+  /* =========================================================
+     1. PRIMARY GREEN PALETTE
+     ========================================================= */
 
-  /* Typography Colors */
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --color-mint-white: #F4FFFC;
+  --color-soft-mint: #91EAAF;
+  --color-lime: #C3E956;
+  --color-olive: #4D7111;
+  --color-forest: #1F4B2C;
 
-  /* Accent Colors */
-  --accent-primary: #3b82f6;
-  --accent-primary-hover: #2563eb;
-  --accent-secondary: #06b6d4;
+  /* =========================================================
+     2. RETRO MAGIC ACCENT PALETTE
+     ========================================================= */
 
-  /* Semantic Status Colors */
-  --status-success: #10b981;
-  --status-success-bg: rgba(16, 185, 129, 0.14);
-  --status-warning: #f59e0b;
-  --status-warning-bg: rgba(245, 158, 11, 0.14);
-  --status-danger: #ef4444;
-  --status-danger-bg: rgba(239, 68, 68, 0.14);
-  --status-info: #6366f1;
-  --status-info-bg: rgba(99, 102, 241, 0.14);
+  --color-soft-yellow: #FFF7AD;
+  --color-peach: #FFB3AE;
+  --color-neon-pink: #FF49C1;
+  --color-magenta: #6A1452;
+  --color-deep-plum: #44113E;
 
-  /* Typography Families */
+  /* =========================================================
+     3. BACKGROUND & SURFACE
+     ========================================================= */
+
+  --bg-primary: #F4FFFC;
+  --bg-secondary: #EAF7F0;
+  --bg-surface: #FFFFFF;
+  --bg-surface-elevated: #FFFFFF;
+  --bg-surface-hover: #E8F5EC;
+
+  --border-subtle: #D5E8DA;
+  --border-focus: #4D7111;
+
+  /* Glass Effect */
+  --surface-glass: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.85);
+  --glass-blur: 16px;
+
+  /* =========================================================
+     4. TYPOGRAPHY COLORS
+     ========================================================= */
+
+  --text-primary: #1F4B2C;
+  --text-secondary: #4D7111;
+  --text-muted: #687D70;
+
+  /* =========================================================
+     5. ACCENT COLORS
+     ========================================================= */
+
+  --accent-primary: #4D7111;
+  --accent-primary-hover: #1F4B2C;
+  --accent-secondary: #91EAAF;
+
+  --accent-pink: #FF49C1;
+  --accent-magenta: #6A1452;
+  --accent-lime: #C3E956;
+
+  /* =========================================================
+     6. SEMANTIC STATUS COLORS
+     ========================================================= */
+
+  --status-success: #1F7A45;
+  --status-success-bg: rgba(145, 234, 175, 0.28);
+
+  --status-warning: #8A5A00;
+  --status-warning-bg: rgba(255, 247, 173, 0.55);
+
+  --status-danger: #B42345;
+  --status-danger-bg: rgba(255, 179, 174, 0.35);
+
+  --status-info: #6A1452;
+  --status-info-bg: rgba(255, 73, 193, 0.10);
+
+  /* =========================================================
+     7. TYPOGRAPHY FAMILIES
+     ========================================================= */
+
   --font-sans: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
   --font-mono: "Cascadia Mono", Consolas, monospace;
 
-  /* Layout Dimensions */
+  /* =========================================================
+     8. LAYOUT DIMENSIONS
+     ========================================================= */
+
   --sidebar-width: 252px;
   --topbar-height: 64px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.32);
+
+  /* =========================================================
+     9. BORDER RADIUS
+     ========================================================= */
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+
+  /* =========================================================
+     10. SHADOWS
+     ========================================================= */
+
+  --shadow-card:
+    0 8px 24px rgba(31, 75, 44, 0.08);
+
+  --shadow-hover:
+    0 12px 30px rgba(31, 75, 44, 0.12);
+
+  --shadow-glass:
+    0 12px 40px rgba(31, 75, 44, 0.10);
 }
+
+/* =============================================================
+   GLOBAL RESET
+   ============================================================= */
 
 *,
 *::before,
@@ -53,23 +126,39 @@
   box-sizing: border-box;
 }
 
+/* =============================================================
+   GLOBAL DOCUMENT STYLE
+   ============================================================= */
+
 html,
 body {
   margin: 0;
   padding: 0;
   height: 100%;
+
   background-color: var(--bg-primary);
   color: var(--text-primary);
+
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
+
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* =============================================================
+   NUMERICAL DATA STYLE
+   ============================================================= */
 
 .tabular-nums {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* =============================================================
+   ACCESSIBILITY — KEYBOARD FOCUS
+   ============================================================= */
 
 :focus-visible {
   outline: 2px solid var(--border-focus);
