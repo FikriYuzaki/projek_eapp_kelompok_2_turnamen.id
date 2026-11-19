@@ -33,6 +33,47 @@ def test_auth_login_and_me_flow(client: FlaskClient) -> None:
     assert me_resp.get_json()["data"]["user"]["role"] == "organizer"
 
 
+def test_auth_logout_requires_authentication_and_revokes_token(client: FlaskClient) -> None:
+    unauth_resp = client.post("/api/v1/auth/logout")
+    assert unauth_resp.status_code == 401
+    unauth_body = unauth_resp.get_json()
+    assert unauth_body["success"] is False
+    assert unauth_body["error"]["code"] == "UNAUTHORIZED"
+
+    login_resp = client.post(
+        "/api/v1/auth/login",
+        json={"email": "organizer@turnamen.in", "password": "turnamen123"},
+    )
+    token = login_resp.get_json()["data"]["token"]
+
+    logout_resp = client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert logout_resp.status_code == 200
+    assert logout_resp.get_json()["data"]["logged_out"] is True
+
+    me_after_logout = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_after_logout.status_code == 401
+
+
+def test_http_errors_return_standardized_json(client: FlaskClient) -> None:
+    not_found = client.get("/api/v1/does-not-exist")
+    assert not_found.status_code == 404
+    nf_body = not_found.get_json()
+    assert nf_body["success"] is False
+    assert nf_body["error"]["code"] == "NOT_FOUND"
+
+    method_not_allowed = client.delete("/api/v1/health")
+    assert method_not_allowed.status_code == 405
+    mna_body = method_not_allowed.get_json()
+    assert mna_body["success"] is False
+    assert mna_body["error"]["code"] == "METHOD_NOT_ALLOWED"
+
+
 def test_tournament_creation_and_permission_enforcement(client: FlaskClient) -> None:
     payload = {
         "title": "Liga Mahasiswa VALORANT 2026",
