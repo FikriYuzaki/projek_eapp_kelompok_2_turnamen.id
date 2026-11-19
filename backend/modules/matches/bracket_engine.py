@@ -1,3 +1,7 @@
+"""Algoritma Single Elimination bracket engine dan validasi skor pertandingan."""
+
+from __future__ import annotations
+
 import math
 import uuid
 from datetime import datetime, timezone
@@ -8,8 +12,15 @@ from backend.core.exceptions import DomainValidationError
 
 
 def next_power_of_two(n: int) -> int:
+    """Menghitung bilangan pangkat dua terkecil yang lebih besar atau sama dengan n.
+
+    Digunakan untuk menentukan ukuran bracket dan alokasi slot bye.
+    """
     if n < 2:
-        raise DomainValidationError("Pembuatan bracket membutuhkan minimal 2 tim peserta.")
+        raise DomainValidationError(
+            "Pembuatan bracket membutuhkan minimal 2 tim peserta.",
+            {"team_count": n},
+        )
     power = 1
     while power < n:
         power *= 2
@@ -17,6 +28,7 @@ def next_power_of_two(n: int) -> int:
 
 
 def get_round_name(round_number: int, total_rounds: int) -> str:
+    """Mengembalikan nama babak turnamen berdasarkan posisi relatif terhadap final."""
     remaining = total_rounds - round_number
     if remaining == 0:
         return "Grand Final"
@@ -28,40 +40,89 @@ def get_round_name(round_number: int, total_rounds: int) -> str:
     return f"Round of {teams_in_round}"
 
 
-def validate_match_score(score_a: int, score_b: int, best_of: int = 3, allow_draw: bool = False) -> str:
+def validate_match_score(
+    score_a: int, score_b: int, best_of: int = 3, allow_draw: bool = False
+) -> str:
+    """Validasi skor pertandingan sistem gugur berdasarkan format Best of N.
+
+    Mengembalikan 'A' jika Tim A menang, atau 'B' jika Tim B menang.
+    Menolak skor negatif, hasil seri, atau skor yang tidak memenuhi syarat kemenangan.
+    """
     if not isinstance(score_a, int) or not isinstance(score_b, int):
-        raise DomainValidationError("Skor pertandingan harus berupa angka bulat.")
+        raise DomainValidationError(
+            "Skor pertandingan harus berupa angka bulat.",
+            {"score_a": score_a, "score_b": score_b},
+        )
 
     if score_a < 0 or score_b < 0:
-        raise DomainValidationError("Skor pertandingan tidak boleh negatif.")
+        raise DomainValidationError(
+            "Skor pertandingan tidak boleh negatif.",
+            {"score_a": score_a, "score_b": score_b},
+        )
 
     if best_of not in VALID_BEST_OF:
-        raise DomainValidationError(f"Format best_of '{best_of}' tidak valid.")
+        raise DomainValidationError(
+            f"Format best_of '{best_of}' tidak valid.",
+            {"best_of": best_of, "valid_options": list(VALID_BEST_OF)},
+        )
 
     if score_a == score_b:
-        raise DomainValidationError("Hasil seri tidak diizinkan. Pertandingan harus memiliki pemenang yang sah.")
+        raise DomainValidationError(
+            "Hasil seri tidak diizinkan. Pertandingan harus memiliki pemenang yang sah.",
+            {"score_a": score_a, "score_b": score_b},
+        )
 
     wins_required = (best_of // 2) + 1
     winner_score = max(score_a, score_b)
     loser_score = min(score_a, score_b)
 
     if winner_score != wins_required:
-        raise DomainValidationError(f"Pada format Best of {best_of}, pemenang wajib mencapai tepat {wins_required} kemenangan.")
+        raise DomainValidationError(
+            f"Pada format Best of {best_of}, pemenang wajib mencapai tepat {wins_required} kemenangan.",
+            {
+                "score_a": score_a,
+                "score_b": score_b,
+                "best_of": best_of,
+                "wins_required": wins_required,
+            },
+        )
 
     if loser_score >= wins_required or (score_a + score_b) > best_of:
-        raise DomainValidationError(f"Kombinasi skor {score_a}-{score_b} melebihi batas jumlah game Best of {best_of}.")
+        raise DomainValidationError(
+            f"Kombinasi skor {score_a}-{score_b} melebihi batas jumlah game Best of {best_of}.",
+            {
+                "score_a": score_a,
+                "score_b": score_b,
+                "best_of": best_of,
+            },
+        )
 
     return "A" if score_a > score_b else "B"
 
 
 class SingleEliminationBracketEngine:
+    """Engine pembangkit bagan Single Elimination turnamen esports."""
+
     @staticmethod
-    def generate_bracket(tournament_id: str, team_ids: list[str], best_of: int = 3) -> list[dict[str, Any]]:
+    def generate_bracket(
+        tournament_id: str, team_ids: list[str], best_of: int = 3
+    ) -> list[dict[str, Any]]:
+        """Membangkitkan seluruh pertandingan dari ronde pertama hingga Grand Final.
+
+        Mendukung jumlah tim pangkat dua maupun bukan pangkat dua dengan penanganan BYE otomatis
+        dan pemindahan langsung tim penerima BYE ke babak Semi Final / babak selanjutnya.
+        """
         num_teams = len(team_ids)
         if num_teams < 2:
-            raise DomainValidationError("Minimal 2 tim terverifikasi diperlukan untuk membuat bracket.")
+            raise DomainValidationError(
+                "Minimal 2 tim terverifikasi diperlukan untuk membuat bracket.",
+                {"team_count": num_teams},
+            )
         if len(set(team_ids)) != num_teams:
-            raise DomainValidationError("Terdapat duplikasi tim dalam daftar peserta bracket.")
+            raise DomainValidationError(
+                "Terdapat duplikasi tim dalam daftar peserta bracket.",
+                {"team_count": num_teams, "unique_teams": len(set(team_ids))},
+            )
 
         bracket_size = next_power_of_two(num_teams)
         total_rounds = int(math.log2(bracket_size))
@@ -95,7 +156,7 @@ class SingleEliminationBracketEngine:
                     }
                 )
 
-        # Sambungkan match ke ronde berikutnya
+        # Sambungkan setiap pertandingan ke babak berikutnya
         for r in range(1, total_rounds):
             for idx, match in enumerate(rounds_matches[r]):
                 next_match = rounds_matches[r + 1][idx // 2]
@@ -103,7 +164,7 @@ class SingleEliminationBracketEngine:
                 match["next_match_id"] = next_match["id"]
                 match["next_slot"] = next_slot
 
-        # Pasangkan tim di ronde 1
+        # Tempatkan peserta pada babak pertama dengan alokasi BYE di slot teratas
         round_1 = rounds_matches[1]
         team_cursor = 0
         for m_idx in range(len(round_1)):
@@ -123,11 +184,15 @@ class SingleEliminationBracketEngine:
                 match["status"] = "scheduled"
                 match["winner_team_id"] = None
 
-        # Jika ada bye, otomatis masukkan ke ronde 2
+        # Otomatis majukan penerima BYE ke babak berikutnya
         if total_rounds >= 2:
             round_2_by_id = {m["id"]: m for m in rounds_matches[2]}
             for match in round_1:
-                if match["status"] == "bye" and match["winner_team_id"] and match["next_match_id"]:
+                if (
+                    match["status"] == "bye"
+                    and match["winner_team_id"]
+                    and match["next_match_id"]
+                ):
                     target = round_2_by_id[match["next_match_id"]]
                     if match["next_slot"] == "A":
                         target["team_a_id"] = match["winner_team_id"]

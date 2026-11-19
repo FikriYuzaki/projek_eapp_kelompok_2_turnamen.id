@@ -31,13 +31,15 @@ class MatchService:
     ) -> None:
         if user["role"] == ROLE_ORGANIZER and tournament["organizer_id"] != user["id"]:
             raise DomainForbiddenError(
-                "Organizer hanya dapat mengelola pertandingan pada turnamen miliknya."
+                "Organizer hanya dapat mengelola pertandingan pada turnamen miliknya.",
+                {"tournament_id": tournament["id"], "user_id": user["id"]},
             )
         if user["role"] == ROLE_COMMITTEE and not self._repo.is_staff_assigned(
             tournament["id"], user["id"]
         ):
             raise DomainForbiddenError(
-                "Panitia hanya dapat mengelola pertandingan pada turnamen yang ditugaskan."
+                "Panitia hanya dapat mengelola pertandingan pada turnamen yang ditugaskan.",
+                {"tournament_id": tournament["id"], "user_id": user["id"]},
             )
 
     def get_match(self, match_id: str) -> dict[str, Any]:
