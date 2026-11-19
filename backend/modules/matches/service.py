@@ -143,7 +143,13 @@ class MatchService:
             raise DomainNotFoundError("Turnamen pertandingan tidak ditemukan.")
         self._verify_tournament_staff_access(user, tournament)
 
-        force_override = bool(payload.get("force_override", False))
+        raw_force_override = payload.get("force_override", False)
+        if not isinstance(raw_force_override, bool):
+            raise DomainValidationError(
+                "Field force_override harus berupa boolean (true/false).",
+                {"field": "force_override"},
+            )
+        force_override = raw_force_override
         if match["status"] == "completed" and not force_override:
             raise DomainConflictError(
                 "Hasil pertandingan ini sudah disahkan dan dikunci. "
