@@ -397,3 +397,134 @@ def test_team_roster_and_member_role_validations(
                 "member_role": "substitute",
             },
         )
+
+
+def test_register_team_enforces_captain_ownership_and_rbac(
+    mock_repo: MockDataStoreRepository,
+    client,
+):
+    tournament_service = TournamentService(mock_repo)
+    organizer_user = mock_repo.get_profile_by_email("organizer@turnamen.in")
+    owner_captain = mock_repo.get_profile_by_email("captain@turnamen.in")
+    super_admin = mock_repo.get_profile_by_email("admin@turnamen.in")
+    assert organizer_user is not None
+    assert owner_captain is not None
+    assert super_admin is not None
+
+    other_captain = mock_repo.create_profile(
+        {
+            "email": "other.captain@turnamen.in",
+            "username": "other_captain",
+            "full_name": "Kapten Lain",
+            "role": "team_captain",
+        }
+    )
+
+    tour = tournament_service.create_tournament(
+        actor=organizer_user,
+        payload={
+            "title": "RBAC Ownership Test Cup",
+            "game_id": "22222222-2222-4222-8222-222222222201",
+            "start_date": "2026-12-15T10:00:00Z",
+            "max_teams": 4,
+            "status": "open_registration",
+        },
+    )
+
+    with pytest.raises(DomainForbiddenError, match="miliknya sendiri") as exc_info:
+        tournament_service.register_team(
+            actor=other_captain,
+            tournament_id=tour["id"],
+            payload={"team_id": "44444444-4444-4444-8444-444444444401"},
+        )
+    assert exc_info.value.http_status == 403
+
+    http_forbidden = client.post(
+        f"/api/v1/tournaments/{tour['id']}/registrations",
+        json={"team_id": "44444444-4444-4444-8444-444444444401"},
+        headers={"X-Mock-User-Id": other_captain["id"]},
+    )
+    assert http_forbidden.status_code == 403
+    assert http_forbidden.get_json()["error"]["code"] == "FORBIDDEN"
+
+    # Organizer tetap mengikuti matriks permission registration:create (hanya super_admin & team_captain)
+    with pytest.raises(DomainForbiddenError) as org_exc:
+        tournament_service.register_team(
+            actor=organizer_user,
+            tournament_id=tour["id"],
+            payload={"team_id": "44444444-4444-4444-8444-444444444401"},
+        )
+    assert org_exc.value.http_status == 403
+
+    own_reg = tournament_service.register_team(
+        actor=owner_captain,
+        tournament_id=tour["id"],
+        payload={"team_id": "44444444-4444-4444-8444-444444444401"},
+    )
+    assert own_reg["status"] == "pending"
+
+    admin_reg = tournament_service.register_team(
+        actor=super_admin,
+        tournament_id=tour["id"],
+        payload={"team_id": "44444444-4444-4444-8444-444444444402"},
+    )
+    assert admin_reg["status"] == "pending"
+
+
+def test_submit_match_result_rejects_non_boolean_force_override(
+    mock_repo: MockDataStoreRepository,
+    client,
+):
+    match_service = MatchService(mock_repo)
+    committee_user = mock_repo.get_profile_by_email("committee@turnamen.in")
+    captain_user = mock_repo.get_profile_by_email("captain@turnamen.in")
+    assert committee_user is not None
+    assert captain_user is not None
+
+    completed_qf1_id = "88888888-8888-4888-8888-888888888801"
+    original_winner = "44444444-4444-4444-8444-444444444401"
+
+    for invalid_value in ("false", "true", "", 1, 0, None, [], {}):
+        with pytest.raises(DomainValidationError, match="force_override") as exc_info:
+            match_service.submit_match_result(
+                actor=committee_user,
+                match_id=completed_qf1_id,
+                payload={"score_a": 0, "score_b": 2, "force_override": invalid_value},
+            )
+        assert exc_info.value.http_status == 400
+        assert exc_info.value.details.get("field") == "force_override"
+
+        locked = mock_repo.get_match_by_id(completed_qf1_id)
+        assert locked is not None
+        assert locked["winner_team_id"] == original_winner
+        assert locked["score_a"] == 2
+        assert locked["score_b"] == 0
+
+    http_bad = client.patch(
+        f"/api/v1/matches/{completed_qf1_id}/result",
+        json={"score_a": 0, "score_b": 2, "force_override": "false"},
+        headers={"X-Mock-Role": "committee"},
+    )
+    assert http_bad.status_code == 400
+    assert http_bad.get_json()["error"]["code"] == "VALIDATION_ERROR"
+
+    with pytest.raises(DomainConflictError):
+        match_service.submit_match_result(
+            actor=committee_user,
+            match_id=completed_qf1_id,
+            payload={"score_a": 0, "score_b": 2, "force_override": False},
+        )
+
+    with pytest.raises(DomainForbiddenError):
+        match_service.submit_match_result(
+            actor=captain_user,
+            match_id=completed_qf1_id,
+            payload={"score_a": 0, "score_b": 2, "force_override": True},
+        )
+
+    overridden = match_service.submit_match_result(
+        actor=committee_user,
+        match_id=completed_qf1_id,
+        payload={"score_a": 0, "score_b": 2, "force_override": True, "notes": "Audit panitia"},
+    )
+    assert overridden["match"]["winner_team_id"] == "44444444-4444-4444-8444-444444444402"

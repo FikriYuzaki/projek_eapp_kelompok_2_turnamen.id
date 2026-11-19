@@ -11,6 +11,7 @@ from backend.contracts.dtos import (
     ROLE_COMMITTEE,
     ROLE_ORGANIZER,
     ROLE_SUPER_ADMIN,
+    ROLE_TEAM_CAPTAIN,
     TOURNAMENT_STATUSES,
     VALID_BEST_OF,
 )
@@ -235,6 +236,12 @@ class TournamentService:
         team = self._repo.get_team_by_id(team_id)
         if not team:
             raise DomainNotFoundError("Tim tidak ditemukan.", {"team_id": team_id})
+
+        if user["role"] == ROLE_TEAM_CAPTAIN and team["captain_id"] != user["id"]:
+            raise DomainForbiddenError(
+                "Kapten hanya dapat mendaftarkan tim miliknya sendiri.",
+                {"team_id": team["id"], "user_id": user["id"]},
+            )
 
         if team["game_id"] != tournament["game_id"]:
             raise DomainValidationError(
