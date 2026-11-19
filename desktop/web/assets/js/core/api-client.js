@@ -88,6 +88,26 @@
     };
   }
 
+  const MAX_PERCENT_DECODE_ROUNDS = 5;
+  const ENCODED_TRAVERSAL_RE = /%(?:2e|2f|5c)/i;
+  const MALFORMED_PERCENT_RE = /%(?![0-9a-fA-F]{2})/;
+  const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/;
+
+  function hasUnsafeDecodedPath(value) {
+    if (
+      ENCODED_TRAVERSAL_RE.test(value) ||
+      CONTROL_CHAR_RE.test(value) ||
+      value.includes("\\") ||
+      value.includes("@") ||
+      value.includes("#") ||
+      value.includes("//")
+    ) {
+      return true;
+    }
+    const segments = value.split("/");
+    return segments.includes(".") || segments.includes("..");
+  }
+
   function validateAndNormalizePath(path) {
     if (typeof path !== "string") {
       return null;
@@ -97,22 +117,121 @@
       return null;
     }
     if (
-      trimmed.includes("://") ||
-      trimmed.startsWith("//") ||
+      CONTROL_CHAR_RE.test(trimmed) ||
       trimmed.includes("\\") ||
-      trimmed.includes("..") ||
       trimmed.includes("@") ||
-      /[\r\n\t]/.test(trimmed)
+      trimmed.includes("#") ||
+      trimmed.includes("://") ||
+      trimmed.startsWith("//")
     ) {
       return null;
     }
-    return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+
+    const qIdx = trimmed.indexOf("?");
+    const rawPathPart = qIdx >= 0 ? trimmed.slice(0, qIdx) : trimmed;
+    const rawQueryPart = qIdx >= 0 ? trimmed.slice(qIdx) : "";
+
+    const rawPath = rawPathPart.startsWith("/") ? rawPathPart : `/${rawPathPart}`;
+    if (
+      rawPath === "/" ||
+      rawPath === "/api/v1" ||
+      (rawPath.startsWith("/api/v1") && !rawPath.startsWith("/api/v1/"))
+    ) {
+      return null;
+    }
+
+    const relativePath = rawPath.startsWith("/api/v1/")
+      ? rawPath.slice("/api/v1".length)
+      : rawPath;
+    if (!relativePath || relativePath === "/") {
+      return null;
+    }
+
+    const fullPath = `/api/v1${relativePath}`;
+    if (/\s/.test(fullPath) || fullPath.includes("//") || MALFORMED_PERCENT_RE.test(fullPath)) {
+      return null;
+    }
+
+    let current = fullPath;
+    let decodeStabilized = false;
+    for (let round = 0; round < MAX_PERCENT_DECODE_ROUNDS; round += 1) {
+      if (hasUnsafeDecodedPath(current)) {
+        return null;
+      }
+      let decoded;
+      try {
+        decoded = decodeURIComponent(current);
+      } catch (_decodeErr) {
+        return null;
+      }
+      if (decoded === current) {
+        decodeStabilized = true;
+        break;
+      }
+      current = decoded;
+    }
+    if (!decodeStabilized) {
+      try {
+        if (decodeURIComponent(current) !== current) {
+          return null;
+        }
+      } catch (_decodeErr) {
+        return null;
+      }
+    }
+
+    if (
+      hasUnsafeDecodedPath(current) ||
+      !current.startsWith("/api/v1/") ||
+      current.length <= "/api/v1/".length
+    ) {
+      return null;
+    }
+
+    if (typeof URL === "function") {
+      try {
+        const resolved = new URL(fullPath, "http://127.0.0.1");
+        if (
+          resolved.origin !== "http://127.0.0.1" ||
+          resolved.pathname !== fullPath ||
+          !resolved.pathname.startsWith("/api/v1/") ||
+          resolved.pathname.length <= "/api/v1/".length ||
+          resolved.hash !== ""
+        ) {
+          return null;
+        }
+      } catch (_urlErr) {
+        return null;
+      }
+    }
+
+    if (rawQueryPart) {
+      if (CONTROL_CHAR_RE.test(rawQueryPart)) {
+        return null;
+      }
+      try {
+        if (CONTROL_CHAR_RE.test(decodeURIComponent(rawQueryPart))) {
+          return null;
+        }
+      } catch (_queryErr) {
+        return null;
+      }
+    }
+
+    return `${relativePath}${rawQueryPart}`;
   }
 
   function encodeSegment(value, fieldName = "id") {
     const str = String(value ?? "").trim();
-    if (!str) {
-      throw new Error(`Parameter '${fieldName}' wajib diisi.`);
+    if (
+      !str ||
+      str === "." ||
+      str === ".." ||
+      str.includes("/") ||
+      str.includes("\\") ||
+      CONTROL_CHAR_RE.test(str)
+    ) {
+      throw new Error(`Parameter '${fieldName}' wajib diisi dengan nilai yang valid.`);
     }
     return encodeURIComponent(str);
   }
@@ -210,6 +329,7 @@
     const options = {
       method: normalizedMethod,
       headers,
+      redirect: "manual",
       signal: controller ? controller.signal : undefined,
     };
     if (payload !== null && normalizedMethod !== "GET") {
@@ -218,6 +338,16 @@
 
     try {
       const response = await fetch(url, options);
+      if (
+        response.type === "opaqueredirect" ||
+        (response.status >= 300 && response.status < 400)
+      ) {
+        return buildErrorResponse(
+          "Server API lokal mengembalikan redirect yang tidak diizinkan.",
+          "REDIRECT_BLOCKED",
+          { status_code: response.status, endpoint: cleanPath }
+        );
+      }
       const rawText = await response.text();
       if (!rawText) {
         return buildErrorResponse(
@@ -277,6 +407,7 @@
   window.TurnamenAPI = {
     request,
     bootstrapRuntime,
+    validateAndNormalizePath,
 
     async getHealth() {
       const res = await request("GET", "/health");

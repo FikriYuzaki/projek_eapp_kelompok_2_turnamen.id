@@ -8,14 +8,20 @@ to the local Flask REST API (`/api/v1/*`).
 
 from __future__ import annotations
 
+import posixpath
+import re
+import threading
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 import requests
 
 from backend.core.config import AppConfig, LOCALHOST_HOST, load_config
 
 _ACTIVE_CONFIG: AppConfig | None = None
 _EEL_REGISTERED: bool = False
+_SESSION_LOCAL = threading.local()
+_ACTIVE_SESSIONS: set[requests.Session] = set()
+_ACTIVE_SESSIONS_LOCK = threading.Lock()
 
 ALLOWED_HTTP_METHODS = ("GET", "POST", "PATCH", "PUT", "DELETE")
 ALLOWED_BASE_HEADERS = {
@@ -28,6 +34,36 @@ ALLOWED_MOCK_HEADERS = {
     "x-mock-role": "X-Mock-Role",
 }
 DEFAULT_BRIDGE_TIMEOUT_SECONDS = 8.0
+_MAX_PERCENT_DECODE_ROUNDS = 5
+_ENCODED_TRAVERSAL_RE = re.compile(r"%(?:2e|2f|5c)", re.IGNORECASE)
+_MALFORMED_PERCENT_RE = re.compile(r"%(?![0-9a-fA-F]{2})")
+
+
+def _get_local_http_session() -> requests.Session:
+    """Return a reusable per-thread loopback Session isolated from env proxies."""
+    session = getattr(_SESSION_LOCAL, "session", None)
+    with _ACTIVE_SESSIONS_LOCK:
+        if session is None or session not in _ACTIVE_SESSIONS:
+            session = requests.Session()
+            session.trust_env = False
+            session.proxies = {}
+            _ACTIVE_SESSIONS.add(session)
+            _SESSION_LOCAL.session = session
+    return session
+
+
+def close_bridge_sessions() -> None:
+    """Close all active bridge HTTP sessions during shutdown or test cleanup."""
+    with _ACTIVE_SESSIONS_LOCK:
+        sessions = list(_ACTIVE_SESSIONS)
+        _ACTIVE_SESSIONS.clear()
+    if hasattr(_SESSION_LOCAL, "session"):
+        delattr(_SESSION_LOCAL, "session")
+    for session in sessions:
+        try:
+            session.close()
+        except Exception:
+            pass
 
 
 def _bridge_error(
@@ -87,17 +123,38 @@ def _normalize_bridge_response(raw_payload: Any, status_code: int = 200) -> dict
     }
 
 
+def _has_control_chars(value: str) -> bool:
+    return any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value)
+
+
+def _has_unsafe_path_state(value: str) -> bool:
+    if (
+        _ENCODED_TRAVERSAL_RE.search(value)
+        or _has_control_chars(value)
+        or any(ch in value for ch in ("\\", "@", "#"))
+        or "//" in value
+    ):
+        return True
+    segments = value.split("/")
+    return "." in segments or ".." in segments
+
+
 def _normalize_and_validate_endpoint(endpoint: str) -> str | None:
     if not isinstance(endpoint, str):
         return None
     raw = endpoint.strip()
     if not raw:
         return None
-    if any(ch in raw for ch in ("\r", "\n", "\t", "\\", "@")) or "://" in raw or raw.startswith("//"):
+    if (
+        _has_control_chars(raw)
+        or any(ch in raw for ch in ("\\", "@", "#"))
+        or "://" in raw
+        or raw.startswith("//")
+    ):
         return None
 
     clean = raw if raw.startswith("/") else f"/{raw}"
-    if clean == "/api/v1":
+    if clean == "/api/v1" or clean.startswith(("/api/v1?", "/api/v1#")):
         return None
     if not clean.startswith("/api/v1/"):
         if clean.startswith("/api/v1"):
@@ -105,14 +162,47 @@ def _normalize_and_validate_endpoint(endpoint: str) -> str | None:
         clean = f"/api/v1{clean}"
 
     parsed = urlsplit(clean)
-    if parsed.scheme or parsed.netloc:
+    if parsed.scheme or parsed.netloc or parsed.fragment:
         return None
 
-    segments = parsed.path.split("/")
-    if ".." in segments or "." in segments:
+    raw_path = parsed.path
+    if (
+        not raw_path
+        or any(ch.isspace() for ch in raw_path)
+        or "//" in raw_path
+        or _MALFORMED_PERCENT_RE.search(raw_path)
+    ):
         return None
-    if not parsed.path.startswith("/api/v1/") or len(parsed.path) <= len("/api/v1/"):
+
+    current = raw_path
+    for _ in range(_MAX_PERCENT_DECODE_ROUNDS):
+        if _has_unsafe_path_state(current):
+            return None
+        decoded = unquote(current)
+        if decoded == current:
+            break
+        current = decoded
+    else:
+        if unquote(current) != current:
+            return None
+
+    if _has_unsafe_path_state(current):
         return None
+
+    if not current.startswith("/api/v1/") or len(current) <= len("/api/v1/"):
+        return None
+
+    norm_path = posixpath.normpath(current)
+    if (
+        not norm_path.startswith("/api/v1/")
+        or len(norm_path) <= len("/api/v1/")
+        or norm_path != current.rstrip("/")
+    ):
+        return None
+
+    if parsed.query:
+        if _has_control_chars(parsed.query) or _has_control_chars(unquote(parsed.query)):
+            return None
 
     return clean
 
@@ -191,14 +281,16 @@ def forward_api_request(
     url = f"http://{config.api_host}:{config.api_port}{clean_endpoint}"
     req_headers = _sanitize_headers(headers, is_mock_mode=config.is_mock_mode)
     req_json = payload if (payload is not None and normalized_method != "GET") else None
+    session = _get_local_http_session()
 
     try:
-        resp = requests.request(
+        resp = session.request(
             method=normalized_method,
             url=url,
             json=req_json,
             headers=req_headers,
             timeout=DEFAULT_BRIDGE_TIMEOUT_SECONDS,
+            allow_redirects=False,
         )
     except requests.Timeout:
         return _bridge_error(
@@ -217,6 +309,13 @@ def forward_api_request(
             message="Terjadi kesalahan internal saat meneruskan permintaan melalui bridge.",
             code="BRIDGE_INTERNAL_ERROR",
             details={"endpoint": clean_endpoint},
+        )
+
+    if 300 <= resp.status_code < 400:
+        return _bridge_error(
+            message="Server API lokal mengembalikan redirect yang tidak diizinkan melalui bridge.",
+            code="BRIDGE_REDIRECT_BLOCKED",
+            details={"status_code": resp.status_code, "endpoint": clean_endpoint},
         )
 
     try:

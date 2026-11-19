@@ -53,11 +53,12 @@
         loc &&
         (loc.protocol === "http:" || loc.protocol === "https:") &&
         (loc.hostname === "127.0.0.1" || loc.hostname === "localhost") &&
-        loc.port &&
-        loc.port !== DEFAULT_EEL_PORT &&
         typeof window.eel === "undefined"
       ) {
-        return `http://127.0.0.1:${loc.port}/api/v1`;
+        if (loc.port !== DEFAULT_EEL_PORT) {
+          const portPart = loc.port ? `:${loc.port}` : "";
+          return `${loc.protocol}//${loc.hostname}${portPart}/api/v1`;
+        }
       }
     } catch (_err) {
       // Ignore location access errors in non-browser environments.
@@ -67,7 +68,15 @@
 
   function isValidLocalApiBaseUrl(url) {
     if (typeof url !== "string") return false;
-    return /^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}\/api\/v1\/?$/.test(url.trim());
+    const match = /^https?:\/\/(127\.0\.0\.1|localhost)(?::(\d{1,5}))?\/api\/v1\/?$/.exec(
+      url.trim()
+    );
+    if (!match) return false;
+    if (match[2] !== undefined) {
+      const port = Number(match[2]);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+    }
+    return true;
   }
 
   const state = {
@@ -81,6 +90,8 @@
 
   window.TurnamenConfig = {
     DEMO_ACCOUNTS,
+    resolveInitialApiBaseUrl,
+    isValidLocalApiBaseUrl,
     getState() {
       return {
         ...state,
@@ -97,7 +108,34 @@
           : info;
 
       if (typeof source.api_base_url === "string" && isValidLocalApiBaseUrl(source.api_base_url)) {
-        state.apiBaseUrl = source.api_base_url.trim().replace(/\/+$/, "");
+        let nextApiBaseUrl = source.api_base_url.trim().replace(/\/+$/, "");
+        try {
+          const loc = window.location;
+          if (
+            typeof window.eel === "undefined" &&
+            loc &&
+            (loc.protocol === "http:" || loc.protocol === "https:") &&
+            loc.hostname === "localhost"
+          ) {
+            const parsedMatch = /^https?:\/\/127\.0\.0\.1(?::(\d{1,5}))?\/api\/v1$/.exec(
+              nextApiBaseUrl
+            );
+            const locPort = loc.port || (loc.protocol === "https:" ? "443" : "80");
+            const sourcePort =
+              parsedMatch && parsedMatch[1]
+                ? parsedMatch[1]
+                : nextApiBaseUrl.startsWith("https://")
+                  ? "443"
+                  : "80";
+            if (parsedMatch && sourcePort === locPort) {
+              const portPart = loc.port ? `:${loc.port}` : "";
+              nextApiBaseUrl = `${loc.protocol}//localhost${portPart}/api/v1`;
+            }
+          }
+        } catch (_err) {
+          // Ignore location access errors in non-browser environments.
+        }
+        state.apiBaseUrl = nextApiBaseUrl;
       }
 
       if (typeof source.app_mode === "string") {

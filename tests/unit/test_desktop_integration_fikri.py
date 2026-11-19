@@ -9,11 +9,13 @@ import shutil
 import subprocess
 from typing import Any
 import pytest
+import requests
 
 from backend.app import create_app as real_create_app
 from backend.core.config import AppConfig, ROOT_DIR, load_config
 from backend.core.exceptions import DomainError
 from backend.repositories.mock.mock_repository import MockDataStoreRepository
+from desktop.bridge import eel_bridge
 from desktop.launcher import app_launcher
 import run as run_entry
 
@@ -41,6 +43,7 @@ function createEnv(customWindow = {{}}) {{
   const sandboxWindow = {{
     location: {{ protocol: "http:", hostname: "127.0.0.1", port: "8080" }},
     console: {{ warn: () => {{}}, error: () => {{}}, log: () => {{}} }},
+    URL,
     URLSearchParams,
     AbortController,
     encodeURIComponent,
@@ -751,3 +754,441 @@ def test_bridge_timeout_and_mutation_retry_safety() -> None:
     assert result["uncertainPostRes"]["success"] is False
     assert result["uncertainPostRes"]["error"]["code"] == "BRIDGE_UNCERTAIN_STATE"
     assert "dibatalkan" not in result["uncertainPostRes"]["message"].lower()
+
+
+def test_eel_bridge_normalize_and_validate_endpoint() -> None:
+    valid_cases = {
+        "/health": "/api/v1/health",
+        "health": "/api/v1/health",
+        "/api/v1/health": "/api/v1/health",
+        "/tournaments?status=ongoing&game_id=123": "/api/v1/tournaments?status=ongoing&game_id=123",
+        "/games/mobile-legends": "/api/v1/games/mobile-legends",
+    }
+    for raw_ep, expected in valid_cases.items():
+        assert eel_bridge._normalize_and_validate_endpoint(raw_ep) == expected
+
+    invalid_cases: tuple[Any, ...] = (
+        "",
+        "   ",
+        None,
+        123,
+        "/",
+        "/api/v1",
+        "/api/v1/",
+        "/api/v1//",
+        "/api/v1?x=1",
+        "/api/v10/health",
+        "/api/v1//health",
+        "/../../",
+        "/api/v1/../health",
+        "/api/v1/./health",
+        "/api/v1/%2e%2e/%2e%2e/index.html",
+        "/api/v1/%2E%2E/%2E%2E/assets/js/core/config.js",
+        "/api/v1/.%2e/%2e./index.html",
+        "/api/v1/..%2f..%2findex.html",
+        "/api/v1/..%5c..%5cindex.html",
+        "/api/v1/%252e%252e/%252e%252e/index.html",
+        "/api/v1/%252f..%252findex.html",
+        "/api/v1/%255c..%255cindex.html",
+        "/api/v1/%25%32%65%25%32%65/index.html",
+        "/api/v1/%25252525252e/health",
+        "/games/%2e%2e/auth/me",
+        "/games/a%ZZb",
+        "/health#fragment",
+        "/health?a=1#frag",
+        "/health\x00",
+        "/health\r\nX-Injected: 1",
+        "/health\tbar",
+        "http://evil.example/api/v1/health",
+        "//evil.example/health",
+        "/health@evil.example",
+        "\\api\\v1\\health",
+    )
+    for bad_ep in invalid_cases:
+        assert eel_bridge._normalize_and_validate_endpoint(bad_ep) is None, f"Should reject {bad_ep!r}"
+
+
+def test_eel_bridge_sanitize_headers() -> None:
+    raw_headers = {
+        "authorization": "Bearer jwt_tok_123",
+        "X-MOCK-ROLE": "organizer",
+        "x-mock-user-id": "user-123",
+        "Cookie": "session=evil",
+        "Host": "evil.example",
+        "X-Forwarded-For": "10.0.0.1",
+        "Accept": "application/json\r\nX-Bad: 1",
+        "Content-Type": "application/json",
+    }
+
+    mock_sanitized = eel_bridge._sanitize_headers(raw_headers, is_mock_mode=True)
+    assert mock_sanitized["Authorization"] == "Bearer jwt_tok_123"
+    assert mock_sanitized["X-Mock-Role"] == "organizer"
+    assert mock_sanitized["X-Mock-User-Id"] == "user-123"
+    assert mock_sanitized["Accept"] == "application/json"
+    assert "Cookie" not in mock_sanitized
+    assert "Host" not in mock_sanitized
+    assert "X-Forwarded-For" not in mock_sanitized
+
+    supa_sanitized = eel_bridge._sanitize_headers(raw_headers, is_mock_mode=False)
+    assert supa_sanitized["Authorization"] == "Bearer jwt_tok_123"
+    assert "X-Mock-Role" not in supa_sanitized
+    assert "X-Mock-User-Id" not in supa_sanitized
+    assert "Cookie" not in supa_sanitized
+
+
+def test_eel_bridge_forward_api_request_blocks_traversal_redirects_and_env_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    eel_bridge.close_bridge_sessions()
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9999")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9999")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+
+    cfg = load_config(overrides={"app_mode": "mock", "api_host": "127.0.0.1", "api_port": 5059})
+
+    # Verify default requests.Session picks up env proxy whereas bridge session isolates it
+    default_session = requests.Session()
+    try:
+        default_proxies = default_session.merge_environment_settings(
+            "http://127.0.0.1:5059/api/v1/health", {}, None, None, None
+        )["proxies"]
+        assert "http" in default_proxies
+    finally:
+        default_session.close()
+
+    recorded_calls: list[dict[str, Any]] = []
+
+    class DummyResp:
+        def __init__(self, status_code: int, payload: dict[str, Any] | None = None) -> None:
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self) -> dict[str, Any]:
+            assert self._payload is not None
+            return self._payload
+
+    def fake_session_request(self: requests.Session, method: str, url: str, **kwargs: Any) -> DummyResp:
+        env_proxies = self.merge_environment_settings(url, {}, None, None, None)["proxies"]
+        recorded_calls.append(
+            {
+                "session": self,
+                "trust_env": self.trust_env,
+                "env_proxies": env_proxies,
+                "method": method,
+                "url": url,
+                "kwargs": kwargs,
+            }
+        )
+        if url.endswith("/redirect"):
+            return DummyResp(302)
+        return DummyResp(200, {"success": True, "message": "OK", "data": {"ok": True}})
+
+    monkeypatch.setattr(requests.Session, "request", fake_session_request)
+
+    try:
+        # 1. Traversal payloads rejected BEFORE any session.request call
+        for payload in (
+            "/api/v1/%2e%2e/%2e%2e/index.html",
+            "/api/v1/.%2e/health",
+            "/api/v1/..%2findex.html",
+            "/api/v1/..%5cindex.html",
+            "/api/v1/%252e%252e/index.html",
+        ):
+            err = eel_bridge.forward_api_request(cfg, "GET", payload)
+            assert err["success"] is False
+            assert err["error"]["code"] == "BRIDGE_INVALID_ENDPOINT"
+        assert len(recorded_calls) == 0
+
+        # 2. Invalid host & invalid method checks
+        bad_host_cfg = AppConfig(api_host="0.0.0.0")
+        sec_err = eel_bridge.forward_api_request(bad_host_cfg, "GET", "/health")
+        assert sec_err["error"]["code"] == "BRIDGE_SECURITY_ERROR"
+
+        method_err = eel_bridge.forward_api_request(cfg, "TRACE", "/health")
+        assert method_err["error"]["code"] == "BRIDGE_INVALID_METHOD"
+        assert len(recorded_calls) == 0
+
+        # 3. Valid calls reuse per-thread session with trust_env=False and allow_redirects=False
+        ok1 = eel_bridge.forward_api_request(
+            cfg, "GET", "/health", headers={"Authorization": "Bearer secret-jwt"}
+        )
+        ok2 = eel_bridge.forward_api_request(
+            cfg, "POST", "/tournaments", payload={"title": "Cup"}
+        )
+        assert ok1["success"] is True
+        assert ok2["success"] is True
+        assert len(recorded_calls) == 2
+        assert recorded_calls[0]["session"] is recorded_calls[1]["session"]
+        assert recorded_calls[0]["trust_env"] is False
+        assert recorded_calls[0]["env_proxies"] == {}
+        assert recorded_calls[0]["kwargs"]["allow_redirects"] is False
+        assert recorded_calls[1]["kwargs"]["allow_redirects"] is False
+
+        # 4. 3xx redirect blocked cleanly without following external Location
+        redir = eel_bridge.forward_api_request(
+            cfg,
+            "GET",
+            "/redirect",
+            headers={"Authorization": "Bearer secret-jwt"},
+        )
+        assert redir["success"] is False
+        assert redir["error"]["code"] == "BRIDGE_REDIRECT_BLOCKED"
+        assert redir["error"]["details"]["status_code"] == 302
+    finally:
+        prev_session = recorded_calls[0]["session"] if recorded_calls else None
+        eel_bridge.close_bridge_sessions()
+        if prev_session is not None:
+            assert prev_session not in eel_bridge._ACTIVE_SESSIONS
+            assert not hasattr(eel_bridge._SESSION_LOCAL, "session")
+
+
+def test_wait_for_api_ready_disables_redirects_and_env_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9999")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    cfg = load_config(overrides={"app_mode": "mock", "api_host": "127.0.0.1", "api_port": 5060})
+
+    observed: list[dict[str, Any]] = []
+    mode_state = {"status": 302}
+
+    class DummyResp:
+        def __init__(self, status_code: int) -> None:
+            self.status_code = status_code
+
+        def json(self) -> dict[str, Any]:
+            return {"success": True, "data": {"status": "healthy"}}
+
+    def fake_session_get(self: requests.Session, url: str, **kwargs: Any) -> DummyResp:
+        observed.append(
+            {
+                "trust_env": self.trust_env,
+                "proxies": self.merge_environment_settings(url, {}, None, None, None)["proxies"],
+                "allow_redirects": kwargs.get("allow_redirects"),
+            }
+        )
+        return DummyResp(mode_state["status"])
+
+    monkeypatch.setattr(requests.Session, "get", fake_session_get)
+
+    assert app_launcher.wait_for_api_ready(cfg, timeout=0.15, poll_interval=0.01) is False
+    assert len(observed) >= 1
+    assert all(entry["trust_env"] is False for entry in observed)
+    assert all(entry["proxies"] == {} for entry in observed)
+    assert all(entry["allow_redirects"] is False for entry in observed)
+
+    observed.clear()
+    mode_state["status"] = 200
+    assert app_launcher.wait_for_api_ready(cfg, timeout=0.5, poll_interval=0.01) is True
+    assert len(observed) == 1
+    assert observed[0]["trust_env"] is False
+    assert observed[0]["allow_redirects"] is False
+
+
+def test_frontend_resolve_initial_api_base_url_and_localhost_cors() -> None:
+    result = _run_js_harness(
+        """
+        function checkUrl(customLoc, withEel = false) {
+          const custom = { location: customLoc };
+          if (withEel) {
+            custom.eel = { eel_api_request: () => () => {} };
+          }
+          const env = createEnv(custom);
+          return {
+            resolved: env.window.TurnamenConfig.resolveInitialApiBaseUrl(),
+            initialStateUrl: env.window.TurnamenConfig.getState().apiBaseUrl,
+            env,
+          };
+        }
+
+        const localhost5000 = checkUrl({ protocol: "http:", hostname: "localhost", port: "5000" });
+        const loopback5000 = checkUrl({ protocol: "http:", hostname: "127.0.0.1", port: "5000" });
+        const localhost5055 = checkUrl({ protocol: "http:", hostname: "localhost", port: "5055" });
+        const httpsLocalhost8443 = checkUrl({ protocol: "https:", hostname: "localhost", port: "8443" });
+        const httpsLoopbackDefault = checkUrl({ protocol: "https:", hostname: "127.0.0.1", port: "" });
+        const eelPortFallback = checkUrl({ protocol: "http:", hostname: "127.0.0.1", port: "8080" });
+        const eelPresentFallback = checkUrl({ protocol: "http:", hostname: "localhost", port: "5000" }, true);
+        const externalHostFallback = checkUrl({ protocol: "https:", hostname: "evil.example", port: "5000" });
+
+        // Calling setRuntimeInfo with 127.0.0.1:5000 while browsing http://localhost:5000/ must keep localhost origin
+        localhost5000.env.window.TurnamenConfig.setRuntimeInfo({
+          app_mode: "mock",
+          is_simulation: true,
+          api_base_url: "http://127.0.0.1:5000/api/v1",
+        });
+        const afterRuntimeSync = localhost5000.env.window.TurnamenConfig.getState().apiBaseUrl;
+
+        // isValidLocalApiBaseUrl allows http/https localhost/127.0.0.1 with valid port and rejects invalid hosts/ports
+        const validatorChecks = {
+          httpLocalhost: localhost5000.env.window.TurnamenConfig.isValidLocalApiBaseUrl("http://localhost:5000/api/v1"),
+          httpsLocalhost: localhost5000.env.window.TurnamenConfig.isValidLocalApiBaseUrl("https://localhost:8443/api/v1"),
+          httpsLoopbackNoPort: localhost5000.env.window.TurnamenConfig.isValidLocalApiBaseUrl("https://127.0.0.1/api/v1"),
+          invalidPortZero: localhost5000.env.window.TurnamenConfig.isValidLocalApiBaseUrl("http://localhost:0/api/v1"),
+          invalidPortHigh: localhost5000.env.window.TurnamenConfig.isValidLocalApiBaseUrl("http://localhost:70000/api/v1"),
+          invalidExternal: localhost5000.env.window.TurnamenConfig.isValidLocalApiBaseUrl("https://evil.example:5000/api/v1"),
+        };
+
+        return {
+          localhost5000: localhost5000.resolved,
+          localhost5000State: localhost5000.initialStateUrl,
+          loopback5000: loopback5000.resolved,
+          localhost5055: localhost5055.resolved,
+          httpsLocalhost8443: httpsLocalhost8443.resolved,
+          httpsLoopbackDefault: httpsLoopbackDefault.resolved,
+          eelPortFallback: eelPortFallback.resolved,
+          eelPresentFallback: eelPresentFallback.resolved,
+          externalHostFallback: externalHostFallback.resolved,
+          afterRuntimeSync,
+          validatorChecks,
+        };
+        """
+    )
+
+    assert result["localhost5000"] == "http://localhost:5000/api/v1"
+    assert result["localhost5000State"] == "http://localhost:5000/api/v1"
+    assert result["loopback5000"] == "http://127.0.0.1:5000/api/v1"
+    assert result["localhost5055"] == "http://localhost:5055/api/v1"
+    assert result["httpsLocalhost8443"] == "https://localhost:8443/api/v1"
+    assert result["httpsLoopbackDefault"] == "https://127.0.0.1/api/v1"
+    assert result["eelPortFallback"] == "http://127.0.0.1:5000/api/v1"
+    assert result["eelPresentFallback"] == "http://127.0.0.1:5000/api/v1"
+    assert result["externalHostFallback"] == "http://127.0.0.1:5000/api/v1"
+    assert result["afterRuntimeSync"] == "http://localhost:5000/api/v1"
+    assert result["validatorChecks"] == {
+        "httpLocalhost": True,
+        "httpsLocalhost": True,
+        "httpsLoopbackNoPort": True,
+        "invalidPortZero": False,
+        "invalidPortHigh": False,
+        "invalidExternal": False,
+    }
+
+
+def test_frontend_validate_and_normalize_path_and_request_blocks_traversal() -> None:
+    result = _run_js_harness(
+        """
+        let fetchCalls = [];
+        let eelCalls = [];
+        const env = createEnv({
+          location: { protocol: "http:", hostname: "localhost", port: "5000" },
+          eel: {
+            eel_get_runtime_info: () => () => ({
+              success: true,
+              data: { app_mode: "mock", is_simulation: true, api_base_url: "http://127.0.0.1:5000/api/v1" },
+            }),
+            eel_api_request: (method, endpoint) => () => {
+              eelCalls.push({ method, endpoint });
+              return { success: true, message: "OK", data: {} };
+            },
+          },
+          fetch: async (url, options) => {
+            fetchCalls.push({ url, options });
+            return {
+              ok: true,
+              status: 200,
+              text: async () => JSON.stringify({ success: true, data: {} }),
+            };
+          },
+        });
+
+        const validDirect = {
+          health: env.window.TurnamenAPI.validateAndNormalizePath("/health"),
+          noSlash: env.window.TurnamenAPI.validateAndNormalizePath("health"),
+          withPrefix: env.window.TurnamenAPI.validateAndNormalizePath("/api/v1/health"),
+          withQuery: env.window.TurnamenAPI.validateAndNormalizePath("/tournaments?status=ongoing&game_id=123"),
+        };
+
+        const traversalPayloads = [
+          "/../../",
+          "/api/v1/../health",
+          "/api/v1/%2e%2e/%2e%2e/index.html",
+          "/api/v1/%2E%2E/%2E%2E/config.js",
+          "/games/.%2e/auth/me",
+          "/games/%2e./auth/me",
+          "/games/..%2f..%2findex.html",
+          "/games/..%5c..%5cindex.html",
+          "/games/%252e%252e/auth/me",
+          "/games/%252f..%252findex.html",
+          "/games/%255c..%255cindex.html",
+          "/games/%25%32%65%25%32%65/auth/me",
+          "/games/.",
+          "/games/..",
+          "/api/v1",
+          "/api/v1/",
+          "/api/v1//",
+          "/api/v10/health",
+          "/health#frag",
+          "/health\\r\\nX-Test: 1",
+          "/health\\u0000",
+          "http://evil.example/api/v1/health",
+          "//evil.example/health",
+          "/health@evil.example",
+          "/games/%ZZ",
+        ];
+
+        const directRejected = traversalPayloads.map((p) => ({
+          payload: p,
+          result: env.window.TurnamenAPI.validateAndNormalizePath(p),
+        }));
+
+        const requestRejected = [];
+        for (const p of traversalPayloads) {
+          const res = await env.window.TurnamenAPI.request("GET", p);
+          requestRejected.push({ payload: p, success: res.success, code: res.error && res.error.code });
+        }
+
+        const dotSegmentRes = await env.window.TurnamenAPI.getGameById(".");
+        const dotDotSegmentRes = await env.window.TurnamenAPI.getGameById("..");
+        const countsAfterBlocks = { fetch: fetchCalls.length, eel: eelCalls.length };
+
+        // Verify fetch uses redirect: "manual" and blocks 3xx redirects without Eel
+        let redirectFetchOptions = null;
+        const envHttp = createEnv({
+          location: { protocol: "http:", hostname: "localhost", port: "5000" },
+          fetch: async (url, options) => {
+            redirectFetchOptions = { url, redirect: options.redirect };
+            return {
+              ok: false,
+              status: 302,
+              type: "basic",
+              text: async () => "",
+            };
+          },
+        });
+        const redirectRes = await envHttp.window.TurnamenAPI.getHealth();
+
+        return {
+          validDirect,
+          directRejected,
+          requestRejected,
+          dotSegmentRes,
+          dotDotSegmentRes,
+          countsAfterBlocks,
+          redirectFetchOptions,
+          redirectRes,
+        };
+        """
+    )
+
+    assert result["validDirect"] == {
+        "health": "/health",
+        "noSlash": "/health",
+        "withPrefix": "/health",
+        "withQuery": "/tournaments?status=ongoing&game_id=123",
+    }
+    assert all(item["result"] is None for item in result["directRejected"])
+    assert all(
+        item["success"] is False and item["code"] == "INVALID_ENDPOINT"
+        for item in result["requestRejected"]
+    )
+    assert result["dotSegmentRes"]["success"] is False
+    assert result["dotSegmentRes"]["error"]["code"] == "VALIDATION_ERROR"
+    assert result["dotDotSegmentRes"]["success"] is False
+    assert result["dotDotSegmentRes"]["error"]["code"] == "VALIDATION_ERROR"
+    assert result["countsAfterBlocks"] == {"fetch": 0, "eel": 0}
+    assert result["redirectFetchOptions"] == {
+        "url": "http://localhost:5000/api/v1/health",
+        "redirect": "manual",
+    }
+    assert result["redirectRes"]["success"] is False
+    assert result["redirectRes"]["error"]["code"] == "REDIRECT_BLOCKED"

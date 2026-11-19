@@ -19,7 +19,7 @@ from werkzeug.serving import make_server
 from backend.app import create_app
 from backend.core.config import AppConfig, ROOT_DIR, load_config
 from backend.core.logging_config import configure_logging, redact_sensitive_text
-from desktop.bridge.eel_bridge import register_eel_bridge
+from desktop.bridge.eel_bridge import close_bridge_sessions, register_eel_bridge
 
 WEB_DIR = ROOT_DIR / "desktop" / "web"
 DEFAULT_API_READY_TIMEOUT = 10.0
@@ -105,18 +105,27 @@ def wait_for_api_ready(
     health_url = f"http://{config.api_host}:{config.api_port}/api/v1/health"
     deadline = time.monotonic() + max(timeout, 0.1)
 
-    while time.monotonic() < deadline:
-        if server_thread is not None and not server_thread.is_alive():
-            return False
-        try:
-            resp = requests.get(health_url, timeout=1.0)
-            if resp.status_code == 200:
-                payload = resp.json()
-                if isinstance(payload, dict) and payload.get("success") is True:
-                    return True
-        except (requests.RequestException, ValueError):
-            pass
-        time.sleep(poll_interval)
+    with requests.Session() as session:
+        session.trust_env = False
+        session.proxies = {}
+
+        while time.monotonic() < deadline:
+            if server_thread is not None and not server_thread.is_alive():
+                return False
+            remaining = max(0.05, deadline - time.monotonic())
+            try:
+                resp = session.get(
+                    health_url,
+                    timeout=min(1.0, remaining),
+                    allow_redirects=False,
+                )
+                if resp.status_code == 200:
+                    payload = resp.json()
+                    if isinstance(payload, dict) and payload.get("success") is True:
+                        return True
+            except (requests.RequestException, ValueError):
+                pass
+            time.sleep(max(poll_interval, 0.0))
 
     return False
 
@@ -465,6 +474,7 @@ def launch_application(api_only: bool = False, config: AppConfig | None = None) 
     finally:
         logger.info("Stopping background Flask REST API server...")
         flask_thread.shutdown()
+        close_bridge_sessions()
         logger.info("Shutdown complete.")
 
     return exit_code
