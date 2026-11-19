@@ -1,7 +1,4 @@
-"""Match management and bracket progression application service.
-
-Owner: Adriel (Tournament & Match System Developer)
-"""
+"""Service untuk manajemen pertandingan, skor, dan pergerakan bracket."""
 
 from __future__ import annotations
 
@@ -24,7 +21,7 @@ from backend.repositories.interfaces.repository_protocol import DataStoreReposit
 
 
 class MatchService:
-    """Application service managing tournament brackets, match scores, and round advancement."""
+    """Mengelola alur bracket, input skor pertandingan, dan validasi."""
 
     def __init__(self, repository: DataStoreRepositoryProtocol) -> None:
         self._repo = repository
@@ -34,14 +31,24 @@ class MatchService:
     ) -> None:
         if user["role"] == ROLE_ORGANIZER and tournament["organizer_id"] != user["id"]:
             raise DomainForbiddenError(
-                "Organizer hanya dapat mengelola pertandingan pada turnamen miliknya."
+                "Organizer hanya dapat mengelola pertandingan pada turnamen miliknya.",
+                {"tournament_id": tournament["id"], "user_id": user["id"]},
             )
         if user["role"] == ROLE_COMMITTEE and not self._repo.is_staff_assigned(
             tournament["id"], user["id"]
         ):
             raise DomainForbiddenError(
-                "Panitia hanya dapat mengelola pertandingan pada turnamen yang ditugaskan."
+                "Panitia hanya dapat mengelola pertandingan pada turnamen yang ditugaskan.",
+                {"tournament_id": tournament["id"], "user_id": user["id"]},
             )
+
+    def get_match(self, match_id: str) -> dict[str, Any]:
+        match = self._repo.get_match_by_id(match_id)
+        if not match:
+            raise DomainNotFoundError(
+                "Pertandingan tidak ditemukan.", {"match_id": match_id}
+            )
+        return match
 
     def get_tournament_bracket(self, tournament_id: str) -> dict[str, Any]:
         tournament = self._repo.get_tournament_by_id(tournament_id)
@@ -195,7 +202,7 @@ class MatchService:
             }
         )
 
-        # Advance winner automatically to next match slot if applicable
+        # Pemenang otomatis lanjut ke slot pertandingan babak berikutnya
         updated_next_match: dict[str, Any] | None = None
         next_match_id = match.get("next_match_id")
         next_slot = match.get("next_slot")
@@ -205,7 +212,7 @@ class MatchService:
                 next_match_id, {slot_field: winner_team_id}
             )
         elif not next_match_id:
-            # Grand Final completed -> mark tournament completed
+            # Grand Final selesai, update status turnamen
             self._repo.update_tournament(tournament["id"], {"status": "completed"})
 
         action_name = (

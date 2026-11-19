@@ -1,7 +1,4 @@
-"""Team and roster management service.
-
-Owner: Adriel (Tournament & Match System Developer)
-"""
+"""Service untuk pengelolaan tim esports dan roster pemain."""
 
 from __future__ import annotations
 
@@ -21,7 +18,7 @@ VALID_MEMBER_ROLES = ("captain", "starter", "substitute", "coach")
 
 
 class TeamService:
-    """Application service for managing esports teams and player rosters."""
+    """Pengelolaan tim esports dan anggota tim."""
 
     def __init__(self, repository: DataStoreRepositoryProtocol) -> None:
         self._repo = repository
