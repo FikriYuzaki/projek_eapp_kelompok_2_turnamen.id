@@ -92,11 +92,20 @@ class ReportService:
                     if loser_id and loser_id in stats:
                         stats[loser_id]["placement_label"] = "Juara 2 (Runner-Up)"
 
+        def _placement_tier(row: dict[str, Any]) -> int:
+            label = row.get("placement_label", "")
+            if label == "Juara 1 (Champion)":
+                return 0
+            if label == "Juara 2 (Runner-Up)":
+                return 1
+            return 2
+
         standings = list(stats.values())
         standings.sort(
             key=lambda s: (
-                -s["matches_won"],
+                _placement_tier(s),
                 -s["highest_round_reached"],
+                -s["matches_won"],
                 -(s["games_won"] - s["games_lost"]),
                 s["seed_number"] or 999,
             )
