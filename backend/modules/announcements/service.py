@@ -59,7 +59,13 @@ class AnnouncementService:
         title = str(payload.get("title") or "").strip()
         content = str(payload.get("content") or "").strip()
         priority = str(payload.get("priority") or "normal").strip().lower()
-        is_pinned = bool(payload.get("is_pinned", False))
+        raw_pinned = payload.get("is_pinned", False)
+        if not isinstance(raw_pinned, bool):
+            raise DomainValidationError(
+                "Field is_pinned harus berupa boolean (true/false).",
+                {"field": "is_pinned"},
+            )
+        is_pinned = raw_pinned
 
         if len(title) < 4:
             raise DomainValidationError(

@@ -46,9 +46,7 @@ def _resolve_current_actor() -> dict[str, Any] | None:
 def create_v1_blueprint() -> Blueprint:
     bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
-    # -------------------------------------------------------------------------
     # Health
-    # -------------------------------------------------------------------------
     @bp.get("/health")
     def get_health() -> Any:
         cfg = current_app.config["TURNAMEN_CONFIG"]
@@ -63,9 +61,7 @@ def create_v1_blueprint() -> Blueprint:
             message="Layanan API Turnamen.in berjalan normal",
         )
 
-    # -------------------------------------------------------------------------
     # Authentication
-    # -------------------------------------------------------------------------
     @bp.post("/auth/register")
     def auth_register() -> Any:
         payload = parse_json_body(
@@ -91,6 +87,9 @@ def create_v1_blueprint() -> Blueprint:
 
     @bp.post("/auth/logout")
     def auth_logout() -> Any:
+        actor = _resolve_current_actor()
+        if not actor:
+            raise DomainUnauthorizedError("Sesi pengguna tidak ditemukan atau sudah berakhir.")
         token = _extract_bearer_token()
         services = current_app.config["TURNAMEN_SERVICES"]
         services["auth"].logout(token)
@@ -109,9 +108,7 @@ def create_v1_blueprint() -> Blueprint:
             message="Profil pengguna aktif berhasil diperoleh",
         )
 
-    # -------------------------------------------------------------------------
     # Games
-    # -------------------------------------------------------------------------
     @bp.get("/games")
     def list_games() -> Any:
         services = current_app.config["TURNAMEN_SERVICES"]
@@ -124,9 +121,7 @@ def create_v1_blueprint() -> Blueprint:
         game = services["tournaments"].get_game(game_id)
         return api_success(data=game, message="Detail game berhasil diperoleh")
 
-    # -------------------------------------------------------------------------
     # Tournaments
-    # -------------------------------------------------------------------------
     @bp.get("/tournaments")
     def list_tournaments() -> Any:
         status = request.args.get("status") or None
@@ -170,9 +165,7 @@ def create_v1_blueprint() -> Blueprint:
         deleted = services["tournaments"].delete_tournament(actor, tournament_id)
         return api_success(data=deleted, message="Turnamen berhasil dihapus")
 
-    # -------------------------------------------------------------------------
     # Teams & Members
-    # -------------------------------------------------------------------------
     @bp.get("/teams")
     def list_teams() -> Any:
         game_id = request.args.get("game_id") or None
@@ -218,9 +211,7 @@ def create_v1_blueprint() -> Blueprint:
             status_code=201,
         )
 
-    # -------------------------------------------------------------------------
     # Registrations
-    # -------------------------------------------------------------------------
     @bp.get("/tournaments/<tournament_id>/registrations")
     def list_registrations(tournament_id: str) -> Any:
         services = current_app.config["TURNAMEN_SERVICES"]
@@ -252,9 +243,7 @@ def create_v1_blueprint() -> Blueprint:
             message="Status pendaftaran berhasil diperbarui",
         )
 
-    # -------------------------------------------------------------------------
     # Matches & Bracket
-    # -------------------------------------------------------------------------
     @bp.get("/tournaments/<tournament_id>/matches")
     def list_matches(tournament_id: str) -> Any:
         services = current_app.config["TURNAMEN_SERVICES"]
@@ -287,9 +276,7 @@ def create_v1_blueprint() -> Blueprint:
             message="Hasil pertandingan berhasil disahkan",
         )
 
-    # -------------------------------------------------------------------------
     # Announcements
-    # -------------------------------------------------------------------------
     @bp.get("/tournaments/<tournament_id>/announcements")
     def list_announcements(tournament_id: str) -> Any:
         services = current_app.config["TURNAMEN_SERVICES"]
@@ -310,9 +297,7 @@ def create_v1_blueprint() -> Blueprint:
             status_code=201,
         )
 
-    # -------------------------------------------------------------------------
     # Reports & Standings
-    # -------------------------------------------------------------------------
     @bp.get("/tournaments/<tournament_id>/reports")
     def get_tournament_reports(tournament_id: str) -> Any:
         services = current_app.config["TURNAMEN_SERVICES"]
