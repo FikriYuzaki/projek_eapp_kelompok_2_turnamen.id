@@ -76,3 +76,19 @@ Alasan satu baris per keputusan utama:
 2. **Modal Aksesibel:** Menggunakan `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, focus trap internal, penutupan via `Escape` atau klik backdrop, serta pemulihan fokus saat ditutup.
 3. **Affordance & Reduced Motion:** Base layer menerapkan `cursor: pointer` pada seluruh kontrol aktif dan `cursor: not-allowed` pada elemen nonaktif. Seluruh transisi menghormati `@media (prefers-reduced-motion: reduce)`.
 4. **State Data Lengkap:** Setiap view data menyediakan Loading State (`role="status"`), Empty State (penyebab + aksi lanjutan), dan Error State (`role="alert"` + tombol coba lagi).
+
+---
+
+## 5. Arsitektur Role-Based Esports Experience
+
+Seluruh 5 role RBAC (`docs/contracts/role-permissions.md`) berbagi identitas visual **Futuristic Arena**, namun menerima struktur dashboard, navigasi, dan kontrol aksi sesuai hak akses masing-masing:
+
+1. **Kelompok Competitive Experience (`player`, `team_captain`, dan tamu publik):**
+   - **Player (`Competitive Arena`):** Banner turnamen unggulan, galeri poster cabang game (`/api/v1/games`), kartu penemuan turnamen dengan progres kuota, identitas tim pribadi serta match cards relevan, dan ringkasan klasemen. Tidak ada tombol administrasi atau menu pengelolaan skor.
+   - **Team Captain (`Team Command`):** Hero identitas tim lengkap dengan emblem SVG geometris, pemilih tim milik kapten, grid roster anggota, status registrasi serta turnamen terbuka yang cocok dengan cabang game tim, dan jadwal/hasil pertandingan tim.
+2. **Kelompok Management Experience (`organizer`, `committee`, `super_admin`):**
+   - **Organizer (`Tournament Suite`):** Kontrol turnamen milik sendiri, metrik kuota & pending verification, antrean verifikasi peserta, dan akses cepat ke bracket serta audit log.
+   - **Committee (`Match Operations`):** Antrean pengesahan skor cepat langsung dari dashboard operasional, antrean verifikasi peserta, dan publikasi pengumuman teknis tanpa kontrol pembuatan turnamen/tim.
+   - **Super Admin (`System Control`):** Metrik sistem lintas organizer, kontrol penuh turnamen & tim, distribusi cabang game, telemetri runtime, dan jejak audit sistem.
+3. **Navigasi Dinamis & Access Guard:**
+   - Sidebar dirender ulang secara dinamis berdasarkan role aktif (`renderRoleNavigation`). Menu login hanya tampil saat belum masuk; tombol Keluar hanya tampil saat sesi aktif; halaman terlarang (seperti `match-management` untuk role non-staf atau `profile` untuk tamu) menampilkan Access Denied State yang aman ketika diakses langsung.

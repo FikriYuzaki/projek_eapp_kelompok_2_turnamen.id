@@ -860,3 +860,412 @@
   font-weight: 600;
   text-align: right;
 }
+
+/* ============================================================================
+ * Role-Based Competitive & Management Components
+ * ============================================================================ */
+
+/* Featured Esports Banner (Player / Public Arena) */
+.esports-banner {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #0b1326 0%, #101b36 62%, #181a38 100%);
+  border: 1px solid var(--border-interactive);
+  border-top: 2px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  padding: 22px 24px;
+  margin-bottom: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.85fr);
+  gap: 20px;
+  align-items: center;
+  box-shadow: var(--shadow-card);
+}
+
+.esports-banner-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.esports-banner-kicker {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-cyan-text);
+  margin-bottom: 6px;
+}
+
+.esports-banner-title {
+  margin: 0 0 8px 0;
+  font-family: var(--font-display);
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.esports-banner-desc {
+  margin: 0 0 14px 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  max-width: 60ch;
+}
+
+.esports-banner-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.esports-banner-art {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-secondary);
+}
+
+@media (max-width: 960px) {
+  .esports-banner {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Game Artwork & Poster Cards */
+.game-poster-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.game-poster-card:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+}
+
+.game-poster-art {
+  width: 100%;
+  aspect-ratio: 16 / 8;
+  display: block;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.game-poster-art svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.game-poster-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.game-poster-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.game-poster-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.game-poster-footer {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid rgba(35, 51, 84, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* Tournament Discovery Cards */
+.tournament-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--transition-fast);
+}
+
+.tournament-card:hover {
+  border-color: var(--border-interactive);
+}
+
+.tournament-card-art {
+  position: relative;
+  aspect-ratio: 16 / 6;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.tournament-card-art svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.tournament-card-overlay-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.tournament-card-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.tournament-card-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tournament-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.tournament-card-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(35, 51, 84, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Team Identity Hero & Emblem */
+.team-hero {
+  background: linear-gradient(135deg, #0b1120 0%, #111b33 65%, #161838 100%);
+  border: 1px solid var(--border-interactive);
+  border-top: 2px solid var(--accent-violet-bright);
+  border-radius: var(--radius-md);
+  padding: 20px 22px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+  box-shadow: var(--shadow-card);
+}
+
+.team-hero-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 240px;
+}
+
+.team-emblem {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.team-hero-name {
+  margin: 0 0 4px 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.team-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.roster-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.roster-card-name {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 13.5px;
+}
+
+.roster-card-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Broadcast Match Cards */
+.match-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.match-card.is-highlighted {
+  border-color: rgba(0, 229, 255, 0.45);
+}
+
+.match-card-header {
+  padding: 8px 12px;
+  background-color: rgba(22, 32, 56, 0.65);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.match-card-teams {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.match-card-team {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
+  background-color: var(--bg-surface);
+  border: 1px solid transparent;
+}
+
+.match-card-team.is-winner {
+  border-color: rgba(0, 229, 255, 0.45);
+  background-color: rgba(0, 229, 255, 0.08);
+}
+
+.match-card-team-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.match-card-score {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-width: 28px;
+  text-align: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Telemetry Progress Bar & Game Chip */
+.progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.progress-track {
+  width: 100%;
+  height: 7px;
+  border-radius: var(--radius-xs);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-violet-bright) 100%);
+}
+
+.game-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.game-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background-color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+/* Access Denied State */
+.state-box-denied {
+  border-style: solid;
+  border-color: rgba(196, 181, 253, 0.5);
+  background-color: rgba(16, 24, 43, 0.96);
+}
+
+.state-box-denied .state-icon {
+  color: var(--accent-violet-text);
+  border-color: rgba(196, 181, 253, 0.45);
+}

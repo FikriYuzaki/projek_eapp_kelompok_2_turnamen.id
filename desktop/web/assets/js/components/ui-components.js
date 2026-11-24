@@ -56,6 +56,17 @@
     close: '<path d="M18 6L6 18M6 6l12 12"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+    dashboard:
+      '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+    detail:
+      '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>',
+    swords: '<path d="M4 20l6-6M14 4l6 6-8 8-6-6 8-8zM15 9l-6 6"/>',
+    megaphone:
+      '<path d="M3 11l14-5v12L3 13v-2zM17 8a4 4 0 0 1 0 8M7 14l1.5 5H11l-1.2-4.5"/>',
+    chart: '<path d="M4 20h16M7 16v-5M12 16V7M17 16v-8"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/>',
+    login:
+      '<path d="M10 17l5-5-5-5M15 12H3M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/>',
   };
 
   let modalCleanup = null;
@@ -199,6 +210,137 @@
           ${escapeHtml(ctaLabel)}
         </button>
       </div>
+    `;
+  }
+
+  function renderAccessDeniedState(
+    title = "Akses Ditolak",
+    message = "Role akun Anda tidak memiliki izin untuk membuka halaman ini.",
+    actionHtml = ""
+  ) {
+    return `
+      <div class="state-box state-box-denied" role="alert">
+        <div class="state-icon">${icon("lock", 20)}</div>
+        <h3>${escapeHtml(title)}</h3>
+        <p>${escapeHtml(message)}</p>
+        ${actionHtml ? `<div class="state-actions">${actionHtml}</div>` : ""}
+      </div>
+    `;
+  }
+
+  function getGamePalette(gameSlugOrName) {
+    const key = String(gameSlugOrName || "").toLowerCase();
+    if (key.includes("mobile-legends") || key.includes("mlbb")) {
+      return {
+        primary: "#00E5FF",
+        secondary: "#8B5CF6",
+        code: "MOBA 5V5",
+        accentShape:
+          '<polygon points="160,18 214,64 194,116 126,116 106,64" fill="none" stroke="#00E5FF" stroke-width="2"/><polygon points="160,34 196,66 182,102 138,102 124,66" fill="rgba(0,229,255,0.14)" stroke="#8B5CF6" stroke-width="1.5"/>',
+      };
+    }
+    if (key.includes("valorant")) {
+      return {
+        primary: "#38EEFF",
+        secondary: "#A78BFA",
+        code: "TACTICAL FPS",
+        accentShape:
+          '<path d="M116 30L160 112L204 30" fill="none" stroke="#00E5FF" stroke-width="2.5"/><path d="M134 42L160 90L186 42" fill="none" stroke="#8B5CF6" stroke-width="1.5"/><circle cx="160" cy="34" r="4" fill="#00E5FF"/>',
+      };
+    }
+    if (key.includes("ea-sports-fc") || key.includes("fc")) {
+      return {
+        primary: "#34D399",
+        secondary: "#00E5FF",
+        code: "SPORTS 1V1",
+        accentShape:
+          '<circle cx="160" cy="70" r="38" fill="rgba(0,229,255,0.08)" stroke="#00E5FF" stroke-width="2"/><circle cx="160" cy="70" r="20" fill="none" stroke="#8B5CF6" stroke-width="1.5"/><path d="M90 70H230" stroke="#233354" stroke-width="1.5"/>',
+      };
+    }
+    return {
+      primary: "#00E5FF",
+      secondary: "#8B5CF6",
+      code: "ESPORTS ARENA",
+      accentShape:
+        '<rect x="122" y="30" width="76" height="76" rx="10" fill="rgba(0,229,255,0.08)" stroke="#00E5FF" stroke-width="2"/><path d="M138 68h44M160 46v44" stroke="#8B5CF6" stroke-width="2"/>',
+    };
+  }
+
+  function renderGameArtwork(game, labelOverride = "") {
+    const gameName = (game && (game.name || game.game_name)) || "Esports";
+    const gameSlug = (game && (game.slug || game.game_id || game.name || game.game_name)) || "";
+    const palette = getGamePalette(gameSlug);
+    const label = labelOverride || palette.code;
+
+    return `
+      <svg viewBox="0 0 320 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ilustrasi game ${escapeHtml(gameName)}">
+        <rect width="320" height="160" fill="#0B1120"/>
+        <path d="M0 132L72 132L96 108L320 108" stroke="#1D2A48" stroke-width="1.5"/>
+        <path d="M0 28L210 28L232 50L320 50" stroke="#1D2A48" stroke-width="1.5"/>
+        ${palette.accentShape}
+        <text x="16" y="24" fill="#67E8F9" font-family="monospace" font-size="11" font-weight="700">${escapeHtml(label)}</text>
+        <text x="16" y="146" fill="#F1F5F9" font-family="sans-serif" font-size="13" font-weight="700">${escapeHtml(gameName)}</text>
+      </svg>
+    `;
+  }
+
+  function renderGameChip(gameName, gameSlug = "") {
+    const palette = getGamePalette(gameSlug || gameName);
+    return `<span class="game-chip"><span class="game-chip-dot" style="background-color:${palette.primary};" aria-hidden="true"></span><span>${escapeHtml(gameName || "Esports")}</span></span>`;
+  }
+
+  function renderTeamEmblem(tag, size = 44) {
+    const cleanTag = String(tag || "TM").trim().toUpperCase().slice(0, 4) || "TM";
+    return `
+      <span class="team-emblem" style="width:${size}px; height:${size}px;" aria-hidden="true">
+        <svg width="${size}" height="${size}" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M24 3L41 9.5V22.5C41 33.2 33.8 41.6 24 45C14.2 41.6 7 33.2 7 22.5V9.5L24 3Z" fill="#10182B" stroke="#00E5FF" stroke-width="2"/>
+          <path d="M24 7L37 12V22C37 30.2 31.5 36.8 24 39.8C16.5 36.8 11 30.2 11 22V12L24 7Z" fill="#162038" stroke="#8B5CF6" stroke-width="1"/>
+          <text x="24" y="28" text-anchor="middle" fill="#F1F5F9" font-family="monospace" font-size="11" font-weight="700">${escapeHtml(cleanTag)}</text>
+        </svg>
+      </span>
+    `;
+  }
+
+  function renderProgressBar(percent, ariaLabel = "Progres") {
+    const clamped = Math.max(0, Math.min(100, Number(percent || 0)));
+    return `
+      <div class="progress-track" role="progressbar" aria-label="${escapeHtml(ariaLabel)}" aria-valuenow="${clamped}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-fill" style="width:${clamped}%;"></div>
+      </div>
+    `;
+  }
+
+  function renderMatchCard(match, options = {}) {
+    const highlightTeamIds = new Set(options.highlightTeamIds || []);
+    const winA = match.winner_team_id && match.winner_team_id === match.team_a_id;
+    const winB = match.winner_team_id && match.winner_team_id === match.team_b_id;
+    const involvesOwnTeam =
+      highlightTeamIds.has(match.team_a_id) || highlightTeamIds.has(match.team_b_id);
+
+    return `
+      <article class="match-card ${involvesOwnTeam ? "is-highlighted" : ""}">
+        <div class="match-card-header">
+          <span class="tabular-nums"><strong>${escapeHtml(match.round_name || "Match")}</strong> #${match.match_number} (Bo${match.best_of || 3})</span>
+          ${renderStatusBadge(match.status)}
+        </div>
+        <div class="match-card-teams">
+          <div class="match-card-team ${winA ? "is-winner" : ""}">
+            <div class="match-card-team-name">
+              <span class="badge badge-neutral tabular-nums">${escapeHtml(match.team_a_tag || "TBD")}</span>
+              <span>${escapeHtml(match.team_a_name || "TBD")}</span>
+            </div>
+            <span class="match-card-score">${match.score_a ?? 0}</span>
+          </div>
+          <div class="match-card-team ${winB ? "is-winner" : ""}">
+            <div class="match-card-team-name">
+              <span class="badge badge-neutral tabular-nums">${escapeHtml(match.team_b_tag || "TBD")}</span>
+              <span>${escapeHtml(match.team_b_name || "TBD")}</span>
+            </div>
+            <span class="match-card-score">${match.score_b ?? 0}</span>
+          </div>
+        </div>
+      </article>
     `;
   }
 
@@ -364,6 +506,12 @@
     renderEmptyState,
     renderErrorState,
     renderAuthNotice,
+    renderAccessDeniedState,
+    renderGameArtwork,
+    renderGameChip,
+    renderTeamEmblem,
+    renderProgressBar,
+    renderMatchCard,
     showToast,
     openModal,
     closeModal,

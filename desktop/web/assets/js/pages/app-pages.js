@@ -1,7 +1,8 @@
 /**
- * Turnamen.in: Futuristic Arena Desktop Pages Controller (`window.TurnamenApp`)
+ * Turnamen.in: Role-Based Esports Experience Controller (`window.TurnamenApp`)
  * Owner: Fikri (System Integration & Desktop UI/UX)
- * Connects all 10 screens to `window.TurnamenAPI` across Mock and Supabase modes.
+ * Implements distinct Competitive (Player, Team Captain) & Management (Organizer, Committee, Super Admin)
+ * experiences backed strictly by `docs/contracts/role-permissions.md` and `window.TurnamenAPI`.
  */
 (function (window, document) {
   "use strict";
@@ -19,31 +20,190 @@
     login: "Autentikasi Akun",
   };
 
+  const ROLE_NAV_CONFIG = {
+    player: {
+      experienceLabel: "Competitive Arena",
+      dashboardTitle: "Arena Utama Player",
+      sections: [
+        {
+          label: "Eksplorasi Arena",
+          items: [
+            { page: "dashboard", label: "Arena Utama", icon: "dashboard" },
+            { page: "tournament-list", label: "Jelajah Turnamen", icon: "trophy" },
+          ],
+        },
+        {
+          label: "Kompetisi",
+          items: [
+            { page: "bracket", label: "Bracket & Match", icon: "bracket" },
+            { page: "reports", label: "Klasemen", icon: "chart" },
+            { page: "team-management", label: "Tim Esports", icon: "shield" },
+            { page: "announcements", label: "Pengumuman", icon: "megaphone" },
+          ],
+        },
+        {
+          label: "Akun",
+          items: [{ page: "profile", label: "Profil Saya", icon: "user" }],
+        },
+      ],
+    },
+    team_captain: {
+      experienceLabel: "Team Command",
+      dashboardTitle: "Markas Tim & Kompetisi",
+      sections: [
+        {
+          label: "Markas Kapten",
+          items: [
+            { page: "dashboard", label: "Markas Tim", icon: "dashboard" },
+            { page: "team-management", label: "Tim & Roster Saya", icon: "shield" },
+          ],
+        },
+        {
+          label: "Kompetisi",
+          items: [
+            { page: "tournament-list", label: "Jelajah Turnamen", icon: "trophy" },
+            { page: "tournament-detail", label: "Registrasi & Peserta", icon: "detail" },
+            { page: "bracket", label: "Bracket & Jadwal", icon: "bracket" },
+            { page: "announcements", label: "Pengumuman", icon: "megaphone" },
+            { page: "reports", label: "Klasemen", icon: "chart" },
+          ],
+        },
+        {
+          label: "Akun",
+          items: [{ page: "profile", label: "Profil Kapten", icon: "user" }],
+        },
+      ],
+    },
+    committee: {
+      experienceLabel: "Match Operations",
+      dashboardTitle: "Dashboard Operasional Panitia",
+      sections: [
+        {
+          label: "Operasional Pertandingan",
+          items: [
+            { page: "dashboard", label: "Dashboard Operasional", icon: "dashboard" },
+            { page: "tournament-detail", label: "Verifikasi Peserta", icon: "detail" },
+            { page: "match-management", label: "Jadwal & Skor Match", icon: "swords" },
+            { page: "bracket", label: "Bracket Turnamen", icon: "bracket" },
+          ],
+        },
+        {
+          label: "Komunikasi & Laporan",
+          items: [
+            { page: "announcements", label: "Pengumuman", icon: "megaphone" },
+            { page: "reports", label: "Laporan & Klasemen", icon: "chart" },
+            { page: "tournament-list", label: "Daftar Turnamen", icon: "trophy" },
+          ],
+        },
+        {
+          label: "Akun",
+          items: [{ page: "profile", label: "Profil Panitia", icon: "user" }],
+        },
+      ],
+    },
+    organizer: {
+      experienceLabel: "Tournament Suite",
+      dashboardTitle: "Dashboard Tournament Organizer",
+      sections: [
+        {
+          label: "Manajemen Turnamen",
+          items: [
+            { page: "dashboard", label: "Dashboard Organizer", icon: "dashboard" },
+            { page: "tournament-list", label: "Kelola Turnamen", icon: "trophy" },
+            { page: "tournament-detail", label: "Verifikasi Peserta", icon: "detail" },
+            { page: "match-management", label: "Jadwal & Skor Match", icon: "swords" },
+            { page: "bracket", label: "Bracket Turnamen", icon: "bracket" },
+          ],
+        },
+        {
+          label: "Komunikasi & Laporan",
+          items: [
+            { page: "announcements", label: "Pengumuman", icon: "megaphone" },
+            { page: "reports", label: "Laporan & Klasemen", icon: "chart" },
+          ],
+        },
+        {
+          label: "Akun",
+          items: [{ page: "profile", label: "Profil Organizer", icon: "user" }],
+        },
+      ],
+    },
+    super_admin: {
+      experienceLabel: "System Control",
+      dashboardTitle: "Dashboard Administrasi Sistem",
+      sections: [
+        {
+          label: "Administrasi Sistem",
+          items: [
+            { page: "dashboard", label: "Dashboard Sistem", icon: "dashboard" },
+            { page: "tournament-list", label: "Kelola Turnamen", icon: "trophy" },
+            { page: "tournament-detail", label: "Verifikasi & Peserta", icon: "detail" },
+            { page: "team-management", label: "Manajemen Tim", icon: "shield" },
+            { page: "match-management", label: "Jadwal & Skor Match", icon: "swords" },
+            { page: "bracket", label: "Bracket Turnamen", icon: "bracket" },
+          ],
+        },
+        {
+          label: "Komunikasi & Laporan",
+          items: [
+            { page: "announcements", label: "Pengumuman", icon: "megaphone" },
+            { page: "reports", label: "Laporan & Klasemen", icon: "chart" },
+          ],
+        },
+        {
+          label: "Akun",
+          items: [{ page: "profile", label: "Profil Admin", icon: "user" }],
+        },
+      ],
+    },
+    guest: {
+      experienceLabel: "Public Arena",
+      dashboardTitle: "Arena Publik Turnamen.in",
+      sections: [
+        {
+          label: "Eksplorasi Publik",
+          items: [
+            { page: "dashboard", label: "Arena Publik", icon: "dashboard" },
+            { page: "tournament-list", label: "Jelajah Turnamen", icon: "trophy" },
+            { page: "bracket", label: "Bracket", icon: "bracket" },
+            { page: "announcements", label: "Pengumuman", icon: "megaphone" },
+            { page: "reports", label: "Klasemen", icon: "chart" },
+          ],
+        },
+        {
+          label: "Autentikasi",
+          items: [{ page: "login", label: "Masuk / Daftar", icon: "login" }],
+        },
+      ],
+    },
+  };
+
   const ROLE_CAPABILITIES = {
     super_admin: [
-      "Akses penuh manajemen pengguna, turnamen, tim, bracket, skor, pengumuman, dan laporan.",
+      "Akses penuh administrasi turnamen, verifikasi peserta, manajemen tim, bracket, pengesahan skor, pengumuman, dan laporan sistem.",
     ],
     organizer: [
       "Membuat turnamen baru serta mengubah atau menghapus turnamen milik sendiri.",
-      "Memverifikasi pendaftaran tim, menyusun bracket, mengesahkan skor, dan menerbitkan pengumuman.",
+      "Memverifikasi pendaftaran tim, menyusun bracket, mengesahkan skor, dan mempublikasikan pengumuman pada turnamen miliknya.",
     ],
     committee: [
       "Memverifikasi pendaftaran peserta pada turnamen yang ditugaskan.",
-      "Menyusun bracket, menginput/mengesahkan skor pertandingan, dan mempublikasikan pengumuman.",
+      "Menyusun bracket, menginput atau mengesahkan skor pertandingan, dan mempublikasikan pengumuman.",
     ],
     team_captain: [
       "Membuat tim baru, memperbarui profil tim milik sendiri, dan menambah anggota roster.",
-      "Mendaftarkan tim milik sendiri ke turnamen yang membuka pendaftaran.",
+      "Mendaftarkan tim milik sendiri ke turnamen yang membuka pendaftaran serta memantau jadwal dan bracket.",
     ],
     player: [
-      "Melihat daftar turnamen, detail peserta, tim, jadwal pertandingan, bracket, pengumuman, dan klasemen.",
-      "Mengakses halaman profil pribadi (akses read-only pada operasional turnamen).",
+      "Menjelajahi katalog game, turnamen aktif dan mendatang, profil tim, jadwal pertandingan, bracket, pengumuman, dan klasemen.",
+      "Melihat profil pribadi (akses read-only pada operasional turnamen).",
     ],
   };
 
   let currentPage = "dashboard";
   let navigationSeq = 0;
   let loginActiveTab = "login";
+  let selectedCaptainTeamId = "";
   let tournamentFilterState = { status: "", gameId: "", search: "" };
   let teamFilterState = { gameId: "", search: "" };
   let matchRoundFilter = "";
@@ -53,7 +213,7 @@
   let cachedTournaments = [];
 
   // =========================================================================
-  // AUTH, MODE & RBAC HELPERS (UX-ONLY; BACKEND IS SOLE SECURITY AUTHORITY)
+  // AUTH, ROLE EXPERIENCE & RBAC HELPERS (UX-ONLY; BACKEND ENFORCES RBAC)
   // =========================================================================
   function getRuntimeState() {
     if (!window.TurnamenConfig || typeof window.TurnamenConfig.getState !== "function") {
@@ -79,8 +239,19 @@
     return state.currentUser && typeof state.currentUser === "object" ? state.currentUser : null;
   }
 
-  function isStaffRole(role) {
-    return role === "super_admin" || role === "organizer" || role === "committee";
+  function getActiveRoleKey() {
+    const user = getCurrentUserSafe();
+    if (!user || !user.role) return "guest";
+    const key = String(user.role).toLowerCase();
+    return ROLE_NAV_CONFIG[key] ? key : "player";
+  }
+
+  function isCompetitiveRole(roleKey = getActiveRoleKey()) {
+    return roleKey === "player" || roleKey === "team_captain" || roleKey === "guest";
+  }
+
+  function isManagementRole(roleKey = getActiveRoleKey()) {
+    return roleKey === "super_admin" || roleKey === "organizer" || roleKey === "committee";
   }
 
   function canPerform(action, context = {}) {
@@ -122,6 +293,34 @@
     }
   }
 
+  function checkPageAccess(pageName) {
+    const roleKey = getActiveRoleKey();
+    if (pageName === "match-management" && !isManagementRole(roleKey)) {
+      return {
+        allowed: false,
+        title: "Akses Halaman Pengesahan Skor Ditolak",
+        message:
+          "Halaman Jadwal & Pengesahan Skor hanya dapat diakses oleh Super Admin, Tournament Organizer, atau Committee. Anda dapat memantau jadwal dan hasil pertandingan melalui halaman Bracket.",
+        actionHtml:
+          roleKey === "guest"
+            ? `<button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket">Lihat Bracket Publik</button><button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="login">Masuk Akun</button>`
+            : `<button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket">Buka Halaman Bracket</button><button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="dashboard">Kembali ke Dashboard</button>`,
+      };
+    }
+
+    if (pageName === "profile" && roleKey === "guest") {
+      return {
+        allowed: false,
+        title: "Autentikasi Diperlukan",
+        message:
+          "Halaman Profil Pengguna hanya tersedia bagi akun yang sudah masuk. Silakan masuk atau daftarkan akun terlebih dahulu.",
+        actionHtml: `<button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="login">Masuk / Daftar Akun</button><button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="dashboard">Kembali ke Arena Publik</button>`,
+      };
+    }
+
+    return { allowed: true };
+  }
+
   function getEligibleTeamsForRegistration(teams, tournament, existingRegs) {
     const user = getCurrentUserSafe();
     if (!user || !tournament) return [];
@@ -139,7 +338,7 @@
   }
 
   // =========================================================================
-  // INITIALIZATION & GLOBAL SHELL BINDINGS
+  // INITIALIZATION, DYNAMIC ROLE NAVIGATION & SHELL BINDINGS
   // =========================================================================
   async function initApp() {
     bindSidebarNavigation();
@@ -155,14 +354,53 @@
     await navigateTo("dashboard");
   }
 
+  function renderRoleNavigation(activePage = currentPage) {
+    const navEl = document.getElementById("sidebar-nav");
+    const expEl = document.getElementById("sidebar-experience-label");
+    const roleKey = getActiveRoleKey();
+    const config = ROLE_NAV_CONFIG[roleKey] || ROLE_NAV_CONFIG.guest;
+
+    if (expEl) {
+      expEl.textContent = config.experienceLabel;
+    }
+
+    if (!navEl) return;
+    navEl.innerHTML = config.sections
+      .map((section) => {
+        const itemsHtml = section.items
+          .map((item) => {
+            const isCurrent = item.page === activePage;
+            return `
+              <button
+                type="button"
+                class="nav-item ${isCurrent ? "active" : ""}"
+                data-page="${window.TurnamenUI.escapeHtml(item.page)}"
+                ${isCurrent ? 'aria-current="page"' : ""}
+              >
+                ${window.TurnamenUI.icon(item.icon, 16, "nav-icon")}
+                <span>${window.TurnamenUI.escapeHtml(item.label)}</span>
+              </button>
+            `;
+          })
+          .join("");
+
+        return `
+          <div class="nav-section-label">${window.TurnamenUI.escapeHtml(section.label)}</div>
+          ${itemsHtml}
+        `;
+      })
+      .join("");
+  }
+
   function bindSidebarNavigation() {
-    const navButtons = document.querySelectorAll(".nav-item[data-page]");
-    navButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const target = btn.getAttribute("data-page");
-        closeMobileSidebar();
-        navigateTo(target);
-      });
+    const navEl = document.getElementById("sidebar-nav");
+    if (!navEl) return;
+    navEl.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest(".nav-item[data-page]");
+      if (!btn) return;
+      const target = btn.getAttribute("data-page");
+      closeMobileSidebar();
+      navigateTo(target);
     });
   }
 
@@ -182,12 +420,8 @@
       });
     }
 
-    if (closeBtn) {
-      closeBtn.addEventListener("click", closeMobileSidebar);
-    }
-    if (backdrop) {
-      backdrop.addEventListener("click", closeMobileSidebar);
-    }
+    if (closeBtn) closeBtn.addEventListener("click", closeMobileSidebar);
+    if (backdrop) backdrop.addEventListener("click", closeMobileSidebar);
   }
 
   function closeMobileSidebar() {
@@ -221,7 +455,7 @@
         `Peran simulasi diubah ke: ${user.full_name} (${user.role})`,
         "info"
       );
-      navigateTo(currentPage);
+      navigateTo("dashboard");
     });
   }
 
@@ -229,8 +463,7 @@
     const btn = document.getElementById("topbar-auth-action");
     if (!btn) return;
     btn.addEventListener("click", () => {
-      const user = getCurrentUserSafe();
-      if (user) {
+      if (getCurrentUserSafe()) {
         handleLogout();
       } else {
         navigateTo("login");
@@ -305,8 +538,11 @@
     }
 
     if (authBtn) {
-      authBtn.textContent = user ? "Keluar" : "Masuk";
+      authBtn.hidden = !user;
+      authBtn.textContent = "Keluar";
     }
+
+    renderRoleNavigation(currentPage);
   }
 
   // =========================================================================
@@ -395,8 +631,16 @@
     `;
   }
 
+  function buildGameLookup() {
+    const map = {};
+    gamesState.items.forEach((g) => {
+      map[g.id] = g;
+    });
+    return map;
+  }
+
   // =========================================================================
-  // NAVIGATION WITH RACE-CONDITION GUARD
+  // NAVIGATION WITH RBAC ACCESS GUARD & RACE-CONDITION PROTECTION
   // =========================================================================
   async function navigateTo(pageName, options = {}) {
     const seq = ++navigationSeq;
@@ -407,26 +651,31 @@
     }
 
     currentPage = targetPage;
+    updateUserTopbar(getCurrentUserSafe());
 
-    document.querySelectorAll(".nav-item[data-page]").forEach((btn) => {
-      const isCurrent = btn.getAttribute("data-page") === targetPage;
-      btn.classList.toggle("active", isCurrent);
-      if (isCurrent) {
-        btn.setAttribute("aria-current", "page");
-      } else {
-        btn.removeAttribute("aria-current");
-      }
-    });
-
+    const roleKey = getActiveRoleKey();
+    const roleCfg = ROLE_NAV_CONFIG[roleKey] || ROLE_NAV_CONFIG.guest;
     const titleEl = document.getElementById("topbar-page-title");
     if (titleEl) {
-      titleEl.textContent = PAGE_TITLES[targetPage] || "Turnamen.in";
+      titleEl.textContent =
+        targetPage === "dashboard"
+          ? roleCfg.dashboardTitle
+          : PAGE_TITLES[targetPage] || "Turnamen.in";
     }
-
-    updateUserTopbar(getCurrentUserSafe());
 
     const container = document.getElementById("main-content");
     if (!container) return;
+
+    const access = checkPageAccess(targetPage);
+    if (!access.allowed) {
+      container.innerHTML = window.TurnamenUI.renderAccessDeniedState(
+        access.title,
+        access.message,
+        access.actionHtml
+      );
+      return;
+    }
+
     container.innerHTML = window.TurnamenUI.renderLoadingState(
       `Memuat ${PAGE_TITLES[targetPage] || "halaman"}...`
     );
@@ -470,9 +719,12 @@
   }
 
   // =========================================================================
-  // 1. DASHBOARD PAGE
+  // 1. ROLE-BASED DASHBOARD DISPATCHER & 5+ ROLE VIEWS
   // =========================================================================
   async function renderDashboard(container, isStale) {
+    await ensureGamesLoaded(false);
+    if (isStale()) return;
+
     const [tourRes, teamsRes] = await Promise.all([
       window.TurnamenAPI.getTournaments(),
       window.TurnamenAPI.getTeams(),
@@ -480,10 +732,7 @@
     if (isStale()) return;
 
     if (!tourRes.success) {
-      container.innerHTML = window.TurnamenUI.renderErrorState(
-        tourRes.message,
-        "retry-page"
-      );
+      container.innerHTML = window.TurnamenUI.renderErrorState(tourRes.message, "retry-page");
       return;
     }
 
@@ -493,122 +742,554 @@
     const ctx = await resolveActiveTournamentContext(tournaments);
     if (isStale()) return;
 
-    let report = null;
-    let reportError = null;
+    let activeMatches = [];
+    let activeAnnouncements = [];
+    let activeReport = null;
+    let activeRegs = [];
+
     if (ctx.active) {
-      const reportRes = await window.TurnamenAPI.getTournamentReport(ctx.active.id);
+      const [matchRes, annRes, reportRes, regRes] = await Promise.all([
+        window.TurnamenAPI.getTournamentMatches(ctx.active.id),
+        window.TurnamenAPI.getAnnouncements(ctx.active.id),
+        window.TurnamenAPI.getTournamentReport(ctx.active.id),
+        window.TurnamenAPI.getTournamentRegistrations(ctx.active.id),
+      ]);
       if (isStale()) return;
+      if (matchRes.success && matchRes.data && Array.isArray(matchRes.data.matches)) {
+        activeMatches = matchRes.data.matches;
+      }
+      if (annRes.success && Array.isArray(annRes.data)) {
+        activeAnnouncements = [...annRes.data].sort(
+          (a, b) => Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned))
+        );
+      }
       if (reportRes.success && reportRes.data) {
-        report = reportRes.data;
-      } else {
-        reportError = reportRes.message || "Ringkasan laporan belum tersedia.";
+        activeReport = reportRes.data;
+      }
+      if (regRes.success && Array.isArray(regRes.data)) {
+        activeRegs = regRes.data;
       }
     }
 
-    const summary = report && report.summary ? report.summary : null;
-    const activeTitle = ctx.active ? ctx.active.title : "Belum Ada Turnamen Aktif";
-    const approvedDisplay = summary
-      ? `${summary.approved_teams} / ${summary.max_teams}`
-      : ctx.active
-        ? `${ctx.active.approved_teams_count || 0} / ${ctx.active.max_teams || 0}`
-        : "0";
-    const matchProgressDisplay = summary
-      ? `${summary.completed_matches} / ${summary.total_matches}`
-      : "0 / 0";
-    const matchRateText = summary
-      ? `Penyelesaian ${summary.completion_percentage}%`
-      : "Belum ada pertandingan dijadwalkan";
-    const prizeDisplay = ctx.active
-      ? window.TurnamenUI.formatRupiah(
-          summary && summary.prize_pool !== undefined ? summary.prize_pool : ctx.active.prize_pool
-        )
-      : "-";
+    const roleKey = getActiveRoleKey();
+    const sharedData = {
+      tournaments,
+      teams,
+      teamsOk,
+      ctx,
+      activeMatches,
+      activeAnnouncements,
+      activeReport,
+      activeRegs,
+      gamesById: buildGameLookup(),
+    };
 
-    const heroHtml = ctx.active
+    switch (roleKey) {
+      case "player":
+        renderPlayerDashboard(container, sharedData);
+        break;
+      case "team_captain":
+        await renderCaptainDashboard(container, sharedData, isStale);
+        break;
+      case "organizer":
+        await renderOrganizerDashboard(container, sharedData, isStale);
+        break;
+      case "committee":
+        renderCommitteeDashboard(container, sharedData);
+        break;
+      case "super_admin":
+        renderSuperAdminDashboard(container, sharedData);
+        break;
+      default:
+        renderGuestDashboard(container, sharedData);
+        break;
+    }
+  }
+
+  function renderGamePosterGallery(tournaments) {
+    if (gamesState.items.length === 0) {
+      return window.TurnamenUI.renderEmptyState(
+        "Katalog Game Belum Tersedia",
+        "Daftar cabang game esports belum dapat dimuat saat ini."
+      );
+    }
+
+    return `
+      <div class="game-poster-grid">
+        ${gamesState.items
+          .map((g) => {
+            const tourCount = tournaments.filter((t) => t.game_id === g.id).length;
+            return `
+            <article class="game-poster-card">
+              <div class="game-poster-art">${window.TurnamenUI.renderGameArtwork(g)}</div>
+              <div class="game-poster-body">
+                <h3 class="game-poster-title">${window.TurnamenUI.escapeHtml(g.name)}</h3>
+                <div class="game-poster-meta">
+                  <span>${window.TurnamenUI.escapeHtml(g.genre || "Esports")}</span>
+                  <span aria-hidden="true">|</span>
+                  <span>${window.TurnamenUI.escapeHtml(g.platform || "Multi-Platform")}</span>
+                  <span aria-hidden="true">|</span>
+                  <span class="tabular-nums">${g.team_size || 5}v${g.team_size || 5} Bo${g.default_best_of || 3}</span>
+                </div>
+                <div class="game-poster-footer">
+                  <span class="badge badge-info tabular-nums">${tourCount} Turnamen</span>
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="browse-game-tournaments" data-id="${window.TurnamenUI.escapeHtml(g.id)}">Lihat Turnamen</button>
+                </div>
+              </div>
+            </article>
+          `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  function renderTournamentDiscoveryCards(tournaments, gamesById, options = {}) {
+    if (!tournaments || tournaments.length === 0) {
+      return window.TurnamenUI.renderEmptyState(
+        "Belum Ada Turnamen",
+        "Belum ada kompetisi yang terdaftar saat ini."
+      );
+    }
+
+    const ownedTeamIds = options.ownedTeamIds || [];
+    const teams = options.teams || [];
+
+    return `
+      <div class="discovery-grid">
+        ${tournaments
+          .map((t) => {
+            const game = gamesById[t.game_id] || { name: t.game_name, slug: t.game_name };
+            const maxTeams = Number(t.max_teams || 0);
+            const approved = Number(t.approved_teams_count || 0);
+            const fillPct = maxTeams > 0 ? Math.round((approved / maxTeams) * 100) : 0;
+            const canQuickJoin =
+              canPerform("registration:create") &&
+              (t.status === "open_registration" || t.status === "draft") &&
+              teams.some((tm) => ownedTeamIds.includes(tm.id) && tm.game_id === t.game_id);
+
+            return `
+            <article class="tournament-card">
+              <div class="tournament-card-art">
+                ${window.TurnamenUI.renderGameArtwork(game, `BO${t.best_of || 3} SINGLE ELIM`)}
+                <div class="tournament-card-overlay-badge">
+                  ${window.TurnamenUI.renderStatusBadge(t.status)}
+                </div>
+              </div>
+              <div class="tournament-card-body">
+                <h3 class="tournament-card-title">${window.TurnamenUI.escapeHtml(t.title)}</h3>
+                <div class="tournament-card-meta">
+                  <span>Hadiah: <strong class="tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</strong></span>
+                  <span>Venue: <strong>${window.TurnamenUI.escapeHtml(t.venue || "Online")}</strong></span>
+                  <span>Mulai: <strong class="tabular-nums">${window.TurnamenUI.formatDateOnly(t.start_date)}</strong></span>
+                </div>
+                <div class="progress-wrap">
+                  <div class="progress-header">
+                    <span>Slot Tim Terverifikasi</span>
+                    <span class="tabular-nums">${approved} / ${maxTeams} Tim</span>
+                  </div>
+                  ${window.TurnamenUI.renderProgressBar(fillPct, `Kuota peserta ${t.title}`)}
+                </div>
+                <div class="tournament-card-footer">
+                  <span class="table-subtext tabular-nums">Biaya Daftar: ${window.TurnamenUI.formatRupiah(t.registration_fee)}</span>
+                  <div class="row-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Detail</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
+                    ${
+                      canQuickJoin
+                        ? `<button type="button" class="btn btn-violet btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Daftar</button>`
+                        : ""
+                    }
+                  </div>
+                </div>
+              </div>
+            </article>
+          `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  // A1. PLAYER DASHBOARD (Competitive Experience)
+  function renderPlayerDashboard(container, data) {
+    const user = getCurrentUserSafe();
+    const { tournaments, teams, ctx, activeMatches, activeAnnouncements, activeReport, gamesById } =
+      data;
+
+    const featured = ctx.active || tournaments[0] || null;
+    const featuredGame = featured
+      ? gamesById[featured.game_id] || { name: featured.game_name, slug: featured.game_name }
+      : gamesState.items[0] || { name: "Esports Arena", slug: "esports" };
+
+    const playerTeam = user
+      ? teams.find((tm) => (tm.members || []).some((m) => m.user_id === user.id))
+      : null;
+    const playerMemberInfo =
+      playerTeam && user
+        ? (playerTeam.members || []).find((m) => m.user_id === user.id)
+        : null;
+
+    const relevantMatches = playerTeam
+      ? activeMatches.filter(
+          (m) => m.team_a_id === playerTeam.id || m.team_b_id === playerTeam.id
+        )
+      : [];
+    const displayMatches =
+      relevantMatches.length > 0 ? relevantMatches.slice(0, 4) : activeMatches.slice(0, 4);
+
+    const standings =
+      activeReport && Array.isArray(activeReport.standings) ? activeReport.standings.slice(0, 5) : [];
+
+    const bannerHtml = featured
       ? `
-        <section class="arena-hero" aria-label="Sorotan Turnamen Aktif">
-          <div class="arena-hero-main">
-            <span class="arena-hero-kicker">Turnamen Aktif Terpilih</span>
-            <h2 class="arena-hero-title">${window.TurnamenUI.escapeHtml(activeTitle)}</h2>
-            <div class="arena-hero-meta">
-              ${window.TurnamenUI.renderStatusBadge(ctx.active.status)}
-              <span>Game: <strong>${window.TurnamenUI.escapeHtml(ctx.active.game_name)}</strong></span>
-              <span>Format: <strong class="tabular-nums">Single Elimination Bo${ctx.active.best_of}</strong></span>
-              <span>Mulai: <strong class="tabular-nums">${window.TurnamenUI.formatDateOnly(ctx.active.start_date)}</strong></span>
+        <section class="esports-banner" aria-label="Turnamen Pilihan">
+          <div class="esports-banner-copy">
+            <span class="esports-banner-kicker">Featured Arena Tournament</span>
+            <h2 class="esports-banner-title">${window.TurnamenUI.escapeHtml(featured.title)}</h2>
+            <p class="esports-banner-desc">${window.TurnamenUI.escapeHtml(featured.description || "Kompetisi esports resmi dengan sistem Single Elimination.")}</p>
+            <div class="esports-banner-stats">
+              ${window.TurnamenUI.renderStatusBadge(featured.status)}
+              <span>Hadiah: <strong class="tabular-nums">${window.TurnamenUI.formatRupiah(featured.prize_pool)}</strong></span>
+              <span>Slot: <strong class="tabular-nums">${featured.approved_teams_count || 0}/${featured.max_teams} Tim</strong></span>
+              <span>Format: <strong class="tabular-nums">Bo${featured.best_of}</strong></span>
+            </div>
+            <div class="page-actions">
+              <button type="button" class="btn btn-primary" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(featured.id)}">
+                ${window.TurnamenUI.icon("bracket", 15)}
+                <span>Lihat Bracket &amp; Match</span>
+              </button>
+              <button type="button" class="btn btn-secondary" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(featured.id)}">Detail Turnamen</button>
             </div>
           </div>
-          <div class="page-actions">
-            <button type="button" class="btn btn-secondary" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">
-              ${window.TurnamenUI.icon("bracket", 15)}
-              <span>Buka Bracket</span>
-            </button>
-            <button type="button" class="btn btn-primary" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">
-              <span>Detail &amp; Peserta</span>
-            </button>
+          <div class="esports-banner-art">
+            ${window.TurnamenUI.renderGameArtwork(featuredGame, `HADIAH ${window.TurnamenUI.formatRupiah(featured.prize_pool)}`)}
           </div>
         </section>
       `
       : `
-        <section class="arena-hero" aria-label="Status Arena">
-          <div class="arena-hero-main">
-            <span class="arena-hero-kicker">Arena Siap Digunakan</span>
-            <h2 class="arena-hero-title">Belum Ada Turnamen Terdaftar</h2>
-            <p class="card-subtitle">Buat turnamen pertama atau sinkronkan data dari server untuk memulai kompetisi.</p>
+        <section class="esports-banner" aria-label="Arena Player">
+          <div class="esports-banner-copy">
+            <span class="esports-banner-kicker">Turnamen.in Player Hub</span>
+            <h2 class="esports-banner-title">Belum Ada Turnamen Berlangsung</h2>
+            <p class="esports-banner-desc">Jelajahi katalog cabang game dan pantau daftar turnamen terbaru yang akan dibuka.</p>
           </div>
-          ${
-            canPerform("tournament:create")
-              ? `<button type="button" class="btn btn-primary" data-action="open-create-tournament">${window.TurnamenUI.icon("plus", 15)}<span>Buat Turnamen Baru</span></button>`
-              : `<button type="button" class="btn btn-secondary" data-action="go-page" data-page="tournament-list">Lihat Katalog Turnamen</button>`
-          }
         </section>
       `;
 
     container.innerHTML = `
       ${renderGamesErrorNotice()}
-      ${heroHtml}
-      ${
-        reportError
-          ? `<div class="notice-banner notice-banner-warning" role="alert"><span>${window.TurnamenUI.escapeHtml(reportError)}</span></div>`
-          : ""
-      }
+      ${bannerHtml}
 
-      <div class="grid-4">
-        <div class="metric-card">
-          <div class="metric-label">Total Turnamen</div>
-          <div class="metric-value">${tournaments.length}</div>
-          <div class="metric-note">Data aktual dari server API</div>
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Galeri Cabang Game Esports</h2>
+          <p>Pilih game untuk menemukan turnamen yang sedang berjalan maupun yang segera dibuka.</p>
         </div>
-        <div class="metric-card">
-          <div class="metric-label">Total Tim Terdaftar</div>
-          <div class="metric-value">${teamsOk ? teams.length : "-"}</div>
-          <div class="metric-note">${teamsOk ? `Terverifikasi pada turnamen aktif: ${approvedDisplay}` : "Gagal memuat data tim"}</div>
-        </div>
-        <div class="metric-card metric-card-accent">
-          <div class="metric-label">Progres Pertandingan</div>
-          <div class="metric-value">${matchProgressDisplay}</div>
-          <div class="metric-note">${matchRateText}</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Hadiah Turnamen Aktif</div>
-          <div class="metric-value">${prizeDisplay}</div>
-          <div class="metric-note">${window.TurnamenUI.escapeHtml(ctx.active ? ctx.active.venue || "Online" : "Belum ada turnamen")}</div>
+        <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Jelajahi Semua Turnamen</button>
+      </div>
+      ${renderGamePosterGallery(tournaments)}
+
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Turnamen Berlangsung &amp; Mendatang</h2>
+          <p>Pantau kuota peserta, total hadiah, dan bagan pertandingan setiap kompetisi.</p>
         </div>
       </div>
+      ${renderTournamentDiscoveryCards(tournaments, gamesById)}
 
       <div class="workspace-split">
         <div class="card">
           <div class="card-header">
             <div>
-              <h3 class="card-title">Daftar Turnamen</h3>
-              <p class="card-subtitle">Pilih turnamen untuk meninjau peserta atau membuka bracket.</p>
+              <h3 class="card-title">${playerTeam ? "Pertandingan Tim Anda" : "Jadwal &amp; Hasil Pertandingan Terbaru"}</h3>
+              <p class="card-subtitle">${window.TurnamenUI.escapeHtml(ctx.active ? ctx.active.title : "Belum ada turnamen aktif")}</p>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Lihat Semua</button>
+            ${
+              ctx.active
+                ? `<button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Bracket Penuh</button>`
+                : ""
+            }
           </div>
           ${
-            tournaments.length === 0
+            displayMatches.length > 0
+              ? `<div class="match-card-grid">${displayMatches
+                  .map((m) =>
+                    window.TurnamenUI.renderMatchCard(m, {
+                      highlightTeamIds: playerTeam ? [playerTeam.id] : [],
+                    })
+                  )
+                  .join("")}</div>`
+              : window.TurnamenUI.renderEmptyState(
+                  "Belum Ada Jadwal Pertandingan",
+                  "Pertandingan akan muncul setelah bracket disusun oleh panitia."
+                )
+          }
+        </div>
+
+        <div class="stack-md">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Identitas Tim &amp; Roster Anda</h3>
+              ${playerTeam ? `<span class="badge badge-info tabular-nums">${window.TurnamenUI.escapeHtml(playerTeam.tag)}</span>` : ""}
+            </div>
+            ${
+              playerTeam
+                ? `
+              <div class="row-actions" style="gap:14px; margin-bottom:12px;">
+                ${window.TurnamenUI.renderTeamEmblem(playerTeam.tag, 48)}
+                <div>
+                  <strong>${window.TurnamenUI.escapeHtml(playerTeam.name)}</strong>
+                  <div class="table-subtext">${window.TurnamenUI.escapeHtml(playerTeam.game_name)} | ${window.TurnamenUI.escapeHtml(playerTeam.region || "-")}</div>
+                </div>
+              </div>
+              ${
+                playerMemberInfo
+                  ? `<div class="kv-list">
+                      <div class="kv-item"><span class="kv-label">Nickname Anda</span><span class="kv-value">${window.TurnamenUI.escapeHtml(playerMemberInfo.nickname)}</span></div>
+                      <div class="kv-item"><span class="kv-label">ID In-Game</span><span class="kv-value tabular-nums">${window.TurnamenUI.escapeHtml(playerMemberInfo.ingame_id)}</span></div>
+                      <div class="kv-item"><span class="kv-label">Peran Roster</span><span class="kv-value">${window.TurnamenUI.escapeHtml(playerMemberInfo.member_role)}</span></div>
+                    </div>`
+                  : ""
+              }
+            `
+                : window.TurnamenUI.renderEmptyState(
+                    "Belum Tergabung di Tim",
+                    "Hubungi Team Captain untuk ditambahkan ke roster tim esports."
+                  )
+            }
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Pengumuman Kompetisi</h3>
+              <button type="button" class="btn btn-ghost btn-sm" data-action="go-page" data-page="announcements">Semua</button>
+            </div>
+            ${
+              activeAnnouncements.length > 0
+                ? `<div class="stack-md">${activeAnnouncements
+                    .slice(0, 2)
+                    .map(
+                      (a) => `
+                    <div class="roster-card" style="flex-direction:column; align-items:flex-start;">
+                      <div class="row-actions">${window.TurnamenUI.renderStatusBadge(a.priority)}<strong>${window.TurnamenUI.escapeHtml(a.title)}</strong></div>
+                      <span class="table-subtext">${window.TurnamenUI.escapeHtml(a.content)}</span>
+                    </div>
+                  `
+                    )
+                    .join("")}</div>`
+                : window.TurnamenUI.renderEmptyState("Belum Ada Pengumuman", "Belum ada pembaruan dari panitia.")
+            }
+          </div>
+        </div>
+      </div>
+
+      ${
+        standings.length > 0
+          ? `
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Papan Klasemen Teratas: ${window.TurnamenUI.escapeHtml(ctx.active.title)}</h3>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="reports">Klasemen Lengkap</button>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Tim</th>
+                  <th>Main</th>
+                  <th>Menang</th>
+                  <th>Kalah</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${standings
+                  .map(
+                    (row) => `
+                  <tr>
+                    <td class="tabular-nums"><strong>#${row.rank}</strong></td>
+                    <td><strong>${window.TurnamenUI.escapeHtml(row.team_name)}</strong> <span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(row.team_tag)}</span></td>
+                    <td class="tabular-nums">${row.matches_played}</td>
+                    <td class="tabular-nums" style="color:var(--status-success-text);">${row.matches_won}</td>
+                    <td class="tabular-nums" style="color:var(--status-danger-text);">${row.matches_lost}</td>
+                    <td><span class="badge badge-info">${window.TurnamenUI.escapeHtml(row.placement_label)}</span></td>
+                  </tr>
+                `
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `
+          : ""
+      }
+    `;
+  }
+
+  // A2. TEAM CAPTAIN DASHBOARD (Competitive + Team Management Experience)
+  async function renderCaptainDashboard(container, data, isStale) {
+    const user = getCurrentUserSafe();
+    const { tournaments, teams, ctx, activeMatches, activeAnnouncements, gamesById } = data;
+    const captainTeams = user ? teams.filter((tm) => tm.captain_id === user.id) : [];
+
+    if (captainTeams.length > 0) {
+      const stillValid = captainTeams.some((tm) => tm.id === selectedCaptainTeamId);
+      if (!stillValid) selectedCaptainTeamId = captainTeams[0].id;
+    } else {
+      selectedCaptainTeamId = "";
+    }
+
+    const activeTeam =
+      captainTeams.find((tm) => tm.id === selectedCaptainTeamId) || captainTeams[0] || null;
+    const captainTeamIds = captainTeams.map((tm) => tm.id);
+
+    // Collect registration status across all tournaments for captain's teams
+    const regResponses = await Promise.all(
+      tournaments.map(async (t) => {
+        const res = await window.TurnamenAPI.getTournamentRegistrations(t.id);
+        return {
+          tournament: t,
+          regs: res.success && Array.isArray(res.data) ? res.data : [],
+        };
+      })
+    );
+    if (isStale()) return;
+
+    const joinedEntries = [];
+    const openTournamentsForCaptain = [];
+    regResponses.forEach(({ tournament, regs }) => {
+      const myRegs = regs.filter((r) => captainTeamIds.includes(r.team_id));
+      myRegs.forEach((r) => {
+        joinedEntries.push({ tournament, reg: r });
+      });
+      const eligible = getEligibleTeamsForRegistration(captainTeams, tournament, regs);
+      if (
+        (tournament.status === "open_registration" || tournament.status === "draft") &&
+        eligible.length > 0
+      ) {
+        openTournamentsForCaptain.push({ tournament, eligible });
+      }
+    });
+
+    const teamMatches = activeTeam
+      ? activeMatches.filter(
+          (m) => m.team_a_id === activeTeam.id || m.team_b_id === activeTeam.id
+        )
+      : [];
+
+    const teamHeroHtml = activeTeam
+      ? `
+        <section class="team-hero" aria-label="Identitas Tim Kapten">
+          <div class="team-hero-identity">
+            ${window.TurnamenUI.renderTeamEmblem(activeTeam.tag, 60)}
+            <div>
+              <span class="arena-hero-kicker">Markas Tim Kapten</span>
+              <h2 class="team-hero-name">${window.TurnamenUI.escapeHtml(activeTeam.name)}</h2>
+              <div class="team-hero-meta">
+                <span class="badge badge-info tabular-nums">${window.TurnamenUI.escapeHtml(activeTeam.tag)}</span>
+                ${window.TurnamenUI.renderGameChip(activeTeam.game_name)}
+                <span>Region: <strong>${window.TurnamenUI.escapeHtml(activeTeam.region || "-")}</strong></span>
+                <span class="tabular-nums"><strong>${(activeTeam.members || []).length}</strong> Roster</span>
+              </div>
+            </div>
+          </div>
+          <div class="page-actions">
+            ${
+              captainTeams.length > 1
+                ? `
+              <label for="captain-team-select" class="sr-only">Pilih tim aktif kapten</label>
+              <select id="captain-team-select" class="form-select form-select-compact">
+                ${captainTeams
+                  .map(
+                    (tm) =>
+                      `<option value="${window.TurnamenUI.escapeHtml(tm.id)}" ${tm.id === activeTeam.id ? "selected" : ""}>${window.TurnamenUI.escapeHtml(tm.name)} [${window.TurnamenUI.escapeHtml(tm.tag)}]</option>`
+                  )
+                  .join("")}
+              </select>
+            `
+                : ""
+            }
+            <button type="button" class="btn btn-primary btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(activeTeam.id)}">${window.TurnamenUI.icon("plus", 14)}<span>Tambah Anggota</span></button>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="open-edit-team" data-id="${window.TurnamenUI.escapeHtml(activeTeam.id)}">${window.TurnamenUI.icon("edit", 14)}<span>Edit Tim</span></button>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="open-create-team">+ Tim Baru</button>
+          </div>
+        </section>
+      `
+      : `
+        <section class="team-hero" aria-label="Markas Tim Kapten">
+          <div>
+            <span class="arena-hero-kicker">Markas Tim Kapten</span>
+            <h2 class="team-hero-name">Anda Belum Memiliki Tim Esports</h2>
+            <p class="card-subtitle">Buat tim pertama Anda untuk mulai mengisi roster dan mendaftar ke turnamen terbuka.</p>
+          </div>
+          <button type="button" class="btn btn-primary" data-action="open-create-team">${window.TurnamenUI.icon("plus", 15)}<span>Buat Tim Baru</span></button>
+        </section>
+      `;
+
+    const rosterMembers = activeTeam && Array.isArray(activeTeam.members) ? activeTeam.members : [];
+
+    container.innerHTML = `
+      ${renderGamesErrorNotice()}
+      ${teamHeroHtml}
+
+      <div class="workspace-split">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Roster Anggota Tim</h3>
+              <p class="card-subtitle">${activeTeam ? `${activeTeam.name} (${rosterMembers.length} pemain terdaftar)` : "Belum ada tim dipilih"}</p>
+            </div>
+            ${
+              activeTeam
+                ? `<button type="button" class="btn btn-secondary btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(activeTeam.id)}">+ Anggota</button>`
+                : ""
+            }
+          </div>
+          ${
+            !activeTeam
+              ? window.TurnamenUI.renderEmptyState("Belum Ada Tim", "Buat tim untuk mengelola roster pemain.")
+              : rosterMembers.length === 0
+                ? window.TurnamenUI.renderEmptyState(
+                    "Roster Masih Kosong",
+                    "Tambahkan anggota beserta nickname dan In-Game ID untuk memenuhi syarat registrasi turnamen.",
+                    `<button type="button" class="btn btn-primary btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(activeTeam.id)}">Tambah Anggota Pertama</button>`
+                  )
+                : `
+              <div class="roster-grid">
+                ${rosterMembers
+                  .map(
+                    (m) => `
+                  <div class="roster-card">
+                    <div>
+                      <div class="roster-card-name">${window.TurnamenUI.escapeHtml(m.nickname)}</div>
+                      <div class="roster-card-id">${window.TurnamenUI.escapeHtml(m.ingame_id)}</div>
+                    </div>
+                    <span class="badge ${m.member_role === "captain" ? "badge-violet" : "badge-info"}">${window.TurnamenUI.escapeHtml(m.member_role || "starter")}</span>
+                  </div>
+                `
+                  )
+                  .join("")}
+              </div>
+            `
+          }
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Turnamen Diikuti &amp; Status Registrasi</h3>
+              <p class="card-subtitle">Status pendaftaran seluruh tim yang Anda kelola.</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Jelajah Turnamen</button>
+          </div>
+          ${
+            joinedEntries.length === 0
               ? window.TurnamenUI.renderEmptyState(
-                  "Belum Ada Turnamen",
-                  "Belum ada turnamen yang tersimpan pada sistem."
+                  "Belum Terdaftar di Turnamen",
+                  "Pilih turnamen dengan pendaftaran terbuka untuk mendaftarkan tim Anda."
                 )
               : `
             <div class="table-container">
@@ -616,28 +1297,26 @@
                 <thead>
                   <tr>
                     <th>Turnamen</th>
-                    <th>Game</th>
-                    <th>Peserta</th>
+                    <th>Tim</th>
                     <th>Status</th>
                     <th>Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${tournaments
+                  ${joinedEntries
                     .map(
-                      (t) => `
+                      ({ tournament, reg }) => `
                     <tr>
                       <td>
-                        <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
-                        <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")}</div>
+                        <strong>${window.TurnamenUI.escapeHtml(tournament.title)}</strong>
+                        <div class="table-subtext">${window.TurnamenUI.escapeHtml(tournament.game_name)} | Seed #${reg.seed_number || "-"}</div>
                       </td>
-                      <td>${window.TurnamenUI.escapeHtml(t.game_name)}</td>
-                      <td class="tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams}</td>
-                      <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
+                      <td><span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(reg.team_tag)}</span></td>
+                      <td>${window.TurnamenUI.renderStatusBadge(reg.status)}</td>
                       <td>
                         <div class="row-actions">
-                          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Detail</button>
-                          <button type="button" class="btn btn-ghost btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(tournament.id)}">Detail</button>
+                          <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(tournament.id)}">Bracket</button>
                         </div>
                       </td>
                     </tr>
@@ -650,29 +1329,278 @@
           `
           }
         </div>
+      </div>
 
+      ${
+        openTournamentsForCaptain.length > 0
+          ? `
+        <div class="page-header">
+          <div class="page-header-copy">
+            <h2>Turnamen Terbuka untuk Tim Anda</h2>
+            <p>Turnamen yang sesuai dengan cabang game tim Anda dan masih membuka registrasi.</p>
+          </div>
+        </div>
+        ${renderTournamentDiscoveryCards(
+          openTournamentsForCaptain.map((x) => x.tournament),
+          gamesById,
+          { ownedTeamIds: captainTeamIds, teams: captainTeams }
+        )}
+      `
+          : ""
+      }
+
+      <div class="grid-2">
         <div class="card">
           <div class="card-header">
             <div>
-              <h3 class="card-title">Jejak Audit Aktivitas</h3>
-              <p class="card-subtitle">${window.TurnamenUI.escapeHtml(activeTitle)}</p>
+              <h3 class="card-title">Jadwal &amp; Hasil Pertandingan Tim</h3>
+              <p class="card-subtitle">${window.TurnamenUI.escapeHtml(ctx.active ? ctx.active.title : "Turnamen aktif")}</p>
             </div>
-            <span class="badge badge-violet">Audit Log</span>
+            ${
+              ctx.active
+                ? `<button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Lihat Bracket</button>`
+                : ""
+            }
           </div>
           ${
-            report && Array.isArray(report.recent_activity) && report.recent_activity.length > 0
+            teamMatches.length > 0
+              ? `<div class="stack-md">${teamMatches
+                  .map((m) =>
+                    window.TurnamenUI.renderMatchCard(m, { highlightTeamIds: captainTeamIds })
+                  )
+                  .join("")}</div>`
+              : window.TurnamenUI.renderEmptyState(
+                  "Belum Ada Match untuk Tim Ini",
+                  "Pertandingan untuk tim terpilih pada turnamen aktif akan tampil di sini."
+                )
+          }
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Pengumuman Panitia</h3>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="go-page" data-page="announcements">Semua</button>
+          </div>
+          ${
+            activeAnnouncements.length > 0
+              ? `<div class="stack-md">${activeAnnouncements
+                  .slice(0, 3)
+                  .map(
+                    (a) => `
+                  <div class="roster-card" style="flex-direction:column; align-items:flex-start;">
+                    <div class="row-actions">${window.TurnamenUI.renderStatusBadge(a.priority)}<strong>${window.TurnamenUI.escapeHtml(a.title)}</strong></div>
+                    <span class="table-subtext">${window.TurnamenUI.escapeHtml(a.content)}</span>
+                  </div>
+                `
+                  )
+                  .join("")}</div>`
+              : window.TurnamenUI.renderEmptyState("Belum Ada Pengumuman", "Belum ada instruksi check-in atau pembaruan jadwal.")
+          }
+        </div>
+      </div>
+    `;
+
+    const teamSelector = document.getElementById("captain-team-select");
+    if (teamSelector) {
+      teamSelector.addEventListener("change", (e) => {
+        selectedCaptainTeamId = e.target.value;
+        navigateTo("dashboard");
+      });
+    }
+  }
+
+  // B1. ORGANIZER DASHBOARD (Management Tournament Control)
+  async function renderOrganizerDashboard(container, data, isStale) {
+    const user = getCurrentUserSafe();
+    const { tournaments, ctx, activeReport, activeRegs, activeAnnouncements } = data;
+    const myTournaments = user
+      ? tournaments.filter((t) => t.organizer_id === user.id)
+      : [];
+
+    const regDetails = await Promise.all(
+      myTournaments.map(async (t) => {
+        const res = await window.TurnamenAPI.getTournamentRegistrations(t.id);
+        return res.success && Array.isArray(res.data) ? res.data : [];
+      })
+    );
+    if (isStale()) return;
+
+    const allMyRegs = regDetails.flat();
+    const pendingCount = allMyRegs.filter((r) => r.status === "pending").length;
+    const approvedTotal = allMyRegs.filter((r) => r.status === "approved").length;
+    const activeSummary = activeReport && activeReport.summary ? activeReport.summary : null;
+    const pendingActiveRegs = activeRegs.filter((r) => r.status === "pending");
+
+    container.innerHTML = `
+      ${renderGamesErrorNotice()}
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Kontrol Turnamen &amp; Operasional Organizer</h2>
+          <p>Kelola turnamen milik Anda, verifikasi peserta, susun bracket, dan pantau pengesahan skor.</p>
+        </div>
+        <div class="page-actions">
+          ${
+            ctx.active
+              ? `<button type="button" class="btn btn-secondary" data-action="open-announcement-modal" data-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">+ Pengumuman</button>`
+              : ""
+          }
+          <button type="button" class="btn btn-primary" data-action="open-create-tournament">${window.TurnamenUI.icon("plus", 15)}<span>Buat Turnamen Baru</span></button>
+        </div>
+      </div>
+
+      <div class="grid-4">
+        <div class="metric-card">
+          <div class="metric-label">Turnamen Dikelola</div>
+          <div class="metric-value">${myTournaments.length}</div>
+          <div class="metric-note">Dari total ${tournaments.length} turnamen di sistem</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Peserta Terverifikasi</div>
+          <div class="metric-value">${approvedTotal}</div>
+          <div class="metric-note">Total registrasi disetujui pada turnamen Anda</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Antrean Verifikasi Pending</div>
+          <div class="metric-value">${pendingCount}</div>
+          <div class="metric-note">${pendingCount > 0 ? "Memerlukan persetujuan panitia/EO" : "Seluruh pendaftar telah diproses"}</div>
+        </div>
+        <div class="metric-card metric-card-accent">
+          <div class="metric-label">Progres Turnamen Aktif</div>
+          <div class="metric-value">${activeSummary ? `${activeSummary.completed_matches} / ${activeSummary.total_matches}` : "0 / 0"}</div>
+          <div class="metric-note">${activeSummary ? `${activeSummary.completion_percentage}% selesai` : "Belum ada jadwal"}</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Turnamen Milik Anda</h3>
+            <p class="card-subtitle">Akses cepat ke peserta, bracket, pengesahan skor, dan edit data turnamen.</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Semua Turnamen</button>
+        </div>
+        ${
+          myTournaments.length === 0
+            ? window.TurnamenUI.renderEmptyState(
+                "Belum Ada Turnamen Dikelola",
+                "Buat turnamen pertama Anda untuk memulai pendaftaran dan bracket.",
+                `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-tournament">Buat Turnamen Baru</button>`
+              )
+            : `
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Turnamen</th>
+                  <th>Game</th>
+                  <th>Kuota Terisi</th>
+                  <th>Prize Pool</th>
+                  <th>Status</th>
+                  <th>Aksi Pengelolaan</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${myTournaments
+                  .map((t) => {
+                    const max = Number(t.max_teams || 0);
+                    const app = Number(t.approved_teams_count || 0);
+                    const pct = max > 0 ? Math.round((app / max) * 100) : 0;
+                    const canDelete = t.status !== "ongoing" && t.status !== "completed";
+                    return `
+                    <tr>
+                      <td>
+                        <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
+                        <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")} | Bo${t.best_of}</div>
+                      </td>
+                      <td>${window.TurnamenUI.renderGameChip(t.game_name)}</td>
+                      <td style="min-width:140px;">
+                        <div class="tabular-nums" style="font-size:12px; margin-bottom:4px;">${app} / ${max} Tim</div>
+                        ${window.TurnamenUI.renderProgressBar(pct, `Kuota ${t.title}`)}
+                      </td>
+                      <td class="tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
+                      <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
+                      <td>
+                        <div class="row-actions">
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="match-management" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Skor</button>
+                          <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
+                          <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Edit ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("edit", 14)}</button>
+                          ${
+                            canDelete
+                              ? `<button type="button" class="btn btn-danger btn-sm" data-action="confirm-delete-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Hapus ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("trash", 14)}</button>`
+                              : ""
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+        }
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Verifikasi Registrasi (${window.TurnamenUI.escapeHtml(ctx.active ? ctx.active.title : "Turnamen Aktif")})</h3>
+            ${
+              ctx.active
+                ? `<button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Kelola Peserta</button>`
+                : ""
+            }
+          </div>
+          ${
+            pendingActiveRegs.length > 0
               ? `
             <div class="table-container">
               <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Aksi</th>
-                    <th>Entitas</th>
-                    <th>Waktu</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Tim</th><th>Seed</th><th>Aksi</th></tr></thead>
                 <tbody>
-                  ${report.recent_activity
+                  ${pendingActiveRegs
+                    .map(
+                      (r) => `
+                    <tr>
+                      <td><strong>${window.TurnamenUI.escapeHtml(r.team_name)}</strong> [${window.TurnamenUI.escapeHtml(r.team_tag)}]</td>
+                      <td class="tabular-nums">#${r.seed_number || "-"}</td>
+                      <td>
+                        <div class="row-actions">
+                          <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="approved">Setujui</button>
+                          <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="rejected">Tolak</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+              : window.TurnamenUI.renderEmptyState(
+                  "Tidak Ada Antrean Pending",
+                  `${activeRegs.length} registrasi pada turnamen aktif sudah berada dalam status terverifikasi/selesai.`
+                )
+          }
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Audit Aktivitas &amp; Pengumuman</h3>
+            <span class="badge badge-info tabular-nums">${activeAnnouncements.length} Pengumuman</span>
+          </div>
+          ${
+            activeReport && Array.isArray(activeReport.recent_activity) && activeReport.recent_activity.length > 0
+              ? `
+            <div class="table-container">
+              <table class="data-table">
+                <thead><tr><th>Aksi</th><th>Entitas</th><th>Waktu</th></tr></thead>
+                <tbody>
+                  ${activeReport.recent_activity
+                    .slice(0, 6)
                     .map(
                       (log) => `
                     <tr>
@@ -687,18 +1615,429 @@
               </table>
             </div>
           `
-              : window.TurnamenUI.renderEmptyState(
-                  "Belum Ada Aktivitas",
-                  "Aktivitas terbaru turnamen akan tercatat di sini setelah ada aksi operasional."
-                )
+              : window.TurnamenUI.renderEmptyState("Belum Ada Log Aktivitas", "Belum ada log terbaru pada turnamen aktif.")
           }
         </div>
       </div>
     `;
   }
 
+  // B2. COMMITTEE DASHBOARD (Operational Match & Verification Desk)
+  function renderCommitteeDashboard(container, data) {
+    const { ctx, activeMatches, activeRegs, activeAnnouncements, activeReport } = data;
+    const playableMatches = activeMatches.filter(
+      (m) => m.team_a_id && m.team_b_id && m.status !== "completed"
+    );
+    const completedMatches = activeMatches.filter((m) => m.status === "completed");
+    const pendingRegs = activeRegs.filter((r) => r.status === "pending");
+
+    container.innerHTML = `
+      ${renderGamesErrorNotice()}
+      ${renderTournamentContextBar(
+        ctx.list,
+        ctx.active,
+        ctx.active
+          ? `
+          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Bracket</button>
+          <button type="button" class="btn btn-primary btn-sm" data-action="open-announcement-modal" data-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">+ Buat Pengumuman</button>
+        `
+          : ""
+      )}
+
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Meja Operasional Panitia &amp; Wasit</h2>
+          <p>Fokus pada validasi peserta, pengesahan skor pertandingan, dan pengumuman teknis turnamen.</p>
+        </div>
+        <button type="button" class="btn btn-primary" data-action="go-page" data-page="match-management">Buka Jadwal &amp; Skor Penuh</button>
+      </div>
+
+      <div class="grid-4">
+        <div class="metric-card metric-card-accent">
+          <div class="metric-label">Match Siap Disahkan</div>
+          <div class="metric-value">${playableMatches.length}</div>
+          <div class="metric-note">Menunggu hasil skor pertandingan</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Match Terkunci</div>
+          <div class="metric-value">${completedMatches.length}</div>
+          <div class="metric-note">Dari total ${activeMatches.length} match bracket</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Verifikasi Pending</div>
+          <div class="metric-value">${pendingRegs.length}</div>
+          <div class="metric-note">Total ${activeRegs.length} registrasi pada turnamen ini</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Pengumuman Aktif</div>
+          <div class="metric-value">${activeAnnouncements.length}</div>
+          <div class="metric-note">Informasi teknis untuk peserta</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Antrean Pengesahan Skor Cepat</h3>
+            <p class="card-subtitle">Pertandingan yang sudah memiliki kedua tim dan siap disahkan panitia.</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="match-management">Semua Pertandingan</button>
+        </div>
+        ${
+          playableMatches.length === 0
+            ? window.TurnamenUI.renderEmptyState(
+                "Tidak Ada Match Menunggu Skor",
+                "Semua pertandingan yang siap dimainkan sudah disahkan atau masih menunggu pemenang babak sebelumnya."
+              )
+            : `
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Babak</th>
+                  <th>Match</th>
+                  <th>Team A</th>
+                  <th>Team B</th>
+                  <th>Status</th>
+                  <th>Input &amp; Sahkan Skor</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${playableMatches
+                  .map((m) => {
+                    const maxWin = Math.ceil(Number(m.best_of || 3) / 2);
+                    return `
+                    <tr>
+                      <td><strong>${window.TurnamenUI.escapeHtml(m.round_name)}</strong></td>
+                      <td class="tabular-nums">#${m.match_number} (Bo${m.best_of})</td>
+                      <td>${window.TurnamenUI.escapeHtml(m.team_a_name)}</td>
+                      <td>${window.TurnamenUI.escapeHtml(m.team_b_name)}</td>
+                      <td>${window.TurnamenUI.renderStatusBadge(m.status)}</td>
+                      <td>
+                        <div class="score-inline-form">
+                          <label for="score-a-${window.TurnamenUI.escapeHtml(m.id)}" class="sr-only">Skor ${window.TurnamenUI.escapeHtml(m.team_a_name)}</label>
+                          <input id="score-a-${window.TurnamenUI.escapeHtml(m.id)}" type="number" min="0" max="${maxWin}" value="${m.score_a}" class="form-input tabular-nums score-inline-input" />
+                          <span aria-hidden="true">:</span>
+                          <label for="score-b-${window.TurnamenUI.escapeHtml(m.id)}" class="sr-only">Skor ${window.TurnamenUI.escapeHtml(m.team_b_name)}</label>
+                          <input id="score-b-${window.TurnamenUI.escapeHtml(m.id)}" type="number" min="0" max="${maxWin}" value="${m.score_b}" class="form-input tabular-nums score-inline-input" />
+                          <button type="button" class="btn btn-primary btn-sm" data-action="submit-score" data-id="${window.TurnamenUI.escapeHtml(m.id)}">Sahkan</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+        }
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Antrean Verifikasi Peserta</h3>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail">Panel Peserta</button>
+          </div>
+          ${
+            pendingRegs.length > 0
+              ? `
+            <div class="table-container">
+              <table class="data-table">
+                <thead><tr><th>Tim</th><th>Status</th><th>Aksi</th></tr></thead>
+                <tbody>
+                  ${pendingRegs
+                    .map(
+                      (r) => `
+                    <tr>
+                      <td><strong>${window.TurnamenUI.escapeHtml(r.team_name)}</strong> [${window.TurnamenUI.escapeHtml(r.team_tag)}]</td>
+                      <td>${window.TurnamenUI.renderStatusBadge(r.status)}</td>
+                      <td>
+                        <div class="row-actions">
+                          <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="approved">Setujui</button>
+                          <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="rejected">Tolak</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+              : window.TurnamenUI.renderEmptyState(
+                  "Semua Peserta Terverifikasi",
+                  `${activeRegs.length} tim pendaftar sudah diproses.`
+                )
+          }
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Audit Log Operasional</h3>
+            <span class="badge badge-violet">Audit Trail</span>
+          </div>
+          ${
+            activeReport && Array.isArray(activeReport.recent_activity) && activeReport.recent_activity.length > 0
+              ? `
+            <div class="table-container">
+              <table class="data-table">
+                <thead><tr><th>Aksi</th><th>Entitas</th><th>Waktu</th></tr></thead>
+                <tbody>
+                  ${activeReport.recent_activity
+                    .slice(0, 6)
+                    .map(
+                      (log) => `
+                    <tr>
+                      <td><code>${window.TurnamenUI.escapeHtml(log.action)}</code></td>
+                      <td>${window.TurnamenUI.escapeHtml(log.entity_type)}</td>
+                      <td class="tabular-nums">${window.TurnamenUI.formatDateTime(log.created_at)}</td>
+                    </tr>
+                  `
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+              : window.TurnamenUI.renderEmptyState("Belum Ada Aktivitas", "Belum ada log operasional terbaru.")
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  // B3. SUPER ADMIN DASHBOARD (System Administration & Cross-Tournament Telemetry)
+  function renderSuperAdminDashboard(container, data) {
+    const { tournaments, teams, teamsOk, ctx, activeReport } = data;
+    const state = getRuntimeState();
+    const ongoingCount = tournaments.filter((t) => t.status === "ongoing").length;
+    const openCount = tournaments.filter((t) => t.status === "open_registration").length;
+    const totalRosterPlayers = teams.reduce(
+      (sum, tm) => sum + Number(tm.member_count ?? (tm.members ? tm.members.length : 0)),
+      0
+    );
+    const summary = activeReport && activeReport.summary ? activeReport.summary : null;
+
+    container.innerHTML = `
+      ${renderGamesErrorNotice()}
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Administrasi Sistem Turnamen.in</h2>
+          <p>Kontrol penuh lintas organizer, katalog game, tim esports, dan audit operasional.</p>
+        </div>
+        <div class="page-actions">
+          <button type="button" class="btn btn-secondary" data-action="open-create-team">${window.TurnamenUI.icon("plus", 14)}<span>Buat Tim</span></button>
+          <button type="button" class="btn btn-primary" data-action="open-create-tournament">${window.TurnamenUI.icon("plus", 14)}<span>Buat Turnamen</span></button>
+        </div>
+      </div>
+
+      <div class="grid-4">
+        <div class="metric-card">
+          <div class="metric-label">Total Turnamen Sistem</div>
+          <div class="metric-value">${tournaments.length}</div>
+          <div class="metric-note">${ongoingCount} berlangsung, ${openCount} buka pendaftaran</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Cabang Game Aktif</div>
+          <div class="metric-value">${gamesState.items.length}</div>
+          <div class="metric-note">Terdaftar pada katalog sistem</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Total Tim &amp; Pemain</div>
+          <div class="metric-value">${teamsOk ? teams.length : "-"}</div>
+          <div class="metric-note">${teamsOk ? `${totalRosterPlayers} total pemain pada roster` : "Data tim gagal dimuat"}</div>
+        </div>
+        <div class="metric-card metric-card-accent">
+          <div class="metric-label">Progres Turnamen Aktif</div>
+          <div class="metric-value">${summary ? `${summary.completed_matches} / ${summary.total_matches}` : "0 / 0"}</div>
+          <div class="metric-note">${summary ? `${summary.completion_percentage}% selesai` : "Belum ada pertandingan"}</div>
+        </div>
+      </div>
+
+      <div class="workspace-split">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Kontrol Seluruh Turnamen</h3>
+              <p class="card-subtitle">Akses administrasi penuh untuk mengubah, mengaudit, atau memantau bracket.</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Kelola Lengkap</button>
+          </div>
+          ${
+            tournaments.length === 0
+              ? window.TurnamenUI.renderEmptyState("Belum Ada Turnamen", "Sistem belum memiliki data turnamen.")
+              : `
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Turnamen</th>
+                    <th>Peserta</th>
+                    <th>Status</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${tournaments
+                    .map(
+                      (t) => `
+                    <tr>
+                      <td>
+                        <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
+                        <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.game_name)} | ${window.TurnamenUI.escapeHtml(t.venue || "Online")}</div>
+                      </td>
+                      <td class="tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams}</td>
+                      <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
+                      <td>
+                        <div class="row-actions">
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
+                          <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
+                          <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Edit ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("edit", 14)}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          }
+        </div>
+
+        <div class="stack-md">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Distribusi Cabang Game</h3>
+              <span class="badge badge-info">Catalog</span>
+            </div>
+            ${
+              gamesState.items.length > 0
+                ? `
+              <div class="kv-list">
+                ${gamesState.items
+                  .map((g) => {
+                    const gTours = tournaments.filter((t) => t.game_id === g.id).length;
+                    const gTeams = teams.filter((tm) => tm.game_id === g.id).length;
+                    return `
+                    <div class="kv-item">
+                      <span class="kv-label">${window.TurnamenUI.renderGameChip(g.name, g.slug)}</span>
+                      <span class="kv-value tabular-nums">${gTours} Turnamen | ${gTeams} Tim</span>
+                    </div>
+                  `;
+                  })
+                  .join("")}
+              </div>
+            `
+                : window.TurnamenUI.renderEmptyState("Game Kosong", "Belum ada cabang game aktif.")
+            }
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Telemetri Lingkungan Sistem</h3>
+              <span class="badge ${isMockMode() ? "badge-warning" : "badge-success"}">${window.TurnamenUI.escapeHtml(state.appMode.toUpperCase())}</span>
+            </div>
+            <div class="kv-list">
+              <div class="kv-item">
+                <span class="kv-label">Endpoint API</span>
+                <span class="kv-value"><code>${window.TurnamenUI.escapeHtml(state.apiBaseUrl)}</code></span>
+              </div>
+              <div class="kv-item">
+                <span class="kv-label">Transport</span>
+                <span class="kv-value">${window.TurnamenBridge && window.TurnamenBridge.hasEel() ? "Python Eel Bridge" : "HTTP REST Lokal"}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Jejak Audit Aktivitas Sistem (${window.TurnamenUI.escapeHtml(ctx.active ? ctx.active.title : "Turnamen Aktif")})</h3>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="reports">Laporan Lengkap</button>
+        </div>
+        ${
+          activeReport && Array.isArray(activeReport.recent_activity) && activeReport.recent_activity.length > 0
+            ? `
+          <div class="table-container">
+            <table class="data-table">
+              <thead><tr><th>Aksi</th><th>Entitas</th><th>Waktu</th></tr></thead>
+              <tbody>
+                ${activeReport.recent_activity
+                  .map(
+                    (log) => `
+                  <tr>
+                    <td><code>${window.TurnamenUI.escapeHtml(log.action)}</code></td>
+                    <td>${window.TurnamenUI.escapeHtml(log.entity_type)}</td>
+                    <td class="tabular-nums">${window.TurnamenUI.formatDateTime(log.created_at)}</td>
+                  </tr>
+                `
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+            : window.TurnamenUI.renderEmptyState("Belum Ada Aktivitas", "Belum ada log audit pada turnamen aktif.")
+        }
+      </div>
+    `;
+  }
+
+  // GUEST PUBLIC DASHBOARD (currentUser === null)
+  function renderGuestDashboard(container, data) {
+    const { tournaments, ctx, gamesById } = data;
+    const featured = ctx.active || tournaments[0] || null;
+    const featuredGame = featured
+      ? gamesById[featured.game_id] || { name: featured.game_name, slug: featured.game_name }
+      : gamesState.items[0] || { name: "Esports Arena", slug: "esports" };
+
+    container.innerHTML = `
+      ${renderGamesErrorNotice()}
+      <section class="esports-banner" aria-label="Arena Publik Turnamen.in">
+        <div class="esports-banner-copy">
+          <span class="esports-banner-kicker">Turnamen.in Public Arena</span>
+          <h2 class="esports-banner-title">${window.TurnamenUI.escapeHtml(featured ? featured.title : "Portal Turnamen Esports Turnamen.in")}</h2>
+          <p class="esports-banner-desc">Pantau jadwal, bagan Single Elimination, pengumuman panitia, dan klasemen tim secara terbuka. Masuk untuk mendaftarkan tim atau mengelola turnamen sesuai role Anda.</p>
+          <div class="page-actions">
+            <button type="button" class="btn btn-primary" data-action="go-page" data-page="login">Masuk / Daftar Akun</button>
+            ${
+              featured
+                ? `<button type="button" class="btn btn-secondary" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(featured.id)}">Lihat Bracket</button>`
+                : ""
+            }
+          </div>
+        </div>
+        <div class="esports-banner-art">
+          ${window.TurnamenUI.renderGameArtwork(featuredGame, "PUBLIC ARENA")}
+        </div>
+      </section>
+
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Cabang Game Resmi</h2>
+          <p>Pilih game untuk menjelajahi kompetisi yang tersedia.</p>
+        </div>
+      </div>
+      ${renderGamePosterGallery(tournaments)}
+
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Kompetisi Aktif &amp; Terbuka</h2>
+          <p>Klik Bracket atau Detail untuk melihat klasemen dan pertandingan terkini.</p>
+        </div>
+      </div>
+      ${renderTournamentDiscoveryCards(tournaments, gamesById)}
+    `;
+  }
+
   // =========================================================================
-  // 2. TOURNAMENT LIST PAGE
+  // 2. TOURNAMENT LIST PAGE (ADAPTIVE: DISCOVERY CARDS VS MANAGEMENT TABLE)
   // =========================================================================
   async function renderTournamentList(container, isStale) {
     await ensureGamesLoaded(false);
@@ -708,7 +2047,10 @@
     if (tournamentFilterState.status) apiFilters.status = tournamentFilterState.status;
     if (tournamentFilterState.gameId) apiFilters.game_id = tournamentFilterState.gameId;
 
-    const res = await window.TurnamenAPI.getTournaments(apiFilters);
+    const [res, teamsRes] = await Promise.all([
+      window.TurnamenAPI.getTournaments(apiFilters),
+      canPerform("registration:create") ? window.TurnamenAPI.getTeams() : Promise.resolve({ success: false }),
+    ]);
     if (isStale()) return;
 
     if (!res.success) {
@@ -717,6 +2059,12 @@
     }
 
     const rawList = Array.isArray(res.data) ? res.data : [];
+    const teams = teamsRes.success && Array.isArray(teamsRes.data) ? teamsRes.data : [];
+    const user = getCurrentUserSafe();
+    const ownedTeamIds = user
+      ? teams.filter((tm) => tm.captain_id === user.id || user.role === "super_admin").map((tm) => tm.id)
+      : [];
+
     const searchQuery = tournamentFilterState.search.trim().toLowerCase();
     const list = searchQuery
       ? rawList.filter((t) => {
@@ -730,6 +2078,9 @@
     }
 
     const canCreate = canPerform("tournament:create");
+    const competitiveView = isCompetitiveRole();
+    const gamesById = buildGameLookup();
+
     const gameFilterOptions = gamesState.items
       .map(
         (g) =>
@@ -741,8 +2092,12 @@
       ${renderGamesErrorNotice()}
       <div class="page-header">
         <div class="page-header-copy">
-          <h2>Katalog &amp; Manajemen Turnamen</h2>
-          <p>Kelola seluruh turnamen lintas cabang game esports dengan status dan kuota peserta aktual.</p>
+          <h2>${competitiveView ? "Jelajah Turnamen Esports" : "Katalog &amp; Manajemen Turnamen"}</h2>
+          <p>${
+            competitiveView
+              ? "Temukan turnamen lintas cabang game, periksa slot tersisa, dan ikuti progres bracket."
+              : "Kelola seluruh turnamen lintas cabang game esports dengan status dan kuota peserta aktual."
+          }</p>
         </div>
         ${
           canCreate
@@ -784,8 +2139,8 @@
         </div>
       </div>
 
-      <div class="card" id="tournament-list-results">
-        ${renderTournamentListTable(list, rawList.length, canCreate)}
+      <div id="tournament-list-results">
+        ${renderTournamentListContent(list, rawList.length, canCreate, competitiveView, gamesById, ownedTeamIds, teams)}
       </div>
     `;
 
@@ -805,7 +2160,15 @@
           : rawList;
         const resultsEl = document.getElementById("tournament-list-results");
         if (resultsEl) {
-          resultsEl.innerHTML = renderTournamentListTable(filtered, rawList.length, canCreate);
+          resultsEl.innerHTML = renderTournamentListContent(
+            filtered,
+            rawList.length,
+            canCreate,
+            competitiveView,
+            gamesById,
+            ownedTeamIds,
+            teams
+          );
         }
       });
     }
@@ -823,74 +2186,92 @@
     }
   }
 
-  function renderTournamentListTable(list, rawTotal, canCreate) {
+  function renderTournamentListContent(
+    list,
+    rawTotal,
+    canCreate,
+    competitiveView,
+    gamesById,
+    ownedTeamIds,
+    teams
+  ) {
     if (list.length === 0) {
-      return window.TurnamenUI.renderEmptyState(
-        "Tidak Ada Turnamen Ditemukan",
-        rawTotal === 0
-          ? "Belum ada turnamen tersedia. Buat turnamen baru atau ubah filter pencarian."
-          : "Tidak ada turnamen yang cocok dengan kata kunci pencarian saat ini.",
-        canCreate
-          ? `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-tournament">Buat Turnamen Pertama</button>`
-          : ""
-      );
+      return `
+        <div class="card">
+          ${window.TurnamenUI.renderEmptyState(
+            "Tidak Ada Turnamen Ditemukan",
+            rawTotal === 0
+              ? "Belum ada turnamen tersedia. Buat turnamen baru atau ubah filter pencarian."
+              : "Tidak ada turnamen yang cocok dengan kata kunci pencarian saat ini.",
+            canCreate
+              ? `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-tournament">Buat Turnamen Pertama</button>`
+              : ""
+          )}
+        </div>
+      `;
+    }
+
+    if (competitiveView) {
+      return renderTournamentDiscoveryCards(list, gamesById, { ownedTeamIds, teams });
     }
 
     return `
-      <div class="table-container">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Judul Turnamen</th>
-              <th>Game</th>
-              <th>Format</th>
-              <th>Kuota Tim</th>
-              <th>Total Hadiah</th>
-              <th>Status</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${list
-              .map((t) => {
-                const canEdit = canPerform("tournament:edit", { tournament: t });
-                const canDelete =
-                  canPerform("tournament:delete", { tournament: t }) &&
-                  t.status !== "ongoing" &&
-                  t.status !== "completed";
-                return `
-                <tr>
-                  <td>
-                    <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
-                    <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")} | ${window.TurnamenUI.formatDateOnly(t.start_date)}</div>
-                  </td>
-                  <td>${window.TurnamenUI.escapeHtml(t.game_name)}</td>
-                  <td class="tabular-nums">Single Elim (Bo${t.best_of})</td>
-                  <td class="tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams} Tim</td>
-                  <td class="tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
-                  <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
-                  <td>
-                    <div class="row-actions">
-                      <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
-                      <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
-                      ${
-                        canEdit
-                          ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Edit ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("edit", 14)}</button>`
-                          : ""
-                      }
-                      ${
-                        canDelete
-                          ? `<button type="button" class="btn btn-danger btn-sm" data-action="confirm-delete-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Hapus ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("trash", 14)}</button>`
-                          : ""
-                      }
-                    </div>
-                  </td>
-                </tr>
-              `;
-              })
-              .join("")}
-          </tbody>
-        </table>
+      <div class="card">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Judul Turnamen</th>
+                <th>Game</th>
+                <th>Format</th>
+                <th>Kuota Tim</th>
+                <th>Total Hadiah</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list
+                .map((t) => {
+                  const canEdit = canPerform("tournament:edit", { tournament: t });
+                  const canDelete =
+                    canPerform("tournament:delete", { tournament: t }) &&
+                    t.status !== "ongoing" &&
+                    t.status !== "completed";
+                  return `
+                  <tr>
+                    <td>
+                      <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
+                      <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")} | ${window.TurnamenUI.formatDateOnly(t.start_date)}</div>
+                    </td>
+                    <td>${window.TurnamenUI.renderGameChip(t.game_name)}</td>
+                    <td class="tabular-nums">Single Elim (Bo${t.best_of})</td>
+                    <td class="tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams} Tim</td>
+                    <td class="tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
+                    <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
+                    <td>
+                      <div class="row-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
+                        <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
+                        ${
+                          canEdit
+                            ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Edit ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("edit", 14)}</button>`
+                            : ""
+                        }
+                        ${
+                          canDelete
+                            ? `<button type="button" class="btn btn-danger btn-sm" data-action="confirm-delete-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Hapus ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("trash", 14)}</button>`
+                            : ""
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                `;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   }
@@ -1146,6 +2527,41 @@
       (t.status === "open_registration" || t.status === "draft");
     const eligibleTeams = canRegister ? getEligibleTeamsForRegistration(teams, t, regs) : [];
 
+    let registrationControlHtml = "";
+    if (canRegister) {
+      if (eligibleTeams.length > 0) {
+        registrationControlHtml = `
+          <div class="row-actions">
+            <label for="reg-team-select" class="sr-only">Pilih tim untuk didaftarkan</label>
+            <select id="reg-team-select" class="form-select form-select-compact">
+              ${eligibleTeams
+                .map(
+                  (tm) =>
+                    `<option value="${window.TurnamenUI.escapeHtml(tm.id)}">${window.TurnamenUI.escapeHtml(tm.name)} [${window.TurnamenUI.escapeHtml(tm.tag)}]</option>`
+                )
+                .join("")}
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary btn-sm"
+              data-action="register-selected-team"
+              data-id="${window.TurnamenUI.escapeHtml(t.id)}"
+            >
+              ${window.TurnamenUI.icon("plus", 14)}
+              <span>Daftarkan Tim</span>
+            </button>
+          </div>
+        `;
+      } else {
+        registrationControlHtml = `
+          <div class="row-actions">
+            <span class="table-subtext">Belum ada tim ${window.TurnamenUI.escapeHtml(t.game_name)} yang belum terdaftar.</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="open-create-team">+ Buat Tim Baru</button>
+          </div>
+        `;
+      }
+    }
+
     container.innerHTML = `
       ${renderTournamentContextBar(
         ctx.list,
@@ -1194,37 +2610,7 @@
             <h3 class="card-title">Daftar Tim Peserta &amp; Verifikasi Registrasi</h3>
             <p class="card-subtitle">Registrasi tim berstatus disetujui akan masuk ke bagan bracket.</p>
           </div>
-          ${
-            canRegister
-              ? `
-            <div class="row-actions">
-              <label for="reg-team-select" class="sr-only">Pilih tim untuk didaftarkan</label>
-              <select id="reg-team-select" class="form-select form-select-compact" ${eligibleTeams.length === 0 ? "disabled" : ""}>
-                ${
-                  eligibleTeams.length > 0
-                    ? eligibleTeams
-                        .map(
-                          (tm) =>
-                            `<option value="${window.TurnamenUI.escapeHtml(tm.id)}">${window.TurnamenUI.escapeHtml(tm.name)} [${window.TurnamenUI.escapeHtml(tm.tag)}]</option>`
-                        )
-                        .join("")
-                    : `<option value="">Tidak ada tim yang memenuhi syarat</option>`
-                }
-              </select>
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                data-action="register-selected-team"
-                data-id="${window.TurnamenUI.escapeHtml(t.id)}"
-                ${eligibleTeams.length === 0 ? "disabled" : ""}
-              >
-                ${window.TurnamenUI.icon("plus", 14)}
-                <span>Daftarkan Tim</span>
-              </button>
-            </div>
-          `
-              : ""
-          }
+          ${registrationControlHtml}
         </div>
 
         ${
@@ -1310,11 +2696,11 @@
       return;
     }
     window.TurnamenUI.showToast(`Status pendaftaran diubah ke ${newStatus}.`, "success");
-    await navigateTo("tournament-detail");
+    await navigateTo(currentPage);
   }
 
   // =========================================================================
-  // 4. TEAM MANAGEMENT PAGE
+  // 4. TEAM MANAGEMENT PAGE (ADAPTIVE PER ROLE)
   // =========================================================================
   async function renderTeamManagement(container, isStale) {
     await ensureGamesLoaded(false);
@@ -1339,6 +2725,8 @@
         })
       : rawTeams;
 
+    const roleKey = getActiveRoleKey();
+    const user = getCurrentUserSafe();
     const canCreateTeam = canPerform("team:create");
     const gameOptions = gamesState.items
       .map(
@@ -1347,12 +2735,25 @@
       )
       .join("");
 
+    const pageTitle =
+      roleKey === "team_captain"
+        ? "Tim &amp; Roster Saya"
+        : roleKey === "player"
+          ? "Direktori Tim Esports"
+          : "Manajemen Tim &amp; Roster Pemain";
+    const pageDesc =
+      roleKey === "team_captain"
+        ? "Kelola identitas tim Anda, perbarui detail tim, dan atur anggota roster."
+        : roleKey === "player"
+          ? "Lihat profil tim peserta, tag resmi, serta susunan roster pemain."
+          : "Kelola data tim esports, tag resmi, region, serta daftar anggota beserta ID in-game.";
+
     container.innerHTML = `
       ${renderGamesErrorNotice()}
       <div class="page-header">
         <div class="page-header-copy">
-          <h2>Manajemen Tim &amp; Roster Pemain</h2>
-          <p>Kelola data tim esports, tag resmi, region, serta daftar anggota beserta ID in-game.</p>
+          <h2>${pageTitle}</h2>
+          <p>${pageDesc}</p>
         </div>
         ${
           canCreateTeam
@@ -1382,8 +2783,8 @@
         </div>
       </div>
 
-      <div class="card" id="team-list-results">
-        ${renderTeamManagementTable(teams, canCreateTeam)}
+      <div id="team-list-results">
+        ${renderTeamManagementContent(teams, canCreateTeam, roleKey, user)}
       </div>
     `;
 
@@ -1401,7 +2802,7 @@
           : rawTeams;
         const resultsEl = document.getElementById("team-list-results");
         if (resultsEl) {
-          resultsEl.innerHTML = renderTeamManagementTable(filtered, canCreateTeam);
+          resultsEl.innerHTML = renderTeamManagementContent(filtered, canCreateTeam, roleKey, user);
         }
       });
     }
@@ -1413,76 +2814,144 @@
     }
   }
 
-  function renderTeamManagementTable(teams, canCreateTeam) {
+  function renderTeamManagementContent(teams, canCreateTeam, roleKey, user) {
     if (teams.length === 0) {
-      return window.TurnamenUI.renderEmptyState(
-        "Belum Ada Tim Ditemukan",
-        "Belum ada tim yang sesuai dengan filter saat ini.",
-        canCreateTeam
-          ? `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-team">Buat Tim Baru</button>`
-          : ""
-      );
+      return `
+        <div class="card">
+          ${window.TurnamenUI.renderEmptyState(
+            "Belum Ada Tim Ditemukan",
+            "Belum ada tim yang sesuai dengan filter saat ini.",
+            canCreateTeam
+              ? `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-team">Buat Tim Baru</button>`
+              : ""
+          )}
+        </div>
+      `;
+    }
+
+    if (isCompetitiveRole(roleKey)) {
+      const sortedTeams = [...teams].sort((a, b) => {
+        const aMine =
+          user &&
+          (a.captain_id === user.id || (a.members || []).some((m) => m.user_id === user.id));
+        const bMine =
+          user &&
+          (b.captain_id === user.id || (b.members || []).some((m) => m.user_id === user.id));
+        return Number(Boolean(bMine)) - Number(Boolean(aMine));
+      });
+
+      return `
+        <div class="discovery-grid">
+          ${sortedTeams
+            .map((tm) => {
+              const canManage = canPerform("team:manage", { team: tm });
+              const members = Array.isArray(tm.members) ? tm.members : [];
+              const isOwnMember =
+                user && (tm.captain_id === user.id || members.some((m) => m.user_id === user.id));
+              return `
+              <article class="card ${isOwnMember ? "card-elevated" : ""}">
+                <div class="card-header">
+                  <div class="row-actions" style="gap:12px;">
+                    ${window.TurnamenUI.renderTeamEmblem(tm.tag, 42)}
+                    <div>
+                      <h3 class="card-title">${window.TurnamenUI.escapeHtml(tm.name)}</h3>
+                      <div class="table-subtext">${window.TurnamenUI.escapeHtml(tm.game_name)} | ${window.TurnamenUI.escapeHtml(tm.region || "-")}</div>
+                    </div>
+                  </div>
+                  ${isOwnMember ? `<span class="badge badge-info">Tim Anda</span>` : `<span class="badge badge-neutral tabular-nums">${window.TurnamenUI.escapeHtml(tm.tag)}</span>`}
+                </div>
+                <div class="roster-list" style="margin-bottom:14px;">
+                  ${
+                    members.length > 0
+                      ? members
+                          .map(
+                            (m) =>
+                              `<span class="roster-chip">${window.TurnamenUI.escapeHtml(m.nickname)} (${window.TurnamenUI.escapeHtml(m.ingame_id)})</span>`
+                          )
+                          .join("")
+                      : `<span class="table-subtext">Belum ada anggota terdaftar</span>`
+                  }
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="open-team-detail" data-id="${window.TurnamenUI.escapeHtml(tm.id)}">Detail Roster</button>
+                  ${
+                    canManage
+                      ? `
+                    <button type="button" class="btn btn-primary btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(tm.id)}">+ Anggota</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-team" data-id="${window.TurnamenUI.escapeHtml(tm.id)}" aria-label="Edit tim ${window.TurnamenUI.escapeHtml(tm.name)}">${window.TurnamenUI.icon("edit", 14)}</button>
+                  `
+                      : ""
+                  }
+                </div>
+              </article>
+            `;
+            })
+            .join("")}
+        </div>
+      `;
     }
 
     return `
-      <div class="table-container">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Tag</th>
-              <th>Nama Tim</th>
-              <th>Cabang Game</th>
-              <th>Region</th>
-              <th>Jumlah Roster</th>
-              <th>Daftar Pemain (In-Game ID)</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${teams
-              .map((tm) => {
-                const canManage = canPerform("team:manage", { team: tm });
-                const members = Array.isArray(tm.members) ? tm.members : [];
-                return `
-                <tr>
-                  <td class="tabular-nums"><span class="badge badge-info">${window.TurnamenUI.escapeHtml(tm.tag)}</span></td>
-                  <td><strong>${window.TurnamenUI.escapeHtml(tm.name)}</strong></td>
-                  <td>${window.TurnamenUI.escapeHtml(tm.game_name)}</td>
-                  <td>${window.TurnamenUI.escapeHtml(tm.region || "-")}</td>
-                  <td class="tabular-nums">${tm.member_count ?? members.length} Pemain</td>
-                  <td>
-                    <div class="roster-list">
-                      ${
-                        members.length > 0
-                          ? members
-                              .map(
-                                (m) =>
-                                  `<span class="roster-chip">${window.TurnamenUI.escapeHtml(m.nickname)} (${window.TurnamenUI.escapeHtml(m.ingame_id)})</span>`
-                              )
-                              .join("")
-                          : `<span class="table-subtext">Belum ada anggota</span>`
-                      }
-                    </div>
-                  </td>
-                  <td>
-                    <div class="row-actions">
-                      <button type="button" class="btn btn-secondary btn-sm" data-action="open-team-detail" data-id="${window.TurnamenUI.escapeHtml(tm.id)}">Detail</button>
-                      ${
-                        canManage
-                          ? `
-                        <button type="button" class="btn btn-ghost btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(tm.id)}">+ Anggota</button>
-                        <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-team" data-id="${window.TurnamenUI.escapeHtml(tm.id)}" aria-label="Edit tim ${window.TurnamenUI.escapeHtml(tm.name)}">${window.TurnamenUI.icon("edit", 14)}</button>
-                      `
-                          : ""
-                      }
-                    </div>
-                  </td>
-                </tr>
-              `;
-              })
-              .join("")}
-          </tbody>
-        </table>
+      <div class="card">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tag</th>
+                <th>Nama Tim</th>
+                <th>Cabang Game</th>
+                <th>Region</th>
+                <th>Jumlah Roster</th>
+                <th>Daftar Pemain (In-Game ID)</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${teams
+                .map((tm) => {
+                  const canManage = canPerform("team:manage", { team: tm });
+                  const members = Array.isArray(tm.members) ? tm.members : [];
+                  return `
+                  <tr>
+                    <td class="tabular-nums"><span class="badge badge-info">${window.TurnamenUI.escapeHtml(tm.tag)}</span></td>
+                    <td><strong>${window.TurnamenUI.escapeHtml(tm.name)}</strong></td>
+                    <td>${window.TurnamenUI.renderGameChip(tm.game_name)}</td>
+                    <td>${window.TurnamenUI.escapeHtml(tm.region || "-")}</td>
+                    <td class="tabular-nums">${tm.member_count ?? members.length} Pemain</td>
+                    <td>
+                      <div class="roster-list">
+                        ${
+                          members.length > 0
+                            ? members
+                                .map(
+                                  (m) =>
+                                    `<span class="roster-chip">${window.TurnamenUI.escapeHtml(m.nickname)} (${window.TurnamenUI.escapeHtml(m.ingame_id)})</span>`
+                                )
+                                .join("")
+                            : `<span class="table-subtext">Belum ada anggota</span>`
+                        }
+                      </div>
+                    </td>
+                    <td>
+                      <div class="row-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" data-action="open-team-detail" data-id="${window.TurnamenUI.escapeHtml(tm.id)}">Detail</button>
+                        ${
+                          canManage
+                            ? `
+                          <button type="button" class="btn btn-ghost btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(tm.id)}">+ Anggota</button>
+                          <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-team" data-id="${window.TurnamenUI.escapeHtml(tm.id)}" aria-label="Edit tim ${window.TurnamenUI.escapeHtml(tm.name)}">${window.TurnamenUI.icon("edit", 14)}</button>
+                        `
+                            : ""
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                `;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   }
@@ -1544,9 +3013,12 @@
       window.TurnamenUI.showToast(res.message, "danger");
       return;
     }
+    if (res.data && res.data.id) {
+      selectedCaptainTeamId = res.data.id;
+    }
     window.TurnamenUI.closeModal();
     window.TurnamenUI.showToast("Tim berhasil dibuat.", "success");
-    await navigateTo("team-management");
+    await navigateTo(currentPage);
   }
 
   async function openTeamDetailModal(teamId) {
@@ -1669,7 +3141,7 @@
     }
     window.TurnamenUI.closeModal();
     window.TurnamenUI.showToast("Data tim berhasil diperbarui.", "success");
-    await navigateTo("team-management");
+    await navigateTo(currentPage);
   }
 
   function openAddMemberModal(teamId) {
@@ -1714,11 +3186,11 @@
     }
     window.TurnamenUI.closeModal();
     window.TurnamenUI.showToast("Anggota tim berhasil ditambahkan.", "success");
-    await navigateTo("team-management");
+    await navigateTo(currentPage);
   }
 
   // =========================================================================
-  // 5. MATCH MANAGEMENT & SCORE SUBMISSION PAGE
+  // 5. MATCH MANAGEMENT & SCORE SUBMISSION PAGE (MANAGEMENT ONLY)
   // =========================================================================
   async function renderMatchManagement(container, isStale) {
     const ctx = await resolveActiveTournamentContext();
@@ -1897,7 +3369,7 @@
     const res = await window.TurnamenAPI.submitMatchResult(matchId, {
       score_a: scoreA,
       score_b: scoreB,
-      notes: "Disahkan melalui Match Management Desktop",
+      notes: "Disahkan melalui panel operasional desktop",
     });
 
     if (!res.success) {
@@ -2000,21 +3472,24 @@
     const data = res.data || {};
     const rounds = Array.isArray(data.rounds) ? data.rounds : [];
     const canGenerate = canPerform("bracket:generate", { tournament: ctx.active });
+    const canViewScoreDesk = isManagementRole();
     const hasExistingBracket = rounds.length > 0;
 
+    const contextActionsHtml = `
+      ${
+        canViewScoreDesk
+          ? `<button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="match-management" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Kelola Skor</button>`
+          : `<button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="reports" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Lihat Klasemen</button>`
+      }
+      ${
+        canGenerate
+          ? `<button type="button" class="btn btn-primary btn-sm" data-action="${hasExistingBracket ? "confirm-regenerate-bracket" : "regenerate-bracket"}" data-id="${window.TurnamenUI.escapeHtml(data.tournament_id || ctx.active.id)}">${hasExistingBracket ? "Reset / Generate Ulang Bracket" : "Generate Bracket"}</button>`
+          : ""
+      }
+    `;
+
     container.innerHTML = `
-      ${renderTournamentContextBar(
-        ctx.list,
-        ctx.active,
-        `
-          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="match-management" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Kelola Skor</button>
-          ${
-            canGenerate
-              ? `<button type="button" class="btn btn-primary btn-sm" data-action="${hasExistingBracket ? "confirm-regenerate-bracket" : "regenerate-bracket"}" data-id="${window.TurnamenUI.escapeHtml(data.tournament_id || ctx.active.id)}">${hasExistingBracket ? "Reset / Generate Ulang Bracket" : "Generate Bracket"}</button>`
-              : ""
-          }
-        `
-      )}
+      ${renderTournamentContextBar(ctx.list, ctx.active, contextActionsHtml)}
 
       <div class="page-header">
         <div class="page-header-copy">
@@ -2269,7 +3744,7 @@
     }
     window.TurnamenUI.closeModal();
     window.TurnamenUI.showToast("Pengumuman berhasil dipublikasikan.", "success");
-    await navigateTo("announcements");
+    await navigateTo(currentPage);
   }
 
   // =========================================================================
@@ -2834,6 +4309,11 @@
           navigateTo(page, tournamentId ? { tournamentId } : {});
           break;
         }
+        case "browse-game-tournaments":
+          tournamentFilterState.gameId = id;
+          tournamentFilterState.status = "";
+          navigateTo("tournament-list");
+          break;
         case "retry-page":
           navigateTo(currentPage);
           break;
