@@ -19,26 +19,102 @@
           <span class="sidebar-brand-subtitle">Esports Management Suite</span>
         </div>
       </div>
-
       <nav class="sidebar-nav">
-        <div class="nav-section-label">Utama</div>
-        <button class="nav-item active" data-page="dashboard">📊 Dashboard</button>
-        <button class="nav-item" data-page="tournament-list">🏆 Daftar Turnamen</button>
-        <button class="nav-item" data-page="tournament-detail">📋 Detail & Peserta</button>
+  <div class="nav-section-label">Utama</div>
 
-        <div class="nav-section-label">Kompetisi & Pertandingan</div>
-        <button class="nav-item" data-page="team-management">🛡️ Manajemen Tim</button>
-        <button class="nav-item" data-page="match-management">⚔️ Jadwal & Skor Match</button>
-        <button class="nav-item" data-page="bracket">🌿 Bracket 8 Tim</button>
+  <button class="nav-item active" data-page="dashboard">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="3" width="8" height="8" rx="1.5"/>
+      <rect x="13" y="3" width="8" height="5" rx="1.5"/>
+      <rect x="13" y="10" width="8" height="11" rx="1.5"/>
+      <rect x="3" y="13" width="8" height="8" rx="1.5"/>
+    </svg>
+    <span>Dashboard</span>
+  </button>
 
-        <div class="nav-section-label">Komunikasi & Laporan</div>
-        <button class="nav-item" data-page="announcements">📢 Pengumuman</button>
-        <button class="nav-item" data-page="reports">📈 Laporan & Klasemen</button>
+  <button class="nav-item" data-page="tournament-list">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z"/>
+      <path d="M8 6H5v2a4 4 0 0 0 4 4M16 6h3v2a4 4 0 0 1-4 4"/>
+      <path d="M12 13v5M8 21h8M10 18h4"/>
+    </svg>
+    <span>Daftar Turnamen</span>
+  </button>
 
-        <div class="nav-section-label">Akun & Akses</div>
-        <button class="nav-item" data-page="profile">👤 Profil Pengguna</button>
-        <button class="nav-item" data-page="login">🔐 Login / Ganti Role</button>
-      </nav>
+  <button class="nav-item" data-page="tournament-detail">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/>
+      <path d="M14 2v6h6M8 13h8M8 17h8M8 9h2"/>
+    </svg>
+    <span>Detail &amp; Peserta</span>
+  </button>
+
+  <div class="nav-section-label">Kompetisi &amp; Pertandingan</div>
+
+  <button class="nav-item" data-page="team-management">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/>
+      <path d="m9 12 2 2 4-4"/>
+    </svg>
+    <span>Manajemen Tim</span>
+  </button>
+
+  <button class="nav-item" data-page="match-management">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m14 6 4-4 4 4-4 4"/>
+      <path d="m10 18-4 4-4-4 4-4"/>
+      <path d="m20 2-9 9M4 22l9-9"/>
+      <path d="m14 14 6 6M4 4l6 6"/>
+    </svg>
+    <span>Jadwal &amp; Skor Match</span>
+  </button>
+
+  <button class="nav-item" data-page="bracket">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 4v6h6M4 10l6-6M20 20v-6h-6M20 14l-6 6"/>
+      <path d="M10 7h4a3 3 0 0 1 3 3v4M14 17h-4a3 3 0 0 1-3-3v-4"/>
+    </svg>
+    <span>Bracket 8 Tim</span>
+  </button>
+
+  <div class="nav-section-label">Komunikasi &amp; Laporan</div>
+
+  <button class="nav-item" data-page="announcements">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 11v2a2 2 0 0 0 2 2h2l10 5V4L7 9H5a2 2 0 0 0-2 2Z"/>
+      <path d="M7 15l2 6h4l-2-4M19 9a4 4 0 0 1 0 6"/>
+    </svg>
+    <span>Pengumuman</span>
+  </button>
+
+  <button class="nav-item" data-page="reports">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 3v18h18"/>
+      <path d="m7 14 4-4 4 3 6-7"/>
+      <path d="M17 6h4v4"/>
+    </svg>
+    <span>Laporan &amp; Klasemen</span>
+  </button>
+
+  <div class="nav-section-label">Akun &amp; Akses</div>
+
+  <button class="nav-item" data-page="profile">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="4"/>
+      <path d="M4 21a8 8 0 0 1 16 0"/>
+    </svg>
+    <span>Profil Pengguna</span>
+  </button>
+
+  <button class="nav-item" data-page="login">
+    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10 17l5-5-5-5M15 12H3"/>
+      <path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/>
+    </svg>
+    <span>Login / Ganti Role</span>
+  </button>
+</nav>
+
 
       <div class="sidebar-footer" id="sidebar-api-status">
         <span>● Memeriksa koneksi API...</span>

@@ -96,6 +96,21 @@
 
 /* Navigation Items */
 
+/* Sidebar Navigation Icons */
+.nav-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+
+
 .nav-item {
   display: flex;
   align-items: center;

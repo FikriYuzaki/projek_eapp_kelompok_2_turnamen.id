@@ -293,10 +293,12 @@
     const res = await window.TurnamenAPI.getTournaments(
       filterStatus ? { status: filterStatus } : {}
     );
+
     if (!res.success) {
       container.innerHTML = window.TurnamenUI.renderErrorState(res.message);
       return;
     }
+
     const list = res.data || [];
 
     container.innerHTML = `
@@ -305,11 +307,17 @@
           <h2>Manajemen Daftar Turnamen</h2>
           <p>Kelola seluruh turnamen lintas cabang game e-sport.</p>
         </div>
-        <button class="btn btn-primary" onclick="TurnamenApp.openCreateTournamentModal()">+ Buat Turnamen Baru</button>
+        <button class="btn btn-primary" onclick="TurnamenApp.openCreateTournamentModal()">
+          + Buat Turnamen Baru
+        </button>
       </div>
 
       <div class="filter-bar">
-        <select id="filter-tournament-status" class="form-select" onchange="TurnamenApp.filterTournaments(this.value)">
+        <select
+          id="filter-tournament-status"
+          class="form-select"
+          onchange="TurnamenApp.filterTournaments(this.value)"
+        >
           <option value="" ${filterStatus === "" ? "selected" : ""}>Semua Status</option>
           <option value="ongoing" ${filterStatus === "ongoing" ? "selected" : ""}>Sedang Berlangsung (Ongoing)</option>
           <option value="open_registration" ${filterStatus === "open_registration" ? "selected" : ""}>Pendaftaran Dibuka</option>
@@ -318,57 +326,144 @@
         </select>
       </div>
 
-      <div class="card">
-        ${
-          list.length === 0
-            ? window.TurnamenUI.renderEmptyState(
+      ${
+        list.length === 0
+          ? `
+            <div class="card">
+              ${window.TurnamenUI.renderEmptyState(
                 "Tidak Ada Turnamen Ditemukan",
                 "Belum ada turnamen yang sesuai dengan filter status tersebut."
-              )
-            : `
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Judul Turnamen</th>
-                  <th>Game</th>
-                  <th>Format</th>
-                  <th>Kuota Tim</th>
-                  <th>Total Hadiah</th>
-                  <th>Status</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${list
-                  .map(
-                    (t) => `
-                  <tr>
-                    <td>
-                      <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
-                      <div style="font-size:11.5px; color:var(--text-muted);">${window.TurnamenUI.escapeHtml(t.venue)}</div>
-                    </td>
-                    <td>${window.TurnamenUI.escapeHtml(t.game_name)}</td>
-                    <td class="tabular-nums">Single Elim (Bo${t.best_of})</td>
-                    <td class="tabular-nums">${t.approved_teams_count} / ${t.max_teams} Tim</td>
-                    <td class="tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
-                    <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
-                    <td style="display:flex; gap:6px;">
-                      <button class="btn btn-secondary btn-sm" onclick="TurnamenApp.navigateTo('tournament-detail', {tournamentId: '${t.id}'})">Peserta</button>
-                      <button class="btn btn-primary btn-sm" onclick="TurnamenApp.navigateTo('bracket', {tournamentId: '${t.id}'})">Bracket</button>
-                    </td>
-                  </tr>
-                `
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-          </div>
-        `
-        }
-      </div>
+              )}
+            </div>
+          `
+          : `
+            <div class="tournament-card-list">
+              ${list
+                .map((t) => {
+                  const approvedTeams =
+                    Number(t.approved_teams_count) || 0;
+                  const maxTeams = Number(t.max_teams) || 0;
+
+                  const progress = maxTeams > 0
+                    ? Math.min(
+                        100,
+                        Math.max(0, (approvedTeams / maxTeams) * 100)
+                      )
+                    : 0;
+
+                  return `
+                    <article class="tournament-card">
+                      <div class="tournament-card-header">
+                        <h3 class="tournament-card-title">
+                          ${window.TurnamenUI.escapeHtml(t.title ?? "")}
+                        </h3>
+                        <p class="tournament-card-venue">
+                          ${window.TurnamenUI.escapeHtml(t.venue ?? "")}
+                        </p>
+                      </div>
+
+                      <div class="tournament-card-body">
+                        <div class="tournament-card-info">
+                          <div class="tournament-card-info-item">
+                            <span class="tournament-card-info-label">Game</span>
+                            <span class="tournament-card-info-value">
+                              ${window.TurnamenUI.escapeHtml(t.game_name ?? "")}
+                            </span>
+                          </div>
+
+                          <div class="tournament-card-info-item">
+                            <span class="tournament-card-info-label">Format</span>
+                            <span class="tournament-card-info-value">
+                              Single Elim (Bo${window.TurnamenUI.escapeHtml(String(t.best_of ?? "-"))})
+                            </span>
+                          </div>
+                        </div>
+
+                        <div class="tournament-card-progress">
+                          <div class="tournament-card-progress-header">
+                            <span>Kuota Tim</span>
+                            <strong>
+                              ${approvedTeams} / ${maxTeams} Tim
+                            </strong>
+                          </div>
+
+                          <div
+                            class="tournament-card-progress-track"
+                            role="progressbar"
+                            aria-valuenow="${Math.round(progress)}"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-label="Progres kuota tim"
+                          >
+                            <div
+                              class="tournament-card-progress-fill"
+                              style="width: ${progress}%"
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div class="tournament-card-prize">
+                          <span class="tournament-card-prize-label">
+                            Total Hadiah
+                          </span>
+                          <strong class="tournament-card-prize-value">
+                            ${window.TurnamenUI.formatRupiah(t.prize_pool)}
+                          </strong>
+                        </div>
+
+                        <div>
+                          ${window.TurnamenUI.renderStatusBadge(t.status)}
+                        </div>
+
+                        <div class="tournament-card-actions">
+                          <button
+                            type="button"
+                            class="btn btn-secondary btn-sm tournament-card-action"
+                            data-action="participants"
+                            data-tournament-id="${window.TurnamenUI.escapeHtml(String(t.id ?? ""))}"
+                          >
+                            Peserta
+                          </button>
+
+                          <button
+                            type="button"
+                            class="btn btn-primary btn-sm tournament-card-action"
+                            data-action="bracket"
+                            data-tournament-id="${window.TurnamenUI.escapeHtml(String(t.id ?? ""))}"
+                          >
+                            Bracket
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  `;
+                })
+                .join("")}
+            </div>
+          `
+      }
     `;
+
+    // Menangani navigasi tombol pada setiap kartu turnamen.
+    container.querySelectorAll(".tournament-card-action").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tournamentId = button.dataset.tournamentId;
+
+        if (!tournamentId) return;
+
+        if (button.dataset.action === "participants") {
+          TurnamenApp.navigateTo("tournament-detail", {
+            tournamentId,
+          });
+        } else if (button.dataset.action === "bracket") {
+          TurnamenApp.navigateTo("bracket", {
+            tournamentId,
+          });
+        }
+      });
+    });
   }
+
 
   function openCreateTournamentModal() {
     const gameOptions = cachedGames
