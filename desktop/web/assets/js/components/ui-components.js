@@ -303,6 +303,7 @@
     const label = labelOverride || asset.code;
     const loadingAttr = options && options.eager ? "eager" : "lazy";
     const hideLabels = Boolean(options && options.hideLabels);
+    const hideCaption = Boolean(options && options.hideCaption);
 
     return `
       <div class="artwork-media">
@@ -323,14 +324,8 @@
           ${asset.accentShape}
         </svg>
         <div class="artwork-scrim" aria-hidden="true"></div>
-        ${
-          hideLabels
-            ? ""
-            : `
-          <span class="artwork-kicker-tag">${escapeHtml(label)}</span>
-          <span class="artwork-caption">${escapeHtml(gameName)}</span>
-        `
-        }
+        ${hideLabels ? "" : `<span class="artwork-kicker-tag">${escapeHtml(label)}</span>`}
+        ${hideLabels || hideCaption ? "" : `<span class="artwork-caption">${escapeHtml(gameName)}</span>`}
       </div>
     `;
   }
@@ -473,7 +468,71 @@
     `;
   }
 
-  function showToast(message, type = "info") {
+  const MAX_VISIBLE_TOASTS = 3;
+  const TOAST_DURATIONS = {
+    danger: 5200,
+    warning: 4400,
+    success: 3400,
+    info: 3400,
+  };
+  let activeToasts = [];
+
+  function prefersReducedMotion() {
+    return Boolean(
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  }
+
+  function dismissToastEntry(entry) {
+    if (!entry || entry.dismissed) return;
+    entry.dismissed = true;
+    if (entry.timerId) {
+      window.clearTimeout(entry.timerId);
+      entry.timerId = null;
+    }
+    activeToasts = activeToasts.filter((item) => item !== entry);
+    const el = entry.el;
+    if (!el || !el.isConnected) return;
+    if (prefersReducedMotion()) {
+      el.remove();
+      return;
+    }
+    el.classList.add("is-leaving");
+    window.setTimeout(() => {
+      if (el.isConnected) el.remove();
+    }, 170);
+  }
+
+  function startToastTimer(entry) {
+    if (!entry || entry.dismissed || entry.remainingMs <= 0) return;
+    if (entry.timerId) window.clearTimeout(entry.timerId);
+    entry.startedAt = Date.now();
+    entry.timerId = window.setTimeout(() => {
+      dismissToastEntry(entry);
+    }, entry.remainingMs);
+  }
+
+  function pauseToastTimer(entry) {
+    if (!entry || entry.dismissed || !entry.timerId) return;
+    window.clearTimeout(entry.timerId);
+    entry.timerId = null;
+    const elapsed = Date.now() - entry.startedAt;
+    entry.remainingMs = Math.max(800, entry.remainingMs - elapsed);
+  }
+
+  function showToast(message, type = "info", options = {}) {
+    const cleanMsg = String(message || "").trim();
+    if (!cleanMsg) return;
+    const safeType = TOAST_DURATIONS[type] ? type : "info";
+    const duration =
+      Number.isFinite(Number(options && options.duration)) && Number(options.duration) > 0
+        ? Number(options.duration)
+        : TOAST_DURATIONS[safeType];
+    const group =
+      (options && typeof options.group === "string" && options.group) ||
+      (cleanMsg.startsWith("Beralih ke akun demo:") ? "demo-role-switch" : "");
+    const dedupeKey = `${safeType}::${cleanMsg}`;
+
     let container = document.getElementById("toast-container");
     if (!container) {
       container = document.createElement("div");
@@ -483,29 +542,62 @@
       document.body.appendChild(container);
     }
 
+    // Prune detached entries in case test scripts cleared #toast-container directly
+    activeToasts = activeToasts.filter((item) => item.el && item.el.isConnected);
+
+    const existingDuplicate = activeToasts.find((item) => item.key === dedupeKey && !item.dismissed);
+    if (existingDuplicate) {
+      existingDuplicate.remainingMs = duration;
+      startToastTimer(existingDuplicate);
+      return;
+    }
+
+    if (group) {
+      activeToasts
+        .filter((item) => item.group === group && !item.dismissed)
+        .forEach((item) => dismissToastEntry(item));
+    }
+
+    while (activeToasts.length >= MAX_VISIBLE_TOASTS) {
+      dismissToastEntry(activeToasts[0]);
+    }
+
     const toast = document.createElement("div");
-    toast.className = `toast toast-${type}`;
-    toast.setAttribute("role", type === "danger" ? "alert" : "status");
+    toast.className = `toast toast-${safeType}`;
+    toast.setAttribute("role", safeType === "danger" ? "alert" : "status");
 
     const textSpan = document.createElement("span");
-    textSpan.textContent = String(message || "");
+    textSpan.className = "toast-message";
+    textSpan.textContent = cleanMsg;
 
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "toast-close";
     closeBtn.setAttribute("aria-label", "Tutup notifikasi");
     closeBtn.innerHTML = icon("close", 14);
-    closeBtn.addEventListener("click", () => toast.remove());
 
     toast.appendChild(textSpan);
     toast.appendChild(closeBtn);
     container.appendChild(toast);
 
-    setTimeout(() => {
-      if (toast.isConnected) {
-        toast.remove();
-      }
-    }, 4200);
+    const entry = {
+      el: toast,
+      key: dedupeKey,
+      group,
+      timerId: null,
+      remainingMs: duration,
+      startedAt: Date.now(),
+      dismissed: false,
+    };
+    activeToasts.push(entry);
+
+    closeBtn.addEventListener("click", () => dismissToastEntry(entry));
+    toast.addEventListener("mouseenter", () => pauseToastTimer(entry));
+    toast.addEventListener("mouseleave", () => startToastTimer(entry));
+    toast.addEventListener("focusin", () => pauseToastTimer(entry));
+    toast.addEventListener("focusout", () => startToastTimer(entry));
+
+    startToastTimer(entry);
   }
 
   function getModalFocusableElements(backdrop) {

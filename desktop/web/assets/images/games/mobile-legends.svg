@@ -1,101 +1,145 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" fill="none">
   <defs>
     <linearGradient id="ml-sky" x1="480" y1="0" x2="480" y2="540" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#050811"/>
-      <stop offset="48%" stop-color="#0B1328"/>
+      <stop offset="0%" stop-color="#050812"/>
+      <stop offset="45%" stop-color="#0C1632"/>
       <stop offset="100%" stop-color="#070C18"/>
     </linearGradient>
-    <radialGradient id="ml-core-glow" cx="50%" cy="40%" r="42%">
-      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.34"/>
-      <stop offset="45%" stop-color="#8B5CF6" stop-opacity="0.22"/>
-      <stop offset="100%" stop-color="#070C18" stop-opacity="0"/>
+    <radialGradient id="ml-nexus-aura" cx="50%" cy="42%" r="48%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.46"/>
+      <stop offset="40%" stop-color="#8B5CF6" stop-opacity="0.28"/>
+      <stop offset="78%" stop-color="#1E1B4B" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#060A14" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="ml-river" x1="120" y1="490" x2="840" y2="230" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#063954" stop-opacity="0.75"/>
-      <stop offset="45%" stop-color="#00E5FF" stop-opacity="0.65"/>
-      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.18"/>
+    <linearGradient id="ml-aurora" x1="120" y1="90" x2="840" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0"/>
+      <stop offset="35%" stop-color="#00E5FF" stop-opacity="0.22"/>
+      <stop offset="68%" stop-color="#A78BFA" stop-opacity="0.26"/>
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0"/>
     </linearGradient>
-    <linearGradient id="ml-crystal-left" x1="430" y1="100" x2="480" y2="300" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#67E8F9"/>
-      <stop offset="65%" stop-color="#00B8D9"/>
+    <linearGradient id="ml-river" x1="60" y1="510" x2="900" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0284C7" stop-opacity="0.82"/>
+      <stop offset="48%" stop-color="#00E5FF" stop-opacity="0.72"/>
+      <stop offset="100%" stop-color="#7C3AED" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="ml-crystal-l" x1="410" y1="62" x2="480" y2="335" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#A5F3FC"/>
+      <stop offset="55%" stop-color="#00D2F7"/>
       <stop offset="100%" stop-color="#1E3A8A"/>
     </linearGradient>
-    <linearGradient id="ml-crystal-right" x1="530" y1="110" x2="480" y2="300" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#C4B5FD"/>
-      <stop offset="60%" stop-color="#7C3AED"/>
-      <stop offset="100%" stop-color="#2E1065"/>
+    <linearGradient id="ml-crystal-r" x1="550" y1="74" x2="480" y2="335" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#DDD6FE"/>
+      <stop offset="52%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#311068"/>
     </linearGradient>
-    <linearGradient id="ml-scrim" x1="480" y1="290" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+    <linearGradient id="ml-blade-gold" x1="250" y1="110" x2="710" y2="310" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#FDE68A" stop-opacity="0.92"/>
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="ml-scrim" x1="480" y1="275" x2="480" y2="540" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#060A14" stop-opacity="0"/>
-      <stop offset="58%" stop-color="#060A14" stop-opacity="0.58"/>
-      <stop offset="100%" stop-color="#060A14" stop-opacity="0.92"/>
+      <stop offset="55%" stop-color="#060A14" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#060A14" stop-opacity="0.95"/>
     </linearGradient>
   </defs>
 
-  <!-- Night Sky Backdrop -->
+  <!-- Celestial Night Sky & Aurora -->
   <rect width="960" height="540" fill="url(#ml-sky)"/>
-  <ellipse cx="480" cy="215" rx="370" ry="200" fill="url(#ml-core-glow)"/>
+  <path d="M-20,150 Q260,38 490,115 T980,74 L980,164 Q710,124 475,188 T-20,218 Z" fill="url(#ml-aurora)"/>
+  <ellipse cx="480" cy="222" rx="410" ry="210" fill="url(#ml-nexus-aura)"/>
 
-  <!-- Distant Citadel Ridges & Monoliths -->
-  <polygon points="0,310 95,215 170,248 240,185 325,245 405,210 480,228 555,210 635,245 720,185 790,248 865,215 960,310 960,390 0,390" fill="#0B142B"/>
-  <g fill="#121E3D" stroke="#1E325D" stroke-width="1.2">
-    <polygon points="92,265 112,132 132,145 142,265"/>
-    <polygon points="828,265 838,145 858,132 878,265"/>
-    <rect x="206" y="142" width="18" height="106" rx="2"/>
-    <rect x="736" y="142" width="18" height="106" rx="2"/>
-  </g>
-  <line x1="215" y1="154" x2="215" y2="232" stroke="#00E5FF" stroke-width="1.5" stroke-opacity="0.55"/>
-  <line x1="745" y1="154" x2="745" y2="232" stroke="#8B5CF6" stroke-width="1.5" stroke-opacity="0.65"/>
-
-  <!-- Volumetric Arena Beams -->
-  <polygon points="150,0 245,0 445,320 340,320" fill="#00E5FF" fill-opacity="0.045"/>
-  <polygon points="715,0 810,0 620,320 515,320" fill="#8B5CF6" fill-opacity="0.05"/>
-
-  <!-- Canyon Terrain & Stepped Cliff Banks -->
-  <polygon points="0,335 280,290 420,332 340,425 0,468" fill="#0E1730"/>
-  <polygon points="960,335 680,290 540,332 620,425 960,468" fill="#0F1936"/>
-  <polygon points="0,382 255,342 365,378 290,462 0,540" fill="#132042"/>
-  <polygon points="960,382 705,342 595,378 670,462 960,540" fill="#142246"/>
-
-  <!-- Glowing Energy River Cutting Across Map -->
-  <path d="M-20,515 C190,435 305,392 480,342 C655,292 785,268 980,238 L980,296 C785,326 665,358 495,412 C325,466 215,505 35,545 Z" fill="url(#ml-river)"/>
-  <path d="M25,522 C205,446 318,402 486,352 C650,304 778,278 960,250" stroke="#67E8F9" stroke-width="2" stroke-opacity="0.7"/>
-  <path d="M95,534 C250,468 355,428 510,382" stroke="#00E5FF" stroke-width="1.4" stroke-opacity="0.48"/>
-
-  <!-- Midlane Causeway Bridge & Altar -->
-  <polygon points="290,540 418,325 542,325 670,540" fill="#101B38" stroke="#263B6B" stroke-width="1.5"/>
-  <polygon points="348,540 434,335 526,335 612,540" fill="#152347"/>
-  <line x1="480" y1="342" x2="480" y2="540" stroke="#00E5FF" stroke-width="1.5" stroke-opacity="0.45" stroke-dasharray="10 8"/>
-
-  <!-- Central Sanctuary Platform -->
-  <ellipse cx="480" cy="316" rx="146" ry="34" fill="#0B1329" stroke="#2D457A" stroke-width="2"/>
-  <ellipse cx="480" cy="312" rx="112" ry="22" fill="#121F40" stroke="#00E5FF" stroke-width="1.6" stroke-opacity="0.7"/>
-  <ellipse cx="480" cy="309" rx="76" ry="13" fill="none" stroke="#A78BFA" stroke-width="1.4" stroke-opacity="0.8"/>
-
-  <!-- Heroic Crystal Nexus Spire -->
-  <g>
-    <polygon points="480,68 430,224 452,306 480,316" fill="url(#ml-crystal-left)"/>
-    <polygon points="480,68 530,224 508,306 480,316" fill="url(#ml-crystal-right)"/>
-    <polygon points="480,68 456,196 480,298 504,196" fill="#E0F7FF" fill-opacity="0.22"/>
-    <polyline points="430,224 480,68 530,224" stroke="#A5F3FC" stroke-width="1.8" stroke-opacity="0.85"/>
-    <line x1="480" y1="68" x2="480" y2="316" stroke="#E0F7FF" stroke-width="1.4" stroke-opacity="0.7"/>
+  <!-- Atmospheric Starfield Points -->
+  <g fill="#E0F2FE" fill-opacity="0.6">
+    <circle cx="96" cy="58" r="1.5"/>
+    <circle cx="174" cy="92" r="1.1"/>
+    <circle cx="290" cy="44" r="1.4"/>
+    <circle cx="668" cy="52" r="1.5"/>
+    <circle cx="788" cy="84" r="1.2"/>
+    <circle cx="872" cy="46" r="1.6"/>
   </g>
 
-  <!-- Orbiting Rune Ring & Floating Shards -->
-  <ellipse cx="480" cy="212" rx="92" ry="22" transform="rotate(-10 480 212)" stroke="#00E5FF" stroke-width="1.4" stroke-opacity="0.65" stroke-dasharray="14 7 4 7"/>
-  <polygon points="374,174 385,150 396,174 385,194" fill="#00E5FF" fill-opacity="0.82"/>
-  <polygon points="564,162 575,136 586,162 575,182" fill="#A78BFA" fill-opacity="0.85"/>
-  <polygon points="416,118 424,102 432,118 424,132" fill="#67E8F9" fill-opacity="0.72"/>
-  <polygon points="532,126 540,108 548,126 540,140" fill="#C4B5FD" fill-opacity="0.72"/>
-
-  <!-- Flanking Turret Obelisks -->
+  <!-- Floating Citadel Sky Islands & Monoliths -->
   <g>
-    <polygon points="242,326 254,234 274,234 286,326" fill="#132145" stroke="#2F4A85" stroke-width="1.5"/>
-    <polygon points="264,198 250,226 264,244 278,226" fill="#00E5FF" fill-opacity="0.85"/>
-    <polygon points="674,326 686,234 706,234 718,326" fill="#132145" stroke="#3B3F87" stroke-width="1.5"/>
-    <polygon points="696,198 682,226 696,244 710,226" fill="#A78BFA" fill-opacity="0.85"/>
+    <polygon points="56,162 126,120 198,154 156,216 94,218" fill="#101B38" stroke="#253E73" stroke-width="1.3"/>
+    <polygon points="104,132 126,74 148,132" fill="#182B54" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.7"/>
+    <polygon points="764,154 834,116 904,158 866,216 802,216" fill="#121A3B" stroke="#363577" stroke-width="1.3"/>
+    <polygon points="814,132 834,72 856,132" fill="#1F2152" stroke="#A78BFA" stroke-width="1.2" stroke-opacity="0.75"/>
+  </g>
+
+  <!-- Distant Stepped Sanctuary Ridges -->
+  <polygon points="0,312 108,218 188,252 268,186 352,248 420,210 480,224 540,210 608,248 692,186 772,252 852,218 960,312 960,400 0,400" fill="#0B142C"/>
+
+  <!-- Dramatic Volumetric Spotlight Cones -->
+  <polygon points="180,0 265,0 445,340 340,340" fill="#00E5FF" fill-opacity="0.06"/>
+  <polygon points="695,0 780,0 620,340 515,340" fill="#8B5CF6" fill-opacity="0.065"/>
+  <polygon points="415,0 545,0 560,335 400,335" fill="#67E8F9" fill-opacity="0.045"/>
+
+  <!-- Canyon Terraces & Flanking Cliffside Lanes -->
+  <polygon points="0,334 272,286 418,332 330,432 0,478" fill="#0E1730" stroke="#1E305C" stroke-width="1"/>
+  <polygon points="960,334 688,286 542,332 630,432 960,478" fill="#101836" stroke="#262F63" stroke-width="1"/>
+  <polygon points="0,392 252,348 358,388 270,480 0,540" fill="#132145"/>
+  <polygon points="960,392 708,348 602,388 690,480 960,540" fill="#162049"/>
+
+  <!-- Diagonal Luminous Cyan-Violet Energy River -->
+  <path d="M-20,522 C185,436 305,392 480,340 C655,288 790,266 980,234 L980,302 C785,334 662,368 494,424 C326,480 215,512 42,548 Z" fill="url(#ml-river)"/>
+  <path d="M22,528 C200,448 318,402 485,352 C652,302 782,276 960,248" stroke="#A5F3FC" stroke-width="2.2" stroke-opacity="0.8"/>
+  <path d="M98,538 C258,470 364,428 525,378" stroke="#00E5FF" stroke-width="1.6" stroke-opacity="0.55"/>
+
+  <!-- Midlane Citadel Causeway & Glowing Rune Strips -->
+  <polygon points="274,540 412,324 548,324 686,540" fill="#0F1B38" stroke="#2E4984" stroke-width="1.6"/>
+  <polygon points="344,540 434,334 526,334 616,540" fill="#16254A"/>
+  <line x1="480" y1="340" x2="480" y2="540" stroke="#00E5FF" stroke-width="2" stroke-opacity="0.55" stroke-dasharray="12 8"/>
+  <polyline points="354,520 426,356" stroke="#38BDF8" stroke-width="1.2" stroke-opacity="0.45"/>
+  <polyline points="606,520 534,356" stroke="#A78BFA" stroke-width="1.2" stroke-opacity="0.45"/>
+
+  <!-- Arcane Sanctuary Rune Pedestal -->
+  <ellipse cx="480" cy="322" rx="168" ry="38" fill="#0B1329" stroke="#314E8A" stroke-width="2"/>
+  <ellipse cx="480" cy="316" rx="126" ry="26" fill="#132245" stroke="#00E5FF" stroke-width="1.8" stroke-opacity="0.82"/>
+  <ellipse cx="480" cy="312" rx="88" ry="15" fill="none" stroke="#C4B5FD" stroke-width="1.5" stroke-dasharray="14 6" stroke-opacity="0.9"/>
+
+  <!-- Dynamic Crossed Mythic Blade Energy Arcs Framing Focal Point -->
+  <path d="M276,276 C332,164 416,96 544,68" stroke="url(#ml-blade-gold)" stroke-width="3" stroke-linecap="round" stroke-opacity="0.82"/>
+  <path d="M684,276 C628,164 544,96 416,68" stroke="url(#ml-blade-gold)" stroke-width="3" stroke-linecap="round" stroke-opacity="0.82"/>
+  <path d="M312,262 C368,186 430,136 520,104" stroke="#67E8F9" stroke-width="1.4" stroke-opacity="0.55"/>
+  <path d="M648,262 C592,186 530,136 440,104" stroke="#DDD6FE" stroke-width="1.4" stroke-opacity="0.55"/>
+
+  <!-- Focal Point: Multi-Faceted Arcane Crystal Nexus Spire -->
+  <g>
+    <polygon points="480,48 416,216 446,314 480,324" fill="url(#ml-crystal-l)"/>
+    <polygon points="480,48 544,216 514,314 480,324" fill="url(#ml-crystal-r)"/>
+    <polygon points="480,48 450,192 480,302 510,192" fill="#ECFEFF" fill-opacity="0.26"/>
+    <polygon points="480,92 464,196 480,268 496,196" fill="#FFFFFF" fill-opacity="0.28"/>
+    <polyline points="416,216 480,48 544,216 514,314 446,314 416,216" stroke="#CFFAFE" stroke-width="1.8" stroke-opacity="0.9"/>
+    <line x1="480" y1="48" x2="480" y2="324" stroke="#FFFFFF" stroke-width="1.6" stroke-opacity="0.78"/>
+  </g>
+
+  <!-- Orbiting Rune Halo & Floating Crystal Shards -->
+  <ellipse cx="480" cy="196" rx="116" ry="26" transform="rotate(-11 480 196)" stroke="#00E5FF" stroke-width="1.6" stroke-opacity="0.72" stroke-dasharray="16 8 4 8"/>
+  <ellipse cx="480" cy="204" rx="102" ry="22" transform="rotate(9 480 204)" stroke="#C4B5FD" stroke-width="1.3" stroke-opacity="0.65" stroke-dasharray="10 10"/>
+  <polygon points="354,166 367,136 380,166 367,192" fill="#00E5FF" fill-opacity="0.9"/>
+  <polygon points="580,154 593,124 606,154 593,180" fill="#A78BFA" fill-opacity="0.92"/>
+  <polygon points="402,108 411,88 420,108 411,124" fill="#67E8F9" fill-opacity="0.85"/>
+  <polygon points="540,114 549,94 558,114 549,130" fill="#DDD6FE" fill-opacity="0.85"/>
+
+  <!-- Twin Guardian Crystal Obelisks -->
+  <g>
+    <polygon points="222,338 238,228 264,228 280,338" fill="#132145" stroke="#38BDF8" stroke-width="1.4"/>
+    <polygon points="251,182 232,222 251,246 270,222" fill="#00E5FF" fill-opacity="0.9"/>
+    <polygon points="680,338 696,228 722,228 738,338" fill="#181F47" stroke="#A78BFA" stroke-width="1.4"/>
+    <polygon points="709,182 690,222 709,246 728,222" fill="#A78BFA" fill-opacity="0.9"/>
+  </g>
+
+  <!-- Ember & Mana Sparks -->
+  <g fill="#67E8F9" fill-opacity="0.78">
+    <circle cx="388" cy="252" r="2.2"/>
+    <circle cx="572" cy="242" r="2.2"/>
+    <circle cx="442" cy="144" r="1.8"/>
+    <circle cx="520" cy="136" r="1.8"/>
+    <circle cx="318" cy="224" r="1.6"/>
+    <circle cx="642" cy="226" r="1.6"/>
   </g>
 
   <!-- Lower Third Contrast Scrim -->
-  <rect x="0" y="290" width="960" height="250" fill="url(#ml-scrim)"/>
+  <rect x="0" y="275" width="960" height="265" fill="url(#ml-scrim)"/>
 </svg>

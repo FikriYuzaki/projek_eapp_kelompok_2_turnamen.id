@@ -2,76 +2,88 @@
   <defs>
     <linearGradient id="def-sky" x1="480" y1="0" x2="480" y2="540" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#050811"/>
-      <stop offset="55%" stop-color="#0B1328"/>
+      <stop offset="55%" stop-color="#0B142B"/>
       <stop offset="100%" stop-color="#070B16"/>
     </linearGradient>
-    <radialGradient id="def-stage-glow" cx="50%" cy="46%" r="44%">
-      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.28"/>
-      <stop offset="55%" stop-color="#8B5CF6" stop-opacity="0.16"/>
+    <radialGradient id="def-stage-glow" cx="50%" cy="46%" r="48%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.34"/>
+      <stop offset="50%" stop-color="#8B5CF6" stop-opacity="0.22"/>
       <stop offset="100%" stop-color="#070B16" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="def-scrim" x1="480" y1="295" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+    <linearGradient id="def-trophy" x1="440" y1="150" x2="520" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#CFFAFE"/>
+      <stop offset="52%" stop-color="#00E5FF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.85"/>
+    </linearGradient>
+    <linearGradient id="def-scrim" x1="480" y1="285" x2="480" y2="540" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#060A14" stop-opacity="0"/>
       <stop offset="58%" stop-color="#060A14" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#060A14" stop-opacity="0.93"/>
+      <stop offset="100%" stop-color="#060A14" stop-opacity="0.95"/>
     </linearGradient>
   </defs>
 
-  <!-- Championship Arena Vault -->
+  <!-- Main Championship Arena Vault -->
   <rect width="960" height="540" fill="url(#def-sky)"/>
-  <ellipse cx="480" cy="245" rx="390" ry="190" fill="url(#def-stage-glow)"/>
+  <ellipse cx="480" cy="242" rx="400" ry="200" fill="url(#def-stage-glow)"/>
 
-  <!-- Structural Megastructure Stage Arches -->
+  <!-- Concentric Stage Lighting Arches -->
   <g stroke-width="2">
-    <path d="M90,390 L165,92 L795,92 L870,390" stroke="#1E305C" fill="none"/>
-    <path d="M165,380 L235,128 L725,128 L795,380" stroke="#28427A" fill="none"/>
-    <path d="M235,128 L480,68 L725,128" stroke="#00E5FF" stroke-opacity="0.7" fill="none"/>
-    <path d="M165,92 L480,32 L795,92" stroke="#8B5CF6" stroke-opacity="0.55" fill="none"/>
+    <path d="M70,395 L155,82 L805,82 L890,395" stroke="#1E315E"/>
+    <path d="M150,384 L228,118 L732,118 L810,384" stroke="#28427A"/>
+    <path d="M228,118 L480,54 L732,118" stroke="#00E5FF" stroke-opacity="0.8"/>
+    <path d="M155,82 L480,22 L805,82" stroke="#8B5CF6" stroke-opacity="0.65"/>
   </g>
 
-  <!-- Overhead Stage Spotlights -->
-  <polygon points="405,68 555,68 620,385 340,385" fill="#00E5FF" fill-opacity="0.055"/>
-  <polygon points="195,100 260,100 320,360 150,360" fill="#00E5FF" fill-opacity="0.04"/>
-  <polygon points="700,100 765,100 810,360 640,360" fill="#8B5CF6" fill-opacity="0.045"/>
+  <!-- Sweeping Arena Stage Beams -->
+  <polygon points="392,56 568,56 645,392 315,392" fill="#00E5FF" fill-opacity="0.065"/>
+  <polygon points="182,88 258,88 335,368 145,368" fill="#00E5FF" fill-opacity="0.05"/>
+  <polygon points="702,88 778,88 815,368 625,368" fill="#8B5CF6" fill-opacity="0.055"/>
 
-  <!-- Reflective Stage Floor & Perspective Grid -->
-  <polygon points="40,380 920,380 960,540 0,540" fill="#0E1730"/>
-  <g stroke="#1E315E" stroke-width="1.2">
+  <!-- Reflective Stage Deck Perspective Grid -->
+  <polygon points="36,380 924,380 960,540 0,540" fill="#0D1730"/>
+  <g stroke="#1E3261" stroke-width="1.2">
     <line x1="480" y1="380" x2="480" y2="540"/>
     <line x1="340" y1="380" x2="210" y2="540"/>
     <line x1="620" y1="380" x2="750" y2="540"/>
-    <line x1="180" y1="435" x2="780" y2="435"/>
-    <line x1="90" y1="485" x2="870" y2="485"/>
+    <line x1="175" y1="435" x2="785" y2="435"/>
+    <line x1="85" y1="488" x2="875" y2="488"/>
   </g>
 
-  <!-- Opposing 5-Player Stage Booths (Left Cyan / Right Violet) -->
+  <!-- Symmetrical 5-Seat Pro Player Booths -->
   <g>
-    <polygon points="75,305 335,282 348,376 60,376" fill="#111C38" stroke="#00E5FF" stroke-width="1.5" stroke-opacity="0.75"/>
-    <rect x="108" y="308" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
-    <rect x="150" y="304" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
-    <rect x="192" y="300" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
-    <rect x="234" y="296" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
-    <rect x="276" y="292" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
+    <polygon points="68,302 338,278 352,376 52,376" fill="#111C38" stroke="#00E5FF" stroke-width="1.6" stroke-opacity="0.82"/>
+    <rect x="102" y="305" width="32" height="23" rx="2" fill="#0C304A" stroke="#00E5FF" stroke-width="1.1"/>
+    <rect x="146" y="301" width="32" height="23" rx="2" fill="#0C304A" stroke="#00E5FF" stroke-width="1.1"/>
+    <rect x="190" y="297" width="32" height="23" rx="2" fill="#0C304A" stroke="#00E5FF" stroke-width="1.1"/>
+    <rect x="234" y="293" width="32" height="23" rx="2" fill="#0C304A" stroke="#00E5FF" stroke-width="1.1"/>
+    <rect x="278" y="289" width="32" height="23" rx="2" fill="#0C304A" stroke="#00E5FF" stroke-width="1.1"/>
 
-    <polygon points="885,305 625,282 612,376 900,376" fill="#111C38" stroke="#8B5CF6" stroke-width="1.5" stroke-opacity="0.75"/>
-    <rect x="822" y="308" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
-    <rect x="780" y="304" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
-    <rect x="738" y="300" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
-    <rect x="696" y="296" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
-    <rect x="654" y="292" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
+    <polygon points="892,302 622,278 608,376 908,376" fill="#111C38" stroke="#8B5CF6" stroke-width="1.6" stroke-opacity="0.82"/>
+    <rect x="826" y="305" width="32" height="23" rx="2" fill="#251A48" stroke="#A78BFA" stroke-width="1.1"/>
+    <rect x="782" y="301" width="32" height="23" rx="2" fill="#251A48" stroke="#A78BFA" stroke-width="1.1"/>
+    <rect x="738" y="297" width="32" height="23" rx="2" fill="#251A48" stroke="#A78BFA" stroke-width="1.1"/>
+    <rect x="694" y="293" width="32" height="23" rx="2" fill="#251A48" stroke="#A78BFA" stroke-width="1.1"/>
+    <rect x="650" y="289" width="32" height="23" rx="2" fill="#251A48" stroke="#A78BFA" stroke-width="1.1"/>
   </g>
 
-  <!-- Central Championship Pedestal & Stylized Trophy Crest -->
-  <ellipse cx="480" cy="382" rx="110" ry="20" fill="#121F40" stroke="#00E5FF" stroke-width="1.8"/>
-  <polygon points="435,380 452,320 508,320 525,380" fill="#16264F" stroke="#314B86" stroke-width="1.5"/>
+  <!-- Radiant Symmetrical Light Wings Framing Championship Trophy -->
+  <g stroke-opacity="0.7">
+    <path d="M480,270 L328,166 L362,158 L480,236 Z" fill="#00E5FF" fill-opacity="0.16" stroke="#00E5FF" stroke-width="1.2"/>
+    <path d="M480,270 L632,166 L598,158 L480,236 Z" fill="#8B5CF6" fill-opacity="0.18" stroke="#A78BFA" stroke-width="1.2"/>
+  </g>
+
+  <!-- Central Tiered Championship Pedestal & Trophy -->
+  <ellipse cx="480" cy="382" rx="124" ry="22" fill="#121F40" stroke="#00E5FF" stroke-width="2"/>
+  <polygon points="432,380 450,316 510,316 528,380" fill="#16264F" stroke="#355291" stroke-width="1.5"/>
   <g>
-    <path d="M446,214 H514 V252 C514,274 499,290 480,296 C461,290 446,274 446,252 Z" fill="#00E5FF" fill-opacity="0.22" stroke="#67E8F9" stroke-width="2.2"/>
-    <path d="M446,224 H428 V242 C428,254 436,262 446,262" stroke="#A78BFA" stroke-width="2" fill="none"/>
-    <path d="M514,224 H532 V242 C532,254 524,262 514,262" stroke="#A78BFA" stroke-width="2" fill="none"/>
-    <line x1="480" y1="296" x2="480" y2="320" stroke="#67E8F9" stroke-width="3"/>
-    <polygon points="458,320 502,320 494,308 466,308" fill="#67E8F9" fill-opacity="0.8"/>
+    <path d="M438,184 H522 V234 C522,262 503,282 480,290 C457,282 438,262 438,234 Z" fill="url(#def-trophy)" stroke="#CFFAFE" stroke-width="2.2"/>
+    <path d="M438,196 H414 V220 C414,236 424,246 438,246" stroke="#67E8F9" stroke-width="2.2"/>
+    <path d="M522,196 H546 V220 C546,236 536,246 522,246" stroke="#C4B5FD" stroke-width="2.2"/>
+    <polygon points="480,204 494,232 480,260 466,232" fill="#FFFFFF" fill-opacity="0.28"/>
+    <line x1="480" y1="290" x2="480" y2="316" stroke="#A5F3FC" stroke-width="3.5"/>
+    <polygon points="452,316 508,316 498,302 462,302" fill="#67E8F9" fill-opacity="0.88"/>
   </g>
 
   <!-- Lower Third Contrast Scrim -->
-  <rect x="0" y="295" width="960" height="245" fill="url(#def-scrim)"/>
+  <rect x="0" y="285" width="960" height="255" fill="url(#def-scrim)"/>
 </svg>

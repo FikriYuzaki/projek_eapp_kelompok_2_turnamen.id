@@ -266,18 +266,21 @@
   }
 
   function scheduleBracketConnectors() {
-    window.requestAnimationFrame(() => {
+    const redraw = () => {
       const stageEl = document.getElementById("bracket-stage");
       if (stageEl) drawBracketConnectors(stageEl);
-    });
+    };
+    window.requestAnimationFrame(redraw);
+    if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+      document.fonts.ready.then(() => {
+        window.requestAnimationFrame(redraw);
+      });
+    }
     if (!bracketResizeListenerBound) {
       bracketResizeListenerBound = true;
       window.addEventListener("resize", () => {
         if (bracketResizeTimer) window.clearTimeout(bracketResizeTimer);
-        bracketResizeTimer = window.setTimeout(() => {
-          const stageEl = document.getElementById("bracket-stage");
-          if (stageEl) drawBracketConnectors(stageEl);
-        }, 90);
+        bracketResizeTimer = window.setTimeout(redraw, 90);
       });
     }
   }
@@ -891,7 +894,7 @@
             const tourCount = tournaments.filter((t) => t.game_id === g.id).length;
             return `
             <article class="game-poster-card">
-              <div class="game-poster-art">${window.TurnamenUI.renderGameArtwork(g, "", { eager: idx < 2 })}</div>
+              <div class="game-poster-art">${window.TurnamenUI.renderGameArtwork(g, "", { eager: idx < 2, hideCaption: true })}</div>
               <div class="game-poster-body">
                 <h3 class="game-poster-title">${window.TurnamenUI.escapeHtml(g.name)}</h3>
                 <div class="game-poster-meta">
@@ -941,17 +944,27 @@
             return `
             <article class="tournament-card">
               <div class="tournament-card-art">
-                ${window.TurnamenUI.renderGameArtwork(game, `BO${t.best_of || 3} SINGLE ELIM`)}
+                ${window.TurnamenUI.renderGameArtwork(game, `BO${t.best_of || 3} SINGLE ELIM`, { hideCaption: true })}
                 <div class="tournament-card-overlay-badge">
                   ${window.TurnamenUI.renderStatusBadge(t.status)}
                 </div>
               </div>
               <div class="tournament-card-body">
+                <div>${window.TurnamenUI.renderGameChip(t.game_name, game.slug)}</div>
                 <h3 class="tournament-card-title">${window.TurnamenUI.escapeHtml(t.title)}</h3>
-                <div class="tournament-card-meta">
-                  <span>Hadiah: <strong class="tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</strong></span>
-                  <span>Venue: <strong>${window.TurnamenUI.escapeHtml(t.venue || "Online")}</strong></span>
-                  <span>Mulai: <strong class="tabular-nums">${window.TurnamenUI.formatDateOnly(t.start_date)}</strong></span>
+                <div class="tournament-card-meta-grid">
+                  <div class="meta-stat-item">
+                    <span class="meta-stat-label">Total Hadiah</span>
+                    <span class="meta-stat-value tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</span>
+                  </div>
+                  <div class="meta-stat-item">
+                    <span class="meta-stat-label">Venue / Platform</span>
+                    <span class="meta-stat-value" title="${window.TurnamenUI.escapeHtml(t.venue || "Online")}">${window.TurnamenUI.escapeHtml(t.venue || "Online")}</span>
+                  </div>
+                  <div class="meta-stat-item">
+                    <span class="meta-stat-label">Tanggal Mulai</span>
+                    <span class="meta-stat-value tabular-nums">${window.TurnamenUI.formatDateOnly(t.start_date)}</span>
+                  </div>
                 </div>
                 <div class="progress-wrap">
                   <div class="progress-header">
@@ -1390,7 +1403,7 @@
                 return `
                 <article class="participation-card">
                   <div class="participation-card-art">
-                    ${window.TurnamenUI.renderGameArtwork(tGame, tournament.game_name)}
+                    ${window.TurnamenUI.renderGameArtwork(tGame, `BO${tournament.best_of || 3} SINGLE ELIM`, { hideCaption: true })}
                     <div class="tournament-card-overlay-badge">
                       ${window.TurnamenUI.renderStatusBadge(reg.status)}
                     </div>
@@ -1398,7 +1411,8 @@
                   <div class="participation-card-body">
                     <div class="participation-card-head">
                       ${window.TurnamenUI.renderTeamEmblem(reg.team_tag, 38)}
-                      <div>
+                      <div style="min-width:0; flex:1;">
+                        ${window.TurnamenUI.renderGameChip(tournament.game_name, tGame.slug)}
                         <h4 class="participation-card-title">${window.TurnamenUI.escapeHtml(tournament.title)}</h4>
                         <div class="participation-card-meta">
                           <span class="badge badge-neutral tabular-nums">${window.TurnamenUI.escapeHtml(reg.team_tag)}</span>
@@ -1584,12 +1598,12 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Turnamen</th>
-                  <th>Game</th>
-                  <th>Kuota Terisi</th>
-                  <th>Prize Pool</th>
-                  <th>Status</th>
-                  <th>Aksi Pengelolaan</th>
+                  <th class="col-title">Turnamen</th>
+                  <th class="col-game">Game</th>
+                  <th class="col-quota">Kuota Terisi</th>
+                  <th class="col-money">Prize Pool</th>
+                  <th class="col-status">Status</th>
+                  <th class="col-actions">Aksi Pengelolaan</th>
                 </tr>
               </thead>
               <tbody>
@@ -1601,18 +1615,18 @@
                     const canDelete = t.status !== "ongoing" && t.status !== "completed";
                     return `
                     <tr>
-                      <td>
+                      <td class="col-title">
                         <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
                         <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")} | Bo${t.best_of}</div>
                       </td>
-                      <td>${window.TurnamenUI.renderGameChip(t.game_name)}</td>
-                      <td style="min-width:140px;">
+                      <td class="col-game">${window.TurnamenUI.renderGameChip(t.game_name)}</td>
+                      <td class="col-quota">
                         <div class="tabular-nums" style="font-size:12px; margin-bottom:4px;">${app} / ${max} Tim</div>
                         ${window.TurnamenUI.renderProgressBar(pct, `Kuota ${t.title}`)}
                       </td>
-                      <td class="tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
-                      <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
-                      <td>
+                      <td class="col-money tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
+                      <td class="col-status">${window.TurnamenUI.renderStatusBadge(t.status)}</td>
+                      <td class="col-actions">
                         <div class="row-actions">
                           <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
                           <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="match-management" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Skor</button>
@@ -1989,10 +2003,10 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Turnamen</th>
-                    <th>Peserta</th>
-                    <th>Status</th>
-                    <th>Aksi</th>
+                    <th class="col-title">Turnamen</th>
+                    <th class="col-quota">Peserta</th>
+                    <th class="col-status">Status</th>
+                    <th class="col-actions">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2000,13 +2014,13 @@
                     .map(
                       (t) => `
                     <tr>
-                      <td>
+                      <td class="col-title">
                         <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
                         <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.game_name)} | ${window.TurnamenUI.escapeHtml(t.venue || "Online")}</div>
                       </td>
-                      <td class="tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams}</td>
-                      <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
-                      <td>
+                      <td class="col-quota tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams}</td>
+                      <td class="col-status">${window.TurnamenUI.renderStatusBadge(t.status)}</td>
+                      <td class="col-actions">
                         <div class="row-actions">
                           <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
                           <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
@@ -2336,13 +2350,13 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>Judul Turnamen</th>
-                <th>Game</th>
-                <th>Format</th>
-                <th>Kuota Tim</th>
-                <th>Total Hadiah</th>
-                <th>Status</th>
-                <th>Aksi</th>
+                <th class="col-title">Judul Turnamen</th>
+                <th class="col-game">Game</th>
+                <th class="col-format">Format</th>
+                <th class="col-quota">Kuota Tim</th>
+                <th class="col-money">Total Hadiah</th>
+                <th class="col-status">Status</th>
+                <th class="col-actions">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -2355,16 +2369,16 @@
                     t.status !== "completed";
                   return `
                   <tr>
-                    <td>
+                    <td class="col-title">
                       <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
                       <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")} | ${window.TurnamenUI.formatDateOnly(t.start_date)}</div>
                     </td>
-                    <td>${window.TurnamenUI.renderGameChip(t.game_name)}</td>
-                    <td class="tabular-nums">Single Elim (Bo${t.best_of})</td>
-                    <td class="tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams} Tim</td>
-                    <td class="tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
-                    <td>${window.TurnamenUI.renderStatusBadge(t.status)}</td>
-                    <td>
+                    <td class="col-game">${window.TurnamenUI.renderGameChip(t.game_name)}</td>
+                    <td class="col-format tabular-nums">Single Elim (Bo${t.best_of})</td>
+                    <td class="col-quota tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams} Tim</td>
+                    <td class="col-money tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
+                    <td class="col-status">${window.TurnamenUI.renderStatusBadge(t.status)}</td>
+                    <td class="col-actions">
                       <div class="row-actions">
                         <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
                         <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>

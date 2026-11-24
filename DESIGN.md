@@ -104,3 +104,6 @@ Seluruh 5 role RBAC (`docs/contracts/role-permissions.md`) berbagi identitas vis
    - Tag setiap tim di-hash secara deterministik ke salah satu dari 4 siluet perisai geometris dan 4 palet Futuristic Arena, sehingga identitas tim tetap konsisten di halaman Team Captain, Direktori Tim, Detail Turnamen, Match Management, Bracket, dan Klasemen.
 3. **Visualisasi Bracket Terhubung SVG (`drawBracketConnectors`):**
    - Board Single Elimination merender lapisan `<svg class="bracket-connectors-svg">` di belakang kartu pertandingan yang menghitung jalur siku dari tengah sisi kanan match sumber menuju slot tujuan (`next_match_id` dan `next_slot` "A"/"B") serta menyalakan warna cyan untuk pertandingan yang telah selesai.
+4. **Disiplin Tabel Manajemen & Notifikasi Toast:**
+   - Tabel operasional Organizer dan Super Admin memisahkan lebar kolom judul (`.col-title`), chip game tanpa wrap patah (`.col-game`), kuota progres (`.col-quota`), nominal hadiah (`.col-money`), status (`.col-status`), dan tombol aksi (`.col-actions`).
+   - Komponen `showToast()` ditempatkan di sudut kanan atas (di bawah topbar) dengan batas maksimum 3 notifikasi aktif, deduplikasi pesan identik, penggantian satu grup untuk notifikasi peralihan role demo, jeda timer saat hover/fokus, serta dukungan `prefers-reduced-motion`.
