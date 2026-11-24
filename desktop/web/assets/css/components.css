@@ -498,8 +498,53 @@
   padding: 6px 4px 16px;
 }
 
+.bracket-scroll-wrap {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 10px;
+}
+
+.bracket-stage {
+  position: relative;
+  display: inline-flex;
+  min-width: 100%;
+  padding: 6px 4px;
+}
+
+.bracket-connectors-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.bracket-connector-path {
+  fill: none;
+  stroke: #2e426b;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bracket-connector-path.is-decided {
+  stroke: var(--accent-primary);
+  stroke-width: 2.25;
+}
+
+.bracket-board {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: stretch;
+  gap: 52px;
+  width: 100%;
+}
+
 .bracket-round {
-  min-width: 278px;
+  min-width: 280px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -563,6 +608,19 @@
   border-bottom: 1px solid rgba(35, 51, 84, 0.65);
 }
 
+.bracket-team-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bracket-team-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bracket-team-row:last-of-type {
   border-bottom: none;
 }
@@ -603,12 +661,26 @@
 .announcement-card {
   background-color: var(--bg-surface);
   border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--accent-primary);
   border-radius: var(--radius-md);
   padding: 16px 18px;
 }
 
+.announcement-card.is-urgent {
+  border-left-color: var(--status-danger-text);
+}
+
+.announcement-card.is-important {
+  border-left-color: var(--status-warning-text);
+}
+
+.announcement-card.is-normal {
+  border-left-color: var(--accent-primary);
+}
+
 .announcement-card.is-pinned {
   border-color: rgba(196, 181, 253, 0.45);
+  border-left-width: 4px;
   background-color: rgba(16, 24, 43, 0.96);
 }
 
@@ -928,6 +1000,93 @@
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   background-color: var(--bg-secondary);
+  aspect-ratio: 16 / 9;
+}
+
+/* Shared Local Artwork Media & Contrast Scrim */
+.artwork-media {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-secondary);
+}
+
+.artwork-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  transition: transform 240ms ease;
+}
+
+.artwork-fallback-svg {
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.artwork-fallback-svg.is-visible {
+  display: block;
+}
+
+.artwork-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(6, 10, 20, 0.25) 0%,
+    rgba(6, 10, 20, 0.14) 42%,
+    rgba(6, 10, 20, 0.88) 100%
+  );
+  pointer-events: none;
+}
+
+.artwork-kicker-tag {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 2;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  background-color: rgba(6, 10, 20, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.45);
+  color: var(--accent-cyan-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.artwork-caption {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.game-poster-card:hover .artwork-img,
+.tournament-card:hover .artwork-img,
+.participation-card:hover .artwork-img {
+  transform: scale(1.03);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artwork-img {
+    transition: none;
+  }
+  .game-poster-card:hover .artwork-img,
+  .tournament-card:hover .artwork-img,
+  .participation-card:hover .artwork-img {
+    transform: none;
+  }
 }
 
 @media (max-width: 960px) {
@@ -955,10 +1114,11 @@
 
 .game-poster-art {
   width: 100%;
-  aspect-ratio: 16 / 8;
+  aspect-ratio: 16 / 9;
   display: block;
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
 }
 
 .game-poster-art svg {
@@ -1019,22 +1179,17 @@
 
 .tournament-card-art {
   position: relative;
-  aspect-ratio: 16 / 6;
+  aspect-ratio: 16 / 9;
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-subtle);
   overflow: hidden;
-}
-
-.tournament-card-art svg {
-  width: 100%;
-  height: 100%;
-  display: block;
 }
 
 .tournament-card-overlay-badge {
   position: absolute;
   top: 10px;
   right: 10px;
+  z-index: 2;
 }
 
 .tournament-card-body {
@@ -1268,4 +1423,306 @@
 .state-box-denied .state-icon {
   color: var(--accent-violet-text);
   border-color: rgba(196, 181, 253, 0.45);
+}
+
+/* Tournament Detail Full-Bleed Hero Banner */
+.tournament-detail-hero {
+  position: relative;
+  min-height: 224px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-interactive);
+  border-top: 2px solid var(--accent-primary);
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  align-items: flex-end;
+}
+
+.tournament-detail-hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.tournament-detail-hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    90deg,
+    rgba(6, 10, 20, 0.94) 0%,
+    rgba(6, 10, 20, 0.84) 55%,
+    rgba(6, 10, 20, 0.58) 100%
+  );
+}
+
+.tournament-detail-hero-content {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.tournament-detail-hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tournament-detail-hero-title {
+  margin: 0 0 6px 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.tournament-detail-hero-desc {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+/* Player Monogram Avatar & Roster Player Cards */
+.player-avatar {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background-color: #0d162c;
+  border: 1.5px solid var(--accent-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.player-avatar.is-captain {
+  border-color: var(--accent-violet-bright);
+  color: var(--accent-violet-text);
+}
+
+.player-avatar.is-coach {
+  border-color: var(--status-success-text);
+  color: var(--status-success-text);
+}
+
+.player-avatar.is-sub {
+  border-color: var(--border-interactive);
+  color: var(--text-secondary);
+}
+
+.player-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color var(--transition-fast);
+}
+
+.player-card:hover {
+  border-color: var(--border-interactive);
+}
+
+.player-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.player-card-identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.player-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(35, 51, 84, 0.6);
+}
+
+/* Captain Tournament Participation Visual Cards */
+.participation-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.participation-card-art {
+  position: relative;
+  aspect-ratio: 16 / 6;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.participation-card-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.participation-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.participation-card-title {
+  margin: 0 0 4px 0;
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.participation-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.participation-card-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(35, 51, 84, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* Tournament Participant Identity Cards */
+.participant-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.participant-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.participant-card-team {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.participant-card-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.participant-card-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(35, 51, 84, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Inline Team Cell, Rank Pills, Profile & Auth Crest */
+.team-cell-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rank-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.rank-pill-1 {
+  background-color: rgba(0, 229, 255, 0.16);
+  border-color: rgba(0, 229, 255, 0.65);
+  color: var(--accent-cyan-text);
+}
+
+.rank-pill-2 {
+  background-color: rgba(139, 92, 246, 0.2);
+  border-color: rgba(167, 139, 250, 0.65);
+  color: var(--accent-violet-text);
+}
+
+.rank-pill-3 {
+  background-color: rgba(16, 185, 129, 0.16);
+  border-color: rgba(52, 211, 153, 0.55);
+  color: var(--status-success-text);
+}
+
+.profile-identity-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(35, 51, 84, 0.65);
+}
+
+.auth-brand-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(35, 51, 84, 0.65);
+}
+
+.auth-brand-banner img {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
 }

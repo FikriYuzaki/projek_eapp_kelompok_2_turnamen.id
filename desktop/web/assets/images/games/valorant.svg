@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" fill="none">
+  <defs>
+    <linearGradient id="val-sky" x1="480" y1="0" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#060A14"/>
+      <stop offset="55%" stop-color="#0D162C"/>
+      <stop offset="100%" stop-color="#080D1B"/>
+    </linearGradient>
+    <linearGradient id="val-holo" x1="250" y1="170" x2="540" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.34"/>
+      <stop offset="50%" stop-color="#00E5FF" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.22"/>
+    </linearGradient>
+    <radialGradient id="val-spike-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.45"/>
+      <stop offset="55%" stop-color="#00E5FF" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#080D1B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="val-scrim" x1="480" y1="285" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#060A14" stop-opacity="0"/>
+      <stop offset="58%" stop-color="#060A14" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#060A14" stop-opacity="0.93"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Urban Night Zenith Sky -->
+  <rect width="960" height="540" fill="url(#val-sky)"/>
+
+  <!-- Distant Megacity Skyline -->
+  <g fill="#0C1429" stroke="#18274B" stroke-width="1">
+    <rect x="44" y="88" width="90" height="220"/>
+    <rect x="150" y="54" width="112" height="254"/>
+    <rect x="312" y="102" width="76" height="206"/>
+    <rect x="615" y="72" width="108" height="236"/>
+    <rect x="742" y="42" width="124" height="266"/>
+  </g>
+  <g stroke="#00E5FF" stroke-opacity="0.35" stroke-width="1.5">
+    <line x1="176" y1="76" x2="176" y2="178"/>
+    <line x1="204" y1="76" x2="204" y2="152"/>
+    <line x1="772" y1="68" x2="772" y2="196"/>
+    <line x1="808" y1="68" x2="808" y2="165"/>
+  </g>
+
+  <!-- Overhead Tactical Floodlight Cones -->
+  <polygon points="240,0 320,0 520,380 390,380" fill="#00E5FF" fill-opacity="0.045"/>
+  <polygon points="560,0 645,0 740,390 610,390" fill="#8B5CF6" fill-opacity="0.06"/>
+
+  <!-- Brutalist Concrete Site Floor & Lane Perspectives -->
+  <polygon points="0,365 240,305 760,305 960,375 960,540 0,540" fill="#0F172F"/>
+  <polygon points="220,310 740,310 920,540 40,540" fill="#131E3B"/>
+  <path d="M180,540 L345,310 M780,540 L615,310 M480,310 L480,540" stroke="#1E305C" stroke-width="1.5"/>
+  <path d="M120,468 L840,468 M185,392 L775,392" stroke="#1B2A52" stroke-width="1.2"/>
+
+  <!-- Left Elevated Steel Catwalk & Concrete Bastion -->
+  <polygon points="0,120 265,170 265,355 0,415" fill="#111A34" stroke="#273B6B" stroke-width="1.5"/>
+  <polygon points="0,165 365,192 365,214 0,192" fill="#18264A" stroke="#00E5FF" stroke-width="1" stroke-opacity="0.55"/>
+  <line x1="82" y1="168" x2="82" y2="146" stroke="#2D457A" stroke-width="2"/>
+  <line x1="175" y1="176" x2="175" y2="154" stroke="#2D457A" stroke-width="2"/>
+  <line x1="268" y1="184" x2="268" y2="162" stroke="#2D457A" stroke-width="2"/>
+  <line x1="0" y1="140" x2="365" y2="172" stroke="#38528C" stroke-width="1.5"/>
+
+  <!-- Right Angular Concrete Architecture -->
+  <polygon points="960,110 712,162 712,350 960,412" fill="#101831" stroke="#293E70" stroke-width="1.5"/>
+  <polygon points="712,162 630,196 630,330 712,350" fill="#152142" stroke="#293E70" stroke-width="1.2"/>
+  <line x1="712" y1="192" x2="960" y2="146" stroke="#8B5CF6" stroke-width="2" stroke-opacity="0.5"/>
+
+  <!-- Angular Tactical Cover Crates -->
+  <g>
+    <polygon points="155,402 248,376 292,396 292,462 155,462" fill="#182649" stroke="#35518F" stroke-width="1.4"/>
+    <polygon points="248,376 292,396 292,462 248,442" fill="#121C38"/>
+    <line x1="168" y1="418" x2="236" y2="399" stroke="#00E5FF" stroke-width="2" stroke-opacity="0.65"/>
+
+    <polygon points="718,372 802,394 802,462 686,462 686,392" fill="#162244" stroke="#3B3F87" stroke-width="1.4"/>
+    <line x1="704" y1="412" x2="786" y2="412" stroke="#A78BFA" stroke-width="1.8" stroke-opacity="0.6"/>
+  </g>
+
+  <!-- Holographic Tactical Barrier Wall -->
+  <g>
+    <polygon points="258,202 528,176 528,358 258,392" fill="url(#val-holo)" stroke="#00E5FF" stroke-width="1.8" stroke-opacity="0.85"/>
+    <line x1="258" y1="248" x2="528" y2="222" stroke="#67E8F9" stroke-width="1" stroke-opacity="0.45"/>
+    <line x1="258" y1="296" x2="528" y2="270" stroke="#67E8F9" stroke-width="1" stroke-opacity="0.45"/>
+    <line x1="258" y1="344" x2="528" y2="318" stroke="#67E8F9" stroke-width="1" stroke-opacity="0.45"/>
+    <line x1="348" y1="194" x2="348" y2="380" stroke="#00E5FF" stroke-width="1" stroke-opacity="0.4"/>
+    <line x1="438" y1="185" x2="438" y2="369" stroke="#00E5FF" stroke-width="1" stroke-opacity="0.4"/>
+  </g>
+
+  <!-- Radiant Bombsite Pad & Spike Monument -->
+  <ellipse cx="595" cy="368" rx="135" ry="30" fill="url(#val-spike-glow)"/>
+  <ellipse cx="595" cy="368" rx="92" ry="18" fill="#121A36" stroke="#8B5CF6" stroke-width="1.8"/>
+  <ellipse cx="595" cy="368" rx="54" ry="10" fill="none" stroke="#00E5FF" stroke-width="1.4" stroke-dasharray="10 5"/>
+  <g>
+    <polygon points="595,214 568,312 582,366 595,372" fill="#00E5FF" fill-opacity="0.85"/>
+    <polygon points="595,214 622,312 608,366 595,372" fill="#8B5CF6" fill-opacity="0.9"/>
+    <polygon points="595,186 586,214 595,226 604,214" fill="#E0F7FF"/>
+    <line x1="595" y1="170" x2="595" y2="372" stroke="#F1F5F9" stroke-width="1" stroke-opacity="0.5"/>
+  </g>
+
+  <!-- Lower Third Contrast Scrim -->
+  <rect x="0" y="285" width="960" height="255" fill="url(#val-scrim)"/>
+</svg>

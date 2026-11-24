@@ -211,6 +211,76 @@
 
   const gamesState = { items: [], loaded: false, error: null };
   let cachedTournaments = [];
+  let bracketResizeListenerBound = false;
+  let bracketResizeTimer = null;
+
+  function drawBracketConnectors(stageEl) {
+    if (!stageEl) return;
+    const svgEl = stageEl.querySelector(".bracket-connectors-svg");
+    if (!svgEl) return;
+
+    while (svgEl.firstChild) {
+      svgEl.removeChild(svgEl.firstChild);
+    }
+
+    const stageRect = stageEl.getBoundingClientRect();
+    const width = Math.max(stageEl.scrollWidth || 0, Math.round(stageRect.width));
+    const height = Math.max(stageEl.scrollHeight || 0, Math.round(stageRect.height));
+    if (width <= 0 || height <= 0) return;
+
+    svgEl.setAttribute("width", String(width));
+    svgEl.setAttribute("height", String(height));
+    svgEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+    const cards = stageEl.querySelectorAll("[data-match-id][data-next-match-id]");
+    const ns = "http://www.w3.org/2000/svg";
+
+    cards.forEach((srcCard) => {
+      const nextId = srcCard.getAttribute("data-next-match-id");
+      if (!nextId) return;
+      const dstCard = stageEl.querySelector(`[data-match-id="${CSS.escape(nextId)}"]`);
+      if (!dstCard) return;
+
+      const slot = srcCard.getAttribute("data-next-slot") || "";
+      const dstTarget =
+        (slot ? dstCard.querySelector(`[data-slot="${CSS.escape(slot)}"]`) : null) || dstCard;
+
+      const srcRect = srcCard.getBoundingClientRect();
+      const dstRect = dstCard.getBoundingClientRect();
+      const dstRowRect = dstTarget.getBoundingClientRect();
+
+      const x1 = Math.round(srcRect.right - stageRect.left);
+      const y1 = Math.round(srcRect.top + srcRect.height / 2 - stageRect.top);
+      const x2 = Math.round(dstRect.left - stageRect.left);
+      const y2 = Math.round(dstRowRect.top + dstRowRect.height / 2 - stageRect.top);
+      if (x2 <= x1) return;
+
+      const midX = Math.round(x1 + (x2 - x1) * 0.5);
+      const isDecided = srcCard.getAttribute("data-completed") === "true";
+
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("class", `bracket-connector-path ${isDecided ? "is-decided" : "is-pending"}`);
+      path.setAttribute("d", `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`);
+      svgEl.appendChild(path);
+    });
+  }
+
+  function scheduleBracketConnectors() {
+    window.requestAnimationFrame(() => {
+      const stageEl = document.getElementById("bracket-stage");
+      if (stageEl) drawBracketConnectors(stageEl);
+    });
+    if (!bracketResizeListenerBound) {
+      bracketResizeListenerBound = true;
+      window.addEventListener("resize", () => {
+        if (bracketResizeTimer) window.clearTimeout(bracketResizeTimer);
+        bracketResizeTimer = window.setTimeout(() => {
+          const stageEl = document.getElementById("bracket-stage");
+          if (stageEl) drawBracketConnectors(stageEl);
+        }, 90);
+      });
+    }
+  }
 
   // =========================================================================
   // AUTH, ROLE EXPERIENCE & RBAC HELPERS (UX-ONLY; BACKEND ENFORCES RBAC)
@@ -817,11 +887,11 @@
     return `
       <div class="game-poster-grid">
         ${gamesState.items
-          .map((g) => {
+          .map((g, idx) => {
             const tourCount = tournaments.filter((t) => t.game_id === g.id).length;
             return `
             <article class="game-poster-card">
-              <div class="game-poster-art">${window.TurnamenUI.renderGameArtwork(g)}</div>
+              <div class="game-poster-art">${window.TurnamenUI.renderGameArtwork(g, "", { eager: idx < 2 })}</div>
               <div class="game-poster-body">
                 <h3 class="game-poster-title">${window.TurnamenUI.escapeHtml(g.name)}</h3>
                 <div class="game-poster-meta">
@@ -963,7 +1033,7 @@
             </div>
           </div>
           <div class="esports-banner-art">
-            ${window.TurnamenUI.renderGameArtwork(featuredGame, `HADIAH ${window.TurnamenUI.formatRupiah(featured.prize_pool)}`)}
+            ${window.TurnamenUI.renderGameArtwork(featuredGame, `HADIAH ${window.TurnamenUI.formatRupiah(featured.prize_pool)}`, { eager: true })}
           </div>
         </section>
       `
@@ -1037,7 +1107,7 @@
               playerTeam
                 ? `
               <div class="row-actions" style="gap:14px; margin-bottom:12px;">
-                ${window.TurnamenUI.renderTeamEmblem(playerTeam.tag, 48)}
+                ${window.TurnamenUI.renderTeamEmblem(playerTeam.tag, 52)}
                 <div>
                   <strong>${window.TurnamenUI.escapeHtml(playerTeam.name)}</strong>
                   <div class="table-subtext">${window.TurnamenUI.escapeHtml(playerTeam.game_name)} | ${window.TurnamenUI.escapeHtml(playerTeam.region || "-")}</div>
@@ -1045,11 +1115,18 @@
               </div>
               ${
                 playerMemberInfo
-                  ? `<div class="kv-list">
-                      <div class="kv-item"><span class="kv-label">Nickname Anda</span><span class="kv-value">${window.TurnamenUI.escapeHtml(playerMemberInfo.nickname)}</span></div>
-                      <div class="kv-item"><span class="kv-label">ID In-Game</span><span class="kv-value tabular-nums">${window.TurnamenUI.escapeHtml(playerMemberInfo.ingame_id)}</span></div>
-                      <div class="kv-item"><span class="kv-label">Peran Roster</span><span class="kv-value">${window.TurnamenUI.escapeHtml(playerMemberInfo.member_role)}</span></div>
-                    </div>`
+                  ? `
+                <div class="profile-identity-header" style="margin-bottom:10px; padding-bottom:10px;">
+                  ${window.TurnamenUI.renderPlayerAvatar(playerMemberInfo.nickname, playerMemberInfo.member_role, 40)}
+                  <div>
+                    <div class="roster-card-name">${window.TurnamenUI.escapeHtml(playerMemberInfo.nickname)}</div>
+                    <div class="roster-card-id">${window.TurnamenUI.escapeHtml(playerMemberInfo.ingame_id)}</div>
+                  </div>
+                </div>
+                <div class="kv-list">
+                  <div class="kv-item"><span class="kv-label">Peran Roster</span><span class="kv-value">${window.TurnamenUI.escapeHtml(playerMemberInfo.member_role)}</span></div>
+                </div>
+              `
                   : ""
               }
             `
@@ -1109,8 +1186,14 @@
                   .map(
                     (row) => `
                   <tr>
-                    <td class="tabular-nums"><strong>#${row.rank}</strong></td>
-                    <td><strong>${window.TurnamenUI.escapeHtml(row.team_name)}</strong> <span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(row.team_tag)}</span></td>
+                    <td class="tabular-nums"><span class="rank-pill ${row.rank <= 3 ? `rank-pill-${row.rank}` : ""}">#${row.rank}</span></td>
+                    <td>
+                      <div class="team-cell-inline">
+                        ${window.TurnamenUI.renderTeamEmblem(row.team_tag, 24)}
+                        <strong>${window.TurnamenUI.escapeHtml(row.team_name)}</strong>
+                        <span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(row.team_tag)}</span>
+                      </div>
+                    </td>
                     <td class="tabular-nums">${row.matches_played}</td>
                     <td class="tabular-nums" style="color:var(--status-success-text);">${row.matches_won}</td>
                     <td class="tabular-nums" style="color:var(--status-danger-text);">${row.matches_lost}</td>
@@ -1184,7 +1267,7 @@
       ? `
         <section class="team-hero" aria-label="Identitas Tim Kapten">
           <div class="team-hero-identity">
-            ${window.TurnamenUI.renderTeamEmblem(activeTeam.tag, 60)}
+            ${window.TurnamenUI.renderTeamEmblem(activeTeam.tag, 72)}
             <div>
               <span class="arena-hero-kicker">Markas Tim Kapten</span>
               <h2 class="team-hero-name">${window.TurnamenUI.escapeHtml(activeTeam.name)}</h2>
@@ -1235,100 +1318,110 @@
       ${renderGamesErrorNotice()}
       ${teamHeroHtml}
 
-      <div class="workspace-split">
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h3 class="card-title">Roster Anggota Tim</h3>
-              <p class="card-subtitle">${activeTeam ? `${activeTeam.name} (${rosterMembers.length} pemain terdaftar)` : "Belum ada tim dipilih"}</p>
-            </div>
-            ${
-              activeTeam
-                ? `<button type="button" class="btn btn-secondary btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(activeTeam.id)}">+ Anggota</button>`
-                : ""
-            }
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Roster Anggota Tim</h3>
+            <p class="card-subtitle">${activeTeam ? `${window.TurnamenUI.escapeHtml(activeTeam.name)} (${rosterMembers.length} pemain terdaftar)` : "Belum ada tim dipilih"}</p>
           </div>
           ${
-            !activeTeam
-              ? window.TurnamenUI.renderEmptyState("Belum Ada Tim", "Buat tim untuk mengelola roster pemain.")
-              : rosterMembers.length === 0
-                ? window.TurnamenUI.renderEmptyState(
-                    "Roster Masih Kosong",
-                    "Tambahkan anggota beserta nickname dan In-Game ID untuk memenuhi syarat registrasi turnamen.",
-                    `<button type="button" class="btn btn-primary btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(activeTeam.id)}">Tambah Anggota Pertama</button>`
-                  )
-                : `
-              <div class="roster-grid">
-                ${rosterMembers
-                  .map(
-                    (m) => `
-                  <div class="roster-card">
-                    <div>
+            activeTeam
+              ? `<button type="button" class="btn btn-secondary btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(activeTeam.id)}">+ Anggota</button>`
+              : ""
+          }
+        </div>
+        ${
+          !activeTeam
+            ? window.TurnamenUI.renderEmptyState("Belum Ada Tim", "Buat tim untuk mengelola roster pemain.")
+            : rosterMembers.length === 0
+              ? window.TurnamenUI.renderEmptyState(
+                  "Roster Masih Kosong",
+                  "Tambahkan anggota beserta nickname dan In-Game ID untuk memenuhi syarat registrasi turnamen.",
+                  `<button type="button" class="btn btn-primary btn-sm" data-action="open-add-member" data-id="${window.TurnamenUI.escapeHtml(activeTeam.id)}">Tambah Anggota Pertama</button>`
+                )
+              : `
+            <div class="player-roster-grid">
+              ${rosterMembers
+                .map(
+                  (m) => `
+                <article class="player-card">
+                  <div class="player-card-head">
+                    ${window.TurnamenUI.renderPlayerAvatar(m.nickname, m.member_role, 40)}
+                    <div class="player-card-identity">
                       <div class="roster-card-name">${window.TurnamenUI.escapeHtml(m.nickname)}</div>
                       <div class="roster-card-id">${window.TurnamenUI.escapeHtml(m.ingame_id)}</div>
                     </div>
-                    <span class="badge ${m.member_role === "captain" ? "badge-violet" : "badge-info"}">${window.TurnamenUI.escapeHtml(m.member_role || "starter")}</span>
                   </div>
-                `
-                  )
-                  .join("")}
-              </div>
-            `
-          }
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h3 class="card-title">Turnamen Diikuti &amp; Status Registrasi</h3>
-              <p class="card-subtitle">Status pendaftaran seluruh tim yang Anda kelola.</p>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Jelajah Turnamen</button>
-          </div>
-          ${
-            joinedEntries.length === 0
-              ? window.TurnamenUI.renderEmptyState(
-                  "Belum Terdaftar di Turnamen",
-                  "Pilih turnamen dengan pendaftaran terbuka untuk mendaftarkan tim Anda."
+                  <div class="player-card-foot">
+                    <span class="badge ${m.member_role === "captain" ? "badge-violet" : "badge-info"}">${window.TurnamenUI.escapeHtml(m.member_role || "starter")}</span>
+                    <span class="badge badge-neutral tabular-nums">${window.TurnamenUI.escapeHtml(activeTeam.tag)}</span>
+                  </div>
+                </article>
+              `
                 )
-              : `
-            <div class="table-container">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Turnamen</th>
-                    <th>Tim</th>
-                    <th>Status</th>
-                    <th>Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${joinedEntries
-                    .map(
-                      ({ tournament, reg }) => `
-                    <tr>
-                      <td>
-                        <strong>${window.TurnamenUI.escapeHtml(tournament.title)}</strong>
-                        <div class="table-subtext">${window.TurnamenUI.escapeHtml(tournament.game_name)} | Seed #${reg.seed_number || "-"}</div>
-                      </td>
-                      <td><span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(reg.team_tag)}</span></td>
-                      <td>${window.TurnamenUI.renderStatusBadge(reg.status)}</td>
-                      <td>
-                        <div class="row-actions">
-                          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(tournament.id)}">Detail</button>
-                          <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(tournament.id)}">Bracket</button>
-                        </div>
-                      </td>
-                    </tr>
-                  `
-                    )
-                    .join("")}
-                </tbody>
-              </table>
+                .join("")}
             </div>
           `
-          }
+        }
+      </div>
+
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Turnamen Diikuti &amp; Status Registrasi</h3>
+            <p class="card-subtitle">Status pendaftaran seluruh tim yang Anda kelola.</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Jelajah Turnamen</button>
         </div>
+        ${
+          joinedEntries.length === 0
+            ? window.TurnamenUI.renderEmptyState(
+                "Belum Terdaftar di Turnamen",
+                "Pilih turnamen dengan pendaftaran terbuka untuk mendaftarkan tim Anda."
+              )
+            : `
+          <div class="participation-grid">
+            ${joinedEntries
+              .map(({ tournament, reg }) => {
+                const tGame = gamesById[tournament.game_id] || {
+                  name: tournament.game_name,
+                  slug: tournament.game_name,
+                };
+                return `
+                <article class="participation-card">
+                  <div class="participation-card-art">
+                    ${window.TurnamenUI.renderGameArtwork(tGame, tournament.game_name)}
+                    <div class="tournament-card-overlay-badge">
+                      ${window.TurnamenUI.renderStatusBadge(reg.status)}
+                    </div>
+                  </div>
+                  <div class="participation-card-body">
+                    <div class="participation-card-head">
+                      ${window.TurnamenUI.renderTeamEmblem(reg.team_tag, 38)}
+                      <div>
+                        <h4 class="participation-card-title">${window.TurnamenUI.escapeHtml(tournament.title)}</h4>
+                        <div class="participation-card-meta">
+                          <span class="badge badge-neutral tabular-nums">${window.TurnamenUI.escapeHtml(reg.team_tag)}</span>
+                          <span class="tabular-nums">Seed <strong>#${reg.seed_number || "-"}</strong></span>
+                          <span class="tabular-nums">${window.TurnamenUI.formatRupiah(tournament.prize_pool)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="participation-card-foot">
+                      <span class="table-subtext tabular-nums">Mulai: ${window.TurnamenUI.formatDateOnly(tournament.start_date)}</span>
+                      <div class="row-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(tournament.id)}">Detail</button>
+                        <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(tournament.id)}">Bracket</button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              `;
+              })
+              .join("")}
+          </div>
+        `
+        }
       </div>
 
       ${
@@ -1564,7 +1657,13 @@
                     .map(
                       (r) => `
                     <tr>
-                      <td><strong>${window.TurnamenUI.escapeHtml(r.team_name)}</strong> [${window.TurnamenUI.escapeHtml(r.team_tag)}]</td>
+                      <td>
+                        <div class="team-cell-inline">
+                          ${window.TurnamenUI.renderTeamEmblem(r.team_tag, 24)}
+                          <strong>${window.TurnamenUI.escapeHtml(r.team_name)}</strong>
+                          <span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(r.team_tag)}</span>
+                        </div>
+                      </td>
                       <td class="tabular-nums">#${r.seed_number || "-"}</td>
                       <td>
                         <div class="row-actions">
@@ -1710,8 +1809,18 @@
                     <tr>
                       <td><strong>${window.TurnamenUI.escapeHtml(m.round_name)}</strong></td>
                       <td class="tabular-nums">#${m.match_number} (Bo${m.best_of})</td>
-                      <td>${window.TurnamenUI.escapeHtml(m.team_a_name)}</td>
-                      <td>${window.TurnamenUI.escapeHtml(m.team_b_name)}</td>
+                      <td>
+                        <div class="team-cell-inline">
+                          ${m.team_a_id ? window.TurnamenUI.renderTeamEmblem(m.team_a_tag, 22) : ""}
+                          <span>${window.TurnamenUI.escapeHtml(m.team_a_name)}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="team-cell-inline">
+                          ${m.team_b_id ? window.TurnamenUI.renderTeamEmblem(m.team_b_tag, 22) : ""}
+                          <span>${window.TurnamenUI.escapeHtml(m.team_b_name)}</span>
+                        </div>
+                      </td>
                       <td>${window.TurnamenUI.renderStatusBadge(m.status)}</td>
                       <td>
                         <div class="score-inline-form">
@@ -1751,7 +1860,13 @@
                     .map(
                       (r) => `
                     <tr>
-                      <td><strong>${window.TurnamenUI.escapeHtml(r.team_name)}</strong> [${window.TurnamenUI.escapeHtml(r.team_tag)}]</td>
+                      <td>
+                        <div class="team-cell-inline">
+                          ${window.TurnamenUI.renderTeamEmblem(r.team_tag, 24)}
+                          <strong>${window.TurnamenUI.escapeHtml(r.team_name)}</strong>
+                          <span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(r.team_tag)}</span>
+                        </div>
+                      </td>
                       <td>${window.TurnamenUI.renderStatusBadge(r.status)}</td>
                       <td>
                         <div class="row-actions">
@@ -2014,7 +2129,7 @@
           </div>
         </div>
         <div class="esports-banner-art">
-          ${window.TurnamenUI.renderGameArtwork(featuredGame, "PUBLIC ARENA")}
+          ${window.TurnamenUI.renderGameArtwork(featuredGame, "PUBLIC ARENA", { eager: true })}
         </div>
       </section>
 
@@ -2486,6 +2601,9 @@
   // 3. TOURNAMENT DETAIL & REGISTRATIONS PAGE
   // =========================================================================
   async function renderTournamentDetail(container, isStale) {
+    await ensureGamesLoaded(false);
+    if (isStale()) return;
+
     const ctx = await resolveActiveTournamentContext();
     if (isStale()) return;
 
@@ -2521,6 +2639,12 @@
     const t = tourRes.data;
     const regs = regsRes.success && Array.isArray(regsRes.data) ? regsRes.data : [];
     const teams = teamsRes.success && Array.isArray(teamsRes.data) ? teamsRes.data : [];
+    const gamesById = buildGameLookup();
+    const heroGame = gamesById[t.game_id] || { name: t.game_name, slug: t.game_name };
+    const teamsById = {};
+    teams.forEach((tm) => {
+      teamsById[tm.id] = tm;
+    });
     const canVerify = canPerform("registration:verify", { tournament: t });
     const canRegister =
       canPerform("registration:create") &&
@@ -2569,17 +2693,31 @@
         `<button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Buka Bracket</button>`
       )}
 
-      <div class="page-header">
-        <div class="page-header-copy">
-          <h2>${window.TurnamenUI.escapeHtml(t.title)}</h2>
-          <p>${window.TurnamenUI.escapeHtml(t.description || "Tidak ada deskripsi tambahan untuk turnamen ini.")}</p>
+      <section class="tournament-detail-hero" aria-label="Banner Detail Turnamen">
+        <div class="tournament-detail-hero-bg">
+          ${window.TurnamenUI.renderGameArtwork(heroGame, "", { eager: true, hideLabels: true })}
         </div>
-        ${
-          canPerform("tournament:edit", { tournament: t })
-            ? `<button type="button" class="btn btn-secondary btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}">${window.TurnamenUI.icon("edit", 14)}<span>Edit Info Turnamen</span></button>`
-            : ""
-        }
-      </div>
+        <div class="tournament-detail-hero-scrim" aria-hidden="true"></div>
+        <div class="tournament-detail-hero-content">
+          <div>
+            <div class="tournament-detail-hero-badges">
+              ${window.TurnamenUI.renderGameChip(t.game_name, heroGame.slug)}
+              ${window.TurnamenUI.renderStatusBadge(t.status)}
+              <span class="badge badge-info tabular-nums">Single Elim Bo${t.best_of}</span>
+            </div>
+            <h2 class="tournament-detail-hero-title">${window.TurnamenUI.escapeHtml(t.title)}</h2>
+            <p class="tournament-detail-hero-desc">${window.TurnamenUI.escapeHtml(t.description || "Tidak ada deskripsi tambahan untuk turnamen ini.")}</p>
+          </div>
+          <div class="page-actions">
+            ${
+              canPerform("tournament:edit", { tournament: t })
+                ? `<button type="button" class="btn btn-secondary btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}">${window.TurnamenUI.icon("edit", 14)}<span>Edit Info Turnamen</span></button>`
+                : ""
+            }
+            <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">${window.TurnamenUI.icon("bracket", 14)}<span>Buka Bracket</span></button>
+          </div>
+        </div>
+      </section>
 
       <div class="grid-4">
         <div class="metric-card">
@@ -2620,46 +2758,59 @@
                 "Belum ada tim yang mengirimkan pendaftaran untuk turnamen ini."
               )
             : `
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Seed</th>
-                  <th>Nama Tim</th>
-                  <th>Tag</th>
-                  <th>Catatan Verifikasi</th>
-                  <th>Status</th>
-                  ${canVerify ? "<th>Aksi Panitia</th>" : ""}
-                </tr>
-              </thead>
-              <tbody>
-                ${regs
-                  .map(
-                    (r) => `
-                  <tr>
-                    <td class="tabular-nums">#${r.seed_number || "-"}</td>
-                    <td><strong>${window.TurnamenUI.escapeHtml(r.team_name)}</strong></td>
-                    <td class="tabular-nums"><span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(r.team_tag)}</span></td>
-                    <td>${window.TurnamenUI.escapeHtml(r.notes || "-")}</td>
-                    <td>${window.TurnamenUI.renderStatusBadge(r.status)}</td>
+          <div class="participant-grid">
+            ${regs
+              .map((r) => {
+                const fullTeam = teamsById[r.team_id];
+                const teamMembers = fullTeam && Array.isArray(fullTeam.members) ? fullTeam.members : [];
+                return `
+                <article class="participant-card">
+                  <div class="participant-card-head">
+                    <div class="participant-card-team">
+                      ${window.TurnamenUI.renderTeamEmblem(r.team_tag, 44)}
+                      <div>
+                        <h4 class="participant-card-title">${window.TurnamenUI.escapeHtml(r.team_name)}</h4>
+                        <div class="table-subtext tabular-nums">Tag: ${window.TurnamenUI.escapeHtml(r.team_tag)} | Seed #${r.seed_number || "-"}</div>
+                      </div>
+                    </div>
+                    ${window.TurnamenUI.renderStatusBadge(r.status)}
+                  </div>
+                  <div class="roster-list">
                     ${
-                      canVerify
-                        ? `
-                      <td>
+                      teamMembers.length > 0
+                        ? teamMembers
+                            .slice(0, 6)
+                            .map(
+                              (m) =>
+                                `<span class="roster-chip">${window.TurnamenUI.escapeHtml(m.nickname)} (${window.TurnamenUI.escapeHtml(m.member_role || "starter")})</span>`
+                            )
+                            .join("")
+                        : `<span class="table-subtext">${window.TurnamenUI.escapeHtml(r.notes || "Pendaftaran resmi tim")}</span>`
+                    }
+                  </div>
+                  ${
+                    canVerify || r.notes
+                      ? `
+                    <div class="participant-card-foot">
+                      <span class="table-subtext">${window.TurnamenUI.escapeHtml(r.notes || "Terverifikasi")}</span>
+                      ${
+                        canVerify
+                          ? `
                         <div class="row-actions">
                           <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="approved">Setujui</button>
                           <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="rejected">Tolak</button>
                         </div>
-                      </td>
-                    `
-                        : ""
-                    }
-                  </tr>
-                `
-                  )
-                  .join("")}
-              </tbody>
-            </table>
+                      `
+                          : ""
+                      }
+                    </div>
+                  `
+                      : ""
+                  }
+                </article>
+              `;
+              })
+              .join("")}
           </div>
         `
         }
@@ -2914,7 +3065,12 @@
                   return `
                   <tr>
                     <td class="tabular-nums"><span class="badge badge-info">${window.TurnamenUI.escapeHtml(tm.tag)}</span></td>
-                    <td><strong>${window.TurnamenUI.escapeHtml(tm.name)}</strong></td>
+                    <td>
+                      <div class="team-cell-inline">
+                        ${window.TurnamenUI.renderTeamEmblem(tm.tag, 26)}
+                        <strong>${window.TurnamenUI.escapeHtml(tm.name)}</strong>
+                      </div>
+                    </td>
                     <td>${window.TurnamenUI.renderGameChip(tm.game_name)}</td>
                     <td>${window.TurnamenUI.escapeHtml(tm.region || "-")}</td>
                     <td class="tabular-nums">${tm.member_count ?? members.length} Pemain</td>
@@ -3335,9 +3491,19 @@
                     <tr>
                       <td><strong>${window.TurnamenUI.escapeHtml(m.round_name)}</strong></td>
                       <td class="tabular-nums">#${m.match_number}</td>
-                      <td>${window.TurnamenUI.escapeHtml(m.team_a_name || "TBD")}</td>
+                      <td>
+                        <div class="team-cell-inline">
+                          ${m.team_a_id ? window.TurnamenUI.renderTeamEmblem(m.team_a_tag, 22) : ""}
+                          <span>${window.TurnamenUI.escapeHtml(m.team_a_name || "TBD")}</span>
+                        </div>
+                      </td>
                       <td class="tabular-nums"><strong>${m.score_a} - ${m.score_b}</strong></td>
-                      <td>${window.TurnamenUI.escapeHtml(m.team_b_name || "TBD")}</td>
+                      <td>
+                        <div class="team-cell-inline">
+                          ${m.team_b_id ? window.TurnamenUI.renderTeamEmblem(m.team_b_tag, 22) : ""}
+                          <span>${window.TurnamenUI.escapeHtml(m.team_b_name || "TBD")}</span>
+                        </div>
+                      </td>
                       <td>${m.winner_team_name ? `<span class="badge badge-success">${window.TurnamenUI.escapeHtml(m.winner_team_name)}</span>` : "-"}</td>
                       <td>${window.TurnamenUI.renderStatusBadge(m.status)}</td>
                       <td>${actionCell}</td>
@@ -3517,51 +3683,69 @@
                   : ""
               )
             : `
-          <div class="bracket-board">
-            ${rounds
-              .map(
-                (round) => `
-              <section class="bracket-round" aria-label="${window.TurnamenUI.escapeHtml(round.round_name)}">
-                <div class="bracket-round-header">
-                  <span>${window.TurnamenUI.escapeHtml(round.round_name)}</span>
-                  <span class="tabular-nums">${(round.matches || []).length} Match</span>
-                </div>
-                <div class="bracket-matches-col">
-                  ${(round.matches || [])
-                    .map((m) => {
-                      const isCompleted = m.status === "completed";
-                      const winA = m.winner_team_id && m.winner_team_id === m.team_a_id;
-                      const winB = m.winner_team_id && m.winner_team_id === m.team_b_id;
-                      const byeA = !m.team_a_id;
-                      const byeB = !m.team_b_id;
-                      return `
-                      <article class="bracket-match-card ${isCompleted ? "is-completed" : ""}">
-                        <div class="bracket-match-meta">
-                          <span class="tabular-nums">Match #${m.match_number} (Bo${m.best_of})</span>
-                          ${window.TurnamenUI.renderStatusBadge(m.status)}
-                        </div>
-                        <div class="bracket-team-row ${winA ? "winner" : ""} ${byeA ? "bye" : ""}">
-                          <span>${window.TurnamenUI.escapeHtml(m.team_a_name || "TBD")}</span>
-                          <span class="bracket-score">${m.score_a}</span>
-                        </div>
-                        <div class="bracket-team-row ${winB ? "winner" : ""} ${byeB ? "bye" : ""}">
-                          <span>${window.TurnamenUI.escapeHtml(m.team_b_name || "TBD")}</span>
-                          <span class="bracket-score">${m.score_b}</span>
-                        </div>
-                      </article>
-                    `;
-                    })
-                    .join("")}
-                </div>
-              </section>
-            `
-              )
-              .join("")}
+          <div class="bracket-scroll-wrap">
+            <div class="bracket-stage" id="bracket-stage">
+              <svg class="bracket-connectors-svg" aria-hidden="true"></svg>
+              <div class="bracket-board">
+                ${rounds
+                  .map(
+                    (round) => `
+                  <section class="bracket-round" aria-label="${window.TurnamenUI.escapeHtml(round.round_name)}">
+                    <div class="bracket-round-header">
+                      <span>${window.TurnamenUI.escapeHtml(round.round_name)}</span>
+                      <span class="tabular-nums">${(round.matches || []).length} Match</span>
+                    </div>
+                    <div class="bracket-matches-col">
+                      ${(round.matches || [])
+                        .map((m) => {
+                          const isCompleted = m.status === "completed";
+                          const winA = m.winner_team_id && m.winner_team_id === m.team_a_id;
+                          const winB = m.winner_team_id && m.winner_team_id === m.team_b_id;
+                          const byeA = !m.team_a_id;
+                          const byeB = !m.team_b_id;
+                          return `
+                          <article
+                            class="bracket-match-card ${isCompleted ? "is-completed" : ""}"
+                            data-match-id="${window.TurnamenUI.escapeHtml(m.id)}"
+                            data-next-match-id="${window.TurnamenUI.escapeHtml(m.next_match_id || "")}"
+                            data-next-slot="${window.TurnamenUI.escapeHtml(m.next_slot || "")}"
+                            data-completed="${isCompleted ? "true" : "false"}"
+                          >
+                            <div class="bracket-match-meta">
+                              <span class="tabular-nums">Match #${m.match_number} (Bo${m.best_of})</span>
+                              ${window.TurnamenUI.renderStatusBadge(m.status)}
+                            </div>
+                            <div class="bracket-team-row ${winA ? "winner" : ""} ${byeA ? "bye" : ""}" data-slot="A">
+                              <span class="bracket-team-identity">
+                                ${m.team_a_id ? window.TurnamenUI.renderTeamEmblem(m.team_a_tag, 22) : ""}
+                                <span class="bracket-team-name">${window.TurnamenUI.escapeHtml(m.team_a_name || "TBD")}</span>
+                              </span>
+                              <span class="bracket-score">${m.score_a}</span>
+                            </div>
+                            <div class="bracket-team-row ${winB ? "winner" : ""} ${byeB ? "bye" : ""}" data-slot="B">
+                              <span class="bracket-team-identity">
+                                ${m.team_b_id ? window.TurnamenUI.renderTeamEmblem(m.team_b_tag, 22) : ""}
+                                <span class="bracket-team-name">${window.TurnamenUI.escapeHtml(m.team_b_name || "TBD")}</span>
+                              </span>
+                              <span class="bracket-score">${m.score_b}</span>
+                            </div>
+                          </article>
+                        `;
+                        })
+                        .join("")}
+                    </div>
+                  </section>
+                `
+                  )
+                  .join("")}
+              </div>
+            </div>
           </div>
         `
         }
       </div>
     `;
+    scheduleBracketConnectors();
   }
 
   function confirmRegenerateBracket(tournamentId) {
@@ -3663,7 +3847,7 @@
             : items
                 .map(
                   (a) => `
-              <article class="announcement-card ${a.is_pinned ? "is-pinned" : ""}">
+              <article class="announcement-card is-${window.TurnamenUI.escapeHtml(String(a.priority || "normal").toLowerCase())} ${a.is_pinned ? "is-pinned" : ""}">
                 <div class="card-header">
                   <div class="row-actions">
                     ${
@@ -3796,7 +3980,8 @@
         <div class="metric-card">
           <div class="metric-label">Tingkat Penyelesaian</div>
           <div class="metric-value">${s.completion_percentage ?? 0}%</div>
-          <div class="metric-note">${s.completed_matches ?? 0} dari ${s.total_matches ?? 0} pertandingan selesai</div>
+          <div class="metric-note" style="margin-bottom:8px;">${s.completed_matches ?? 0} dari ${s.total_matches ?? 0} pertandingan selesai</div>
+          ${window.TurnamenUI.renderProgressBar(s.completion_percentage ?? 0, "Progres penyelesaian pertandingan")}
         </div>
         <div class="metric-card">
           <div class="metric-label">Tim Terverifikasi</div>
@@ -3846,9 +4031,14 @@
                   .map(
                     (row) => `
                   <tr>
-                    <td class="tabular-nums"><strong>#${row.rank}</strong></td>
+                    <td class="tabular-nums"><span class="rank-pill ${row.rank <= 3 ? `rank-pill-${row.rank}` : ""}">#${row.rank}</span></td>
                     <td class="tabular-nums"><span class="badge badge-neutral">${window.TurnamenUI.escapeHtml(row.team_tag)}</span></td>
-                    <td><strong>${window.TurnamenUI.escapeHtml(row.team_name)}</strong></td>
+                    <td>
+                      <div class="team-cell-inline">
+                        ${window.TurnamenUI.renderTeamEmblem(row.team_tag, 24)}
+                        <strong>${window.TurnamenUI.escapeHtml(row.team_name)}</strong>
+                      </div>
+                    </td>
                     <td class="tabular-nums">${row.matches_played}</td>
                     <td class="tabular-nums" style="color:var(--status-success-text); font-weight:700;">${row.matches_won}</td>
                     <td class="tabular-nums" style="color:var(--status-danger-text);">${row.matches_lost}</td>
@@ -3908,6 +4098,13 @@
           ${
             user
               ? `
+            <div class="profile-identity-header">
+              ${window.TurnamenUI.renderPlayerAvatar(user.full_name || user.username, user.role, 52)}
+              <div>
+                <div class="roster-card-name" style="font-size:16px;">${window.TurnamenUI.escapeHtml(user.full_name || user.username || "-")}</div>
+                <div class="table-subtext tabular-nums">${window.TurnamenUI.escapeHtml(user.email || "-")}</div>
+              </div>
+            </div>
             <div class="form-group">
               <label for="profile-fullname" class="form-label">Nama Lengkap</label>
               <input id="profile-fullname" class="form-input" value="${window.TurnamenUI.escapeHtml(user.full_name || "-")}" readonly />
@@ -4031,6 +4228,13 @@
 
       <div class="auth-grid ${isMock ? "" : "auth-grid-single"}">
         <div class="card card-elevated">
+          <div class="auth-brand-banner">
+            <img src="assets/images/logo.svg" alt="Logo Turnamen.in" width="38" height="38" />
+            <div>
+              <div class="roster-card-name" style="font-size:15.5px;">Turnamen.in Arena Portal</div>
+              <div class="table-subtext">Masuk atau daftarkan akun resmi esports Anda</div>
+            </div>
+          </div>
           <div class="tabs-nav" role="tablist" aria-label="Mode Autentikasi">
             <button
               type="button"

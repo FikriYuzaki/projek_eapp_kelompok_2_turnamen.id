@@ -92,3 +92,15 @@ Seluruh 5 role RBAC (`docs/contracts/role-permissions.md`) berbagi identitas vis
    - **Super Admin (`System Control`):** Metrik sistem lintas organizer, kontrol penuh turnamen & tim, distribusi cabang game, telemetri runtime, dan jejak audit sistem.
 3. **Navigasi Dinamis & Access Guard:**
    - Sidebar dirender ulang secara dinamis berdasarkan role aktif (`renderRoleNavigation`). Menu login hanya tampil saat belum masuk; tombol Keluar hanya tampil saat sesi aktif; halaman terlarang (seperti `match-management` untuk role non-staf atau `profile` untuk tamu) menampilkan Access Denied State yang aman ketika diakses langsung.
+
+---
+
+## 6. Sistem Aset Visual, Emblem Tim, & Bracket Terhubung
+
+1. **Registry Artwork Game Lokal Siap-WebP (`desktop/web/assets/images/games/`):**
+   - Seluruh artwork game dipetakan terpusat lewat `GAME_ARTWORK_REGISTRY` dan `resolveGameArtwork(game)` di `ui-components.js` sesuai `games.slug` dari `/api/v1/games` (`mobile-legends`, `valorant`, `ea-sports-fc`, dan fallback `default-arena`).
+   - Setiap kartu poster game, banner utama, kartu partisipasi kapten, dan hero detail turnamen merender aset lokal berasio `16:9` dengan *contrast scrim* gelap dan fallback SVG inline tanpa hotlink eksternal. Mengganti `.svg` ke `.webp` hanya perlu memperbarui file lokal dan satu baris pada `GAME_ARTWORK_REGISTRY` tanpa mengubah logika bisnis.
+2. **Sistem Emblem Tim Deterministik (`renderTeamEmblem`):**
+   - Tag setiap tim di-hash secara deterministik ke salah satu dari 4 siluet perisai geometris dan 4 palet Futuristic Arena, sehingga identitas tim tetap konsisten di halaman Team Captain, Direktori Tim, Detail Turnamen, Match Management, Bracket, dan Klasemen.
+3. **Visualisasi Bracket Terhubung SVG (`drawBracketConnectors`):**
+   - Board Single Elimination merender lapisan `<svg class="bracket-connectors-svg">` di belakang kartu pertandingan yang menghitung jalur siku dari tengah sisi kanan match sumber menuju slot tujuan (`next_match_id` dan `next_slot` "A"/"B") serta menyalakan warna cyan untuk pertandingan yang telah selesai.

@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" fill="none">
+  <defs>
+    <linearGradient id="def-sky" x1="480" y1="0" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#050811"/>
+      <stop offset="55%" stop-color="#0B1328"/>
+      <stop offset="100%" stop-color="#070B16"/>
+    </linearGradient>
+    <radialGradient id="def-stage-glow" cx="50%" cy="46%" r="44%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#8B5CF6" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#070B16" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="def-scrim" x1="480" y1="295" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#060A14" stop-opacity="0"/>
+      <stop offset="58%" stop-color="#060A14" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#060A14" stop-opacity="0.93"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Championship Arena Vault -->
+  <rect width="960" height="540" fill="url(#def-sky)"/>
+  <ellipse cx="480" cy="245" rx="390" ry="190" fill="url(#def-stage-glow)"/>
+
+  <!-- Structural Megastructure Stage Arches -->
+  <g stroke-width="2">
+    <path d="M90,390 L165,92 L795,92 L870,390" stroke="#1E305C" fill="none"/>
+    <path d="M165,380 L235,128 L725,128 L795,380" stroke="#28427A" fill="none"/>
+    <path d="M235,128 L480,68 L725,128" stroke="#00E5FF" stroke-opacity="0.7" fill="none"/>
+    <path d="M165,92 L480,32 L795,92" stroke="#8B5CF6" stroke-opacity="0.55" fill="none"/>
+  </g>
+
+  <!-- Overhead Stage Spotlights -->
+  <polygon points="405,68 555,68 620,385 340,385" fill="#00E5FF" fill-opacity="0.055"/>
+  <polygon points="195,100 260,100 320,360 150,360" fill="#00E5FF" fill-opacity="0.04"/>
+  <polygon points="700,100 765,100 810,360 640,360" fill="#8B5CF6" fill-opacity="0.045"/>
+
+  <!-- Reflective Stage Floor & Perspective Grid -->
+  <polygon points="40,380 920,380 960,540 0,540" fill="#0E1730"/>
+  <g stroke="#1E315E" stroke-width="1.2">
+    <line x1="480" y1="380" x2="480" y2="540"/>
+    <line x1="340" y1="380" x2="210" y2="540"/>
+    <line x1="620" y1="380" x2="750" y2="540"/>
+    <line x1="180" y1="435" x2="780" y2="435"/>
+    <line x1="90" y1="485" x2="870" y2="485"/>
+  </g>
+
+  <!-- Opposing 5-Player Stage Booths (Left Cyan / Right Violet) -->
+  <g>
+    <polygon points="75,305 335,282 348,376 60,376" fill="#111C38" stroke="#00E5FF" stroke-width="1.5" stroke-opacity="0.75"/>
+    <rect x="108" y="308" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
+    <rect x="150" y="304" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
+    <rect x="192" y="300" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
+    <rect x="234" y="296" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
+    <rect x="276" y="292" width="30" height="22" rx="2" fill="#0D2C44" stroke="#00E5FF" stroke-width="1"/>
+
+    <polygon points="885,305 625,282 612,376 900,376" fill="#111C38" stroke="#8B5CF6" stroke-width="1.5" stroke-opacity="0.75"/>
+    <rect x="822" y="308" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
+    <rect x="780" y="304" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
+    <rect x="738" y="300" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
+    <rect x="696" y="296" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
+    <rect x="654" y="292" width="30" height="22" rx="2" fill="#231942" stroke="#A78BFA" stroke-width="1"/>
+  </g>
+
+  <!-- Central Championship Pedestal & Stylized Trophy Crest -->
+  <ellipse cx="480" cy="382" rx="110" ry="20" fill="#121F40" stroke="#00E5FF" stroke-width="1.8"/>
+  <polygon points="435,380 452,320 508,320 525,380" fill="#16264F" stroke="#314B86" stroke-width="1.5"/>
+  <g>
+    <path d="M446,214 H514 V252 C514,274 499,290 480,296 C461,290 446,274 446,252 Z" fill="#00E5FF" fill-opacity="0.22" stroke="#67E8F9" stroke-width="2.2"/>
+    <path d="M446,224 H428 V242 C428,254 436,262 446,262" stroke="#A78BFA" stroke-width="2" fill="none"/>
+    <path d="M514,224 H532 V242 C532,254 524,262 514,262" stroke="#A78BFA" stroke-width="2" fill="none"/>
+    <line x1="480" y1="296" x2="480" y2="320" stroke="#67E8F9" stroke-width="3"/>
+    <polygon points="458,320 502,320 494,308 466,308" fill="#67E8F9" fill-opacity="0.8"/>
+  </g>
+
+  <!-- Lower Third Contrast Scrim -->
+  <rect x="0" y="295" width="960" height="245" fill="url(#def-scrim)"/>
+</svg>

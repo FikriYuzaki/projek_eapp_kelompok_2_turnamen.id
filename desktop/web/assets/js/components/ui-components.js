@@ -7,7 +7,7 @@
   "use strict";
 
   const STATUS_MAP = {
-    ongoing: { label: "Sedang Berlangsung", cls: "badge-warning", live: true },
+    ongoing: { label: "LIVE | Sedang Berlangsung", cls: "badge-warning", live: true },
     open_registration: { label: "Pendaftaran Dibuka", cls: "badge-info", live: false },
     registration_closed: { label: "Pendaftaran Ditutup", cls: "badge-neutral", live: false },
     completed: { label: "Selesai", cls: "badge-success", live: false },
@@ -228,76 +228,198 @@
     `;
   }
 
-  function getGamePalette(gameSlugOrName) {
-    const key = String(gameSlugOrName || "").toLowerCase();
-    if (key.includes("mobile-legends") || key.includes("mlbb")) {
-      return {
-        primary: "#00E5FF",
-        secondary: "#8B5CF6",
-        code: "MOBA 5V5",
-        accentShape:
-          '<polygon points="160,18 214,64 194,116 126,116 106,64" fill="none" stroke="#00E5FF" stroke-width="2"/><polygon points="160,34 196,66 182,102 138,102 124,66" fill="rgba(0,229,255,0.14)" stroke="#8B5CF6" stroke-width="1.5"/>',
-      };
-    }
-    if (key.includes("valorant")) {
-      return {
-        primary: "#38EEFF",
-        secondary: "#A78BFA",
-        code: "TACTICAL FPS",
-        accentShape:
-          '<path d="M116 30L160 112L204 30" fill="none" stroke="#00E5FF" stroke-width="2.5"/><path d="M134 42L160 90L186 42" fill="none" stroke="#8B5CF6" stroke-width="1.5"/><circle cx="160" cy="34" r="4" fill="#00E5FF"/>',
-      };
-    }
-    if (key.includes("ea-sports-fc") || key.includes("fc")) {
-      return {
-        primary: "#34D399",
-        secondary: "#00E5FF",
-        code: "SPORTS 1V1",
-        accentShape:
-          '<circle cx="160" cy="70" r="38" fill="rgba(0,229,255,0.08)" stroke="#00E5FF" stroke-width="2"/><circle cx="160" cy="70" r="20" fill="none" stroke="#8B5CF6" stroke-width="1.5"/><path d="M90 70H230" stroke="#233354" stroke-width="1.5"/>',
-      };
-    }
-    return {
+  const GAME_ARTWORK_REGISTRY = {
+    "mobile-legends": {
+      slug: "mobile-legends",
+      src: "assets/images/games/mobile-legends.svg",
+      webpSrc: "assets/images/games/mobile-legends.webp",
+      primary: "#00E5FF",
+      secondary: "#8B5CF6",
+      code: "MOBA 5V5",
+      accentShape:
+        '<polygon points="160,18 214,64 194,116 126,116 106,64" fill="none" stroke="#00E5FF" stroke-width="2"/><polygon points="160,34 196,66 182,102 138,102 124,66" fill="rgba(0,229,255,0.14)" stroke="#8B5CF6" stroke-width="1.5"/>',
+    },
+    valorant: {
+      slug: "valorant",
+      src: "assets/images/games/valorant.svg",
+      webpSrc: "assets/images/games/valorant.webp",
+      primary: "#38EEFF",
+      secondary: "#A78BFA",
+      code: "TACTICAL FPS",
+      accentShape:
+        '<path d="M116 30L160 112L204 30" fill="none" stroke="#00E5FF" stroke-width="2.5"/><path d="M134 42L160 90L186 42" fill="none" stroke="#8B5CF6" stroke-width="1.5"/><circle cx="160" cy="34" r="4" fill="#00E5FF"/>',
+    },
+    "ea-sports-fc": {
+      slug: "ea-sports-fc",
+      src: "assets/images/games/ea-sports-fc.svg",
+      webpSrc: "assets/images/games/ea-sports-fc.webp",
+      primary: "#34D399",
+      secondary: "#00E5FF",
+      code: "SPORTS 1V1",
+      accentShape:
+        '<circle cx="160" cy="70" r="38" fill="rgba(0,229,255,0.08)" stroke="#00E5FF" stroke-width="2"/><circle cx="160" cy="70" r="20" fill="none" stroke="#8B5CF6" stroke-width="1.5"/><path d="M90 70H230" stroke="#233354" stroke-width="1.5"/>',
+    },
+    "default-arena": {
+      slug: "default-arena",
+      src: "assets/images/games/default-arena.svg",
+      webpSrc: "assets/images/games/default-arena.webp",
       primary: "#00E5FF",
       secondary: "#8B5CF6",
       code: "ESPORTS ARENA",
       accentShape:
         '<rect x="122" y="30" width="76" height="76" rx="10" fill="rgba(0,229,255,0.08)" stroke="#00E5FF" stroke-width="2"/><path d="M138 68h44M160 46v44" stroke="#8B5CF6" stroke-width="2"/>',
-    };
+    },
+  };
+
+  function resolveGameArtwork(game) {
+    const rawSlug =
+      game && typeof game === "object"
+        ? String(game.slug || game.game_id || game.name || game.game_name || "")
+        : String(game || "");
+    const normalized = rawSlug.trim().toLowerCase();
+
+    if (normalized && GAME_ARTWORK_REGISTRY[normalized]) {
+      return GAME_ARTWORK_REGISTRY[normalized];
+    }
+    if (normalized.includes("mobile-legends") || normalized.includes("mobile legends") || normalized.includes("mlbb")) {
+      return GAME_ARTWORK_REGISTRY["mobile-legends"];
+    }
+    if (normalized.includes("valorant")) {
+      return GAME_ARTWORK_REGISTRY.valorant;
+    }
+    if (normalized.includes("ea-sports-fc") || normalized.includes("fc 25") || normalized.includes("fc25")) {
+      return GAME_ARTWORK_REGISTRY["ea-sports-fc"];
+    }
+    return GAME_ARTWORK_REGISTRY["default-arena"];
   }
 
-  function renderGameArtwork(game, labelOverride = "") {
+  function getGamePalette(gameSlugOrName) {
+    return resolveGameArtwork(gameSlugOrName);
+  }
+
+  function renderGameArtwork(game, labelOverride = "", options = {}) {
     const gameName = (game && (game.name || game.game_name)) || "Esports";
-    const gameSlug = (game && (game.slug || game.game_id || game.name || game.game_name)) || "";
-    const palette = getGamePalette(gameSlug);
-    const label = labelOverride || palette.code;
+    const asset = resolveGameArtwork(game);
+    const label = labelOverride || asset.code;
+    const loadingAttr = options && options.eager ? "eager" : "lazy";
+    const hideLabels = Boolean(options && options.hideLabels);
 
     return `
-      <svg viewBox="0 0 320 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ilustrasi game ${escapeHtml(gameName)}">
-        <rect width="320" height="160" fill="#0B1120"/>
-        <path d="M0 132L72 132L96 108L320 108" stroke="#1D2A48" stroke-width="1.5"/>
-        <path d="M0 28L210 28L232 50L320 50" stroke="#1D2A48" stroke-width="1.5"/>
-        ${palette.accentShape}
-        <text x="16" y="24" fill="#67E8F9" font-family="monospace" font-size="11" font-weight="700">${escapeHtml(label)}</text>
-        <text x="16" y="146" fill="#F1F5F9" font-family="sans-serif" font-size="13" font-weight="700">${escapeHtml(gameName)}</text>
-      </svg>
+      <div class="artwork-media">
+        <img
+          class="artwork-img"
+          src="${escapeHtml(asset.src)}"
+          alt="Artwork ${escapeHtml(gameName)}"
+          width="960"
+          height="540"
+          loading="${loadingAttr}"
+          decoding="async"
+          onerror="this.style.display='none'; if (this.nextElementSibling) { this.nextElementSibling.classList.add('is-visible'); }"
+        />
+        <svg class="artwork-fallback-svg" viewBox="0 0 320 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ilustrasi game ${escapeHtml(gameName)}">
+          <rect width="320" height="160" fill="#0B1120"/>
+          <path d="M0 132L72 132L96 108L320 108" stroke="#1D2A48" stroke-width="1.5"/>
+          <path d="M0 28L210 28L232 50L320 50" stroke="#1D2A48" stroke-width="1.5"/>
+          ${asset.accentShape}
+        </svg>
+        <div class="artwork-scrim" aria-hidden="true"></div>
+        ${
+          hideLabels
+            ? ""
+            : `
+          <span class="artwork-kicker-tag">${escapeHtml(label)}</span>
+          <span class="artwork-caption">${escapeHtml(gameName)}</span>
+        `
+        }
+      </div>
     `;
   }
 
   function renderGameChip(gameName, gameSlug = "") {
-    const palette = getGamePalette(gameSlug || gameName);
-    return `<span class="game-chip"><span class="game-chip-dot" style="background-color:${palette.primary};" aria-hidden="true"></span><span>${escapeHtml(gameName || "Esports")}</span></span>`;
+    const asset = resolveGameArtwork(gameSlug || gameName);
+    return `<span class="game-chip"><span class="game-chip-dot" style="background-color:${asset.primary};" aria-hidden="true"></span><span>${escapeHtml(gameName || "Esports")}</span></span>`;
   }
 
-  function renderTeamEmblem(tag, size = 44) {
-    const cleanTag = String(tag || "TM").trim().toUpperCase().slice(0, 4) || "TM";
+  function hashIdentifier(text) {
+    let hash = 0;
+    const str = String(text || "");
+    for (let i = 0; i < str.length; i += 1) {
+      hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    return hash;
+  }
+
+  const TEAM_EMBLEM_PALETTES = [
+    { stroke: "#00E5FF", innerStroke: "#8B5CF6", bg: "#0D162C", innerBg: "#132042" },
+    { stroke: "#38EEFF", innerStroke: "#34D399", bg: "#0C1829", innerBg: "#12263C" },
+    { stroke: "#A78BFA", innerStroke: "#00E5FF", bg: "#12132B", innerBg: "#1B1E45" },
+    { stroke: "#FBBF24", innerStroke: "#00E5FF", bg: "#141628", innerBg: "#1E243E" },
+  ];
+
+  function renderTeamEmblem(tagOrTeam, size = 44) {
+    const rawTag =
+      tagOrTeam && typeof tagOrTeam === "object"
+        ? tagOrTeam.tag || tagOrTeam.team_tag || tagOrTeam.name || "TM"
+        : tagOrTeam || "TM";
+    const cleanTag = String(rawTag).trim().toUpperCase().slice(0, 4) || "TM";
+    const hash = hashIdentifier(cleanTag);
+    const pal = TEAM_EMBLEM_PALETTES[hash % TEAM_EMBLEM_PALETTES.length];
+    const shapeIdx = hash % 4;
+    const fontSize = cleanTag.length >= 4 ? 10 : 11.5;
+
+    let shapePaths = "";
+    if (shapeIdx === 0) {
+      shapePaths = `
+        <path d="M24 3L41 9.5V22.5C41 33.2 33.8 41.6 24 45C14.2 41.6 7 33.2 7 22.5V9.5L24 3Z" fill="${pal.bg}" stroke="${pal.stroke}" stroke-width="2"/>
+        <path d="M24 7.5L36.8 12.2V22C36.8 30 31.3 36.4 24 39.4C16.7 36.4 11.2 30 11.2 22V12.2L24 7.5Z" fill="${pal.innerBg}" stroke="${pal.innerStroke}" stroke-width="1.1"/>
+      `;
+    } else if (shapeIdx === 1) {
+      shapePaths = `
+        <polygon points="24,3 42,13.5 42,34.5 24,45 6,34.5 6,13.5" fill="${pal.bg}" stroke="${pal.stroke}" stroke-width="2"/>
+        <polygon points="24,8 37.5,15.8 37.5,32.2 24,40 10.5,32.2 10.5,15.8" fill="${pal.innerBg}" stroke="${pal.innerStroke}" stroke-width="1.1"/>
+      `;
+    } else if (shapeIdx === 2) {
+      shapePaths = `
+        <path d="M6 10L18 6L24 3L30 6L42 10L39 27L24 45L9 27L6 10Z" fill="${pal.bg}" stroke="${pal.stroke}" stroke-width="2"/>
+        <path d="M11.5 13.5L24 8.5L36.5 13.5L34.5 25.5L24 38.5L13.5 25.5L11.5 13.5Z" fill="${pal.innerBg}" stroke="${pal.innerStroke}" stroke-width="1.1"/>
+      `;
+    } else {
+      shapePaths = `
+        <polygon points="24,3 44,20 35,43 13,43 4,20" fill="${pal.bg}" stroke="${pal.stroke}" stroke-width="2"/>
+        <polygon points="24,8.5 39,21 31.8,38.5 16.2,38.5 9,21" fill="${pal.innerBg}" stroke="${pal.innerStroke}" stroke-width="1.1"/>
+      `;
+    }
+
     return `
       <span class="team-emblem" style="width:${size}px; height:${size}px;" aria-hidden="true">
         <svg width="${size}" height="${size}" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M24 3L41 9.5V22.5C41 33.2 33.8 41.6 24 45C14.2 41.6 7 33.2 7 22.5V9.5L24 3Z" fill="#10182B" stroke="#00E5FF" stroke-width="2"/>
-          <path d="M24 7L37 12V22C37 30.2 31.5 36.8 24 39.8C16.5 36.8 11 30.2 11 22V12L24 7Z" fill="#162038" stroke="#8B5CF6" stroke-width="1"/>
-          <text x="24" y="28" text-anchor="middle" fill="#F1F5F9" font-family="monospace" font-size="11" font-weight="700">${escapeHtml(cleanTag)}</text>
+          ${shapePaths}
+          <text x="24" y="28" text-anchor="middle" fill="#F1F5F9" font-family="monospace" font-size="${fontSize}" font-weight="700" letter-spacing="0.03em">${escapeHtml(cleanTag)}</text>
         </svg>
+      </span>
+    `;
+  }
+
+  function renderPlayerAvatar(nickname, role = "starter", size = 38) {
+    const clean = String(nickname || "PL").trim();
+    const parts = clean.split(/[\s_-]+/).filter(Boolean);
+    const initials =
+      parts.length >= 2
+        ? (parts[0][0] + parts[1][0]).toUpperCase()
+        : clean.slice(0, 2).toUpperCase() || "PL";
+    const roleKey = String(role || "starter").toLowerCase();
+    const borderClass =
+      roleKey === "captain"
+        ? "is-captain"
+        : roleKey === "coach"
+          ? "is-coach"
+          : roleKey === "substitute"
+            ? "is-sub"
+            : "is-starter";
+
+    return `
+      <span class="player-avatar ${borderClass}" style="width:${size}px; height:${size}px;" aria-hidden="true">
+        <span>${escapeHtml(initials)}</span>
       </span>
     `;
   }
@@ -318,6 +440,13 @@
     const involvesOwnTeam =
       highlightTeamIds.has(match.team_a_id) || highlightTeamIds.has(match.team_b_id);
 
+    const teamABadge = match.team_a_id
+      ? renderTeamEmblem(match.team_a_tag, 24)
+      : `<span class="badge badge-neutral tabular-nums">TBD</span>`;
+    const teamBBadge = match.team_b_id
+      ? renderTeamEmblem(match.team_b_tag, 24)
+      : `<span class="badge badge-neutral tabular-nums">TBD</span>`;
+
     return `
       <article class="match-card ${involvesOwnTeam ? "is-highlighted" : ""}">
         <div class="match-card-header">
@@ -327,14 +456,14 @@
         <div class="match-card-teams">
           <div class="match-card-team ${winA ? "is-winner" : ""}">
             <div class="match-card-team-name">
-              <span class="badge badge-neutral tabular-nums">${escapeHtml(match.team_a_tag || "TBD")}</span>
+              ${teamABadge}
               <span>${escapeHtml(match.team_a_name || "TBD")}</span>
             </div>
             <span class="match-card-score">${match.score_a ?? 0}</span>
           </div>
           <div class="match-card-team ${winB ? "is-winner" : ""}">
             <div class="match-card-team-name">
-              <span class="badge badge-neutral tabular-nums">${escapeHtml(match.team_b_tag || "TBD")}</span>
+              ${teamBBadge}
               <span>${escapeHtml(match.team_b_name || "TBD")}</span>
             </div>
             <span class="match-card-score">${match.score_b ?? 0}</span>
@@ -507,9 +636,11 @@
     renderErrorState,
     renderAuthNotice,
     renderAccessDeniedState,
+    resolveGameArtwork,
     renderGameArtwork,
     renderGameChip,
     renderTeamEmblem,
+    renderPlayerAvatar,
     renderProgressBar,
     renderMatchCard,
     showToast,
