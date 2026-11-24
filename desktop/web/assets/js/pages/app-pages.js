@@ -327,6 +327,31 @@
     return roleKey === "super_admin" || roleKey === "organizer" || roleKey === "committee";
   }
 
+  function getCommitteeTournamentAssignment(tournament, user) {
+    if (!tournament || !user) return null;
+    if (typeof tournament.is_assigned_committee === "boolean") {
+      return tournament.is_assigned_committee;
+    }
+    if (Array.isArray(tournament.staff_user_ids)) {
+      return tournament.staff_user_ids.includes(user.id);
+    }
+    if (Array.isArray(tournament.assigned_staff_ids)) {
+      return tournament.assigned_staff_ids.includes(user.id);
+    }
+    return null;
+  }
+
+  function renderCommitteeAssignmentNotice(tournament) {
+    const user = getCurrentUserSafe();
+    if (!user || String(user.role || "").toLowerCase() !== "committee" || !tournament) {
+      return "";
+    }
+    if (getCommitteeTournamentAssignment(tournament, user) !== null) {
+      return "";
+    }
+    return `<p class="table-subtext" style="margin:0 0 12px 0;">Status penugasan panitia pada turnamen ini diverifikasi oleh server REST API dan kebijakan RLS saat aksi dikirim.</p>`;
+  }
+
   function canPerform(action, context = {}) {
     const user = getCurrentUserSafe();
     if (!user || !user.role) return false;
@@ -356,7 +381,11 @@
       case "bracket:generate":
       case "match:submit_result":
       case "announcement:create":
-        if (role === "super_admin" || role === "committee") return true;
+        if (role === "super_admin") return true;
+        if (role === "committee") {
+          const assigned = getCommitteeTournamentAssignment(context.tournament, user);
+          return assigned !== false;
+        }
         if (role === "organizer") {
           return !context.tournament || context.tournament.organizer_id === user.id;
         }
@@ -511,10 +540,6 @@
     if (!switcher) return;
     switcher.addEventListener("change", (e) => {
       if (!isMockMode()) {
-        window.TurnamenUI.showToast(
-          "Simulasi role hanya tersedia pada APP_MODE=mock.",
-          "warning"
-        );
         updateRuntimeIndicators(null);
         return;
       }
@@ -526,7 +551,8 @@
       }
       window.TurnamenUI.showToast(
         `Peran simulasi diubah ke: ${user.full_name} (${user.role})`,
-        "info"
+        "info",
+        { group: "demo-role-switch" }
       );
       navigateTo("dashboard");
     });
@@ -1764,6 +1790,7 @@
         </div>
         <button type="button" class="btn btn-primary" data-action="go-page" data-page="match-management">Buka Jadwal &amp; Skor Penuh</button>
       </div>
+      ${renderCommitteeAssignmentNotice(ctx.active)}
 
       <div class="grid-4">
         <div class="metric-card metric-card-accent">
@@ -3314,9 +3341,27 @@
     await navigateTo(currentPage);
   }
 
-  function openAddMemberModal(teamId) {
+  async function openAddMemberModal(teamId) {
+    if (!teamId) {
+      window.TurnamenUI.showToast("Tim target tidak valid.", "warning");
+      return;
+    }
+    const res = await window.TurnamenAPI.getTeamById(teamId);
+    if (!res.success || !res.data) {
+      window.TurnamenUI.showToast(res.message || "Gagal memuat data tim.", "danger");
+      return;
+    }
+    const tm = res.data;
+    if (!canPerform("team:manage", { team: tm })) {
+      window.TurnamenUI.showToast(
+        "Anda tidak memiliki izin menambah anggota pada tim ini.",
+        "danger"
+      );
+      return;
+    }
+
     window.TurnamenUI.openModal({
-      title: "Tambah Anggota Roster Tim",
+      title: `Tambah Anggota Roster: ${tm.name} [${tm.tag}]`,
       bodyHtml: `
         <div class="form-group">
           <label for="member-nickname" class="form-label">Nickname Pemain</label>
@@ -3338,7 +3383,7 @@
       `,
       footerHtml: `
         <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
-        <button type="button" class="btn btn-primary" data-action="submit-add-member" data-id="${window.TurnamenUI.escapeHtml(teamId)}">Tambahkan Anggota</button>
+        <button type="button" class="btn btn-primary" data-action="submit-add-member" data-id="${window.TurnamenUI.escapeHtml(tm.id)}">Tambahkan Anggota</button>
       `,
     });
   }
@@ -3416,6 +3461,7 @@
           <p>Turnamen: <strong>${window.TurnamenUI.escapeHtml(data.tournament_title || ctx.active.title)}</strong> (Format Best of ${data.best_of || ctx.active.best_of})</p>
         </div>
       </div>
+      ${renderCommitteeAssignmentNotice(ctx.active)}
 
       <div class="grid-3">
         <div class="metric-card">
@@ -4491,10 +4537,6 @@
 
   async function quickSwitchRole(roleName) {
     if (!isMockMode()) {
-      window.TurnamenUI.showToast(
-        "Pemilihan akun demo tidak tersedia pada APP_MODE=supabase.",
-        "warning"
-      );
       return;
     }
     const user = window.TurnamenAPI.setSimulatedRole(roleName);
@@ -4503,7 +4545,9 @@
       window.TurnamenUI.showToast("Role simulasi tidak tersedia.", "warning");
       return;
     }
-    window.TurnamenUI.showToast(`Beralih ke akun demo: ${user.full_name}`, "success");
+    window.TurnamenUI.showToast(`Beralih ke akun demo: ${user.full_name}`, "success", {
+      group: "demo-role-switch",
+    });
     await navigateTo("dashboard");
   }
 

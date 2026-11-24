@@ -106,4 +106,12 @@ Seluruh 5 role RBAC (`docs/contracts/role-permissions.md`) berbagi identitas vis
    - Board Single Elimination merender lapisan `<svg class="bracket-connectors-svg">` di belakang kartu pertandingan yang menghitung jalur siku dari tengah sisi kanan match sumber menuju slot tujuan (`next_match_id` dan `next_slot` "A"/"B") serta menyalakan warna cyan untuk pertandingan yang telah selesai.
 4. **Disiplin Tabel Manajemen & Notifikasi Toast:**
    - Tabel operasional Organizer dan Super Admin memisahkan lebar kolom judul (`.col-title`), chip game tanpa wrap patah (`.col-game`), kuota progres (`.col-quota`), nominal hadiah (`.col-money`), status (`.col-status`), dan tombol aksi (`.col-actions`).
-   - Komponen `showToast()` ditempatkan di sudut kanan atas (di bawah topbar) dengan batas maksimum 3 notifikasi aktif, deduplikasi pesan identik, penggantian satu grup untuk notifikasi peralihan role demo, jeda timer saat hover/fokus, serta dukungan `prefers-reduced-motion`.
+   - Komponen `showToast()` ditempatkan di area bawah kiri area kerja pada layar desktop (`> 1024px`) dan di bawah-tengah pada layar lebih sempit (`<= 1024px`) agar tidak menghalangi tombol CTA kanan atas maupun navigasi sidebar. Maksimal 3 notifikasi aktif, deduplikasi pesan identik, pembaruan in-place dalam satu grup (`demo-role-switch`) untuk simulasi mode mock (serta hening pada `APP_MODE=supabase`), jeda timer saat hover/fokus, dan dukungan penuh `prefers-reduced-motion`.
+
+---
+
+## 7. Catatan Koordinasi Lintas Modul (Pasca-Audit RBAC & Ownership)
+
+1. **Penugasan Committee per Turnamen (Anisa - REST API):** Payload `GET /api/v1/tournaments` dan `GET /api/v1/tournaments/<id>` saat ini belum menyertakan daftar penugasan `tournament_staff` (`staff_user_ids` / `is_assigned_committee`). Backend & RLS tetap menegakkan validasi penugasan (`HTTP 403`), sedangkan UI menggunakan `getCommitteeTournamentAssignment()` agar otomatis menyaring akses panitia ketika field kontrak tersedia tanpa menebak.
+2. **Distribusi `captain_id` Data Demo (Habil / Adriel - Mock & Seed):** Pada `mock_data.py` dan `supabase/seed.sql`, ke-8 tim demo saat ini seluruhnya menetapkan `captain_id = garuda_capt` (`...1104`). Koordinasikan pemecahan kepemilikan tim rival ke captain terpisah agar demo `garuda_capt` hanya menandai tim miliknya sendiri sebagai "Tim Anda".
+3. **Paritas Visibilitas Registrasi Publik Mock vs Supabase RLS (Habil / Anisa):** Pada `APP_MODE=supabase`, RLS membatasi pengguna publik/tamu hanya membaca registrasi berstatus `approved`, sedangkan `MockRepository` saat ini mengembalikan seluruh status registrasi pada endpoint publik. Perlu penyelarasan di backend agar konsisten antar mode.

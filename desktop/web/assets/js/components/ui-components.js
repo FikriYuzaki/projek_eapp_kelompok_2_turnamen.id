@@ -530,7 +530,10 @@
         : TOAST_DURATIONS[safeType];
     const group =
       (options && typeof options.group === "string" && options.group) ||
-      (cleanMsg.startsWith("Beralih ke akun demo:") ? "demo-role-switch" : "");
+      (cleanMsg.startsWith("Beralih ke akun demo:") ||
+      cleanMsg.startsWith("Peran simulasi diubah ke:")
+        ? "demo-role-switch"
+        : "");
     const dedupeKey = `${safeType}::${cleanMsg}`;
 
     let container = document.getElementById("toast-container");
@@ -553,9 +556,19 @@
     }
 
     if (group) {
-      activeToasts
-        .filter((item) => item.group === group && !item.dismissed)
-        .forEach((item) => dismissToastEntry(item));
+      const existingGroupEntry = activeToasts.find(
+        (item) => item.group === group && !item.dismissed
+      );
+      if (existingGroupEntry) {
+        existingGroupEntry.el.className = `toast toast-${safeType}`;
+        existingGroupEntry.el.setAttribute("role", safeType === "danger" ? "alert" : "status");
+        const msgEl = existingGroupEntry.el.querySelector(".toast-message");
+        if (msgEl) msgEl.textContent = cleanMsg;
+        existingGroupEntry.key = dedupeKey;
+        existingGroupEntry.remainingMs = duration;
+        startToastTimer(existingGroupEntry);
+        return;
+      }
     }
 
     while (activeToasts.length >= MAX_VISIBLE_TOASTS) {
