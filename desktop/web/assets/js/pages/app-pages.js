@@ -346,10 +346,28 @@
     if (!user || String(user.role || "").toLowerCase() !== "committee" || !tournament) {
       return "";
     }
-    if (getCommitteeTournamentAssignment(tournament, user) !== null) {
+    const assigned = getCommitteeTournamentAssignment(tournament, user);
+    if (assigned === true) {
       return "";
     }
-    return `<p class="table-subtext" style="margin:0 0 12px 0;">Status penugasan panitia pada turnamen ini diverifikasi oleh server REST API dan kebijakan RLS saat aksi dikirim.</p>`;
+    if (assigned === false) {
+      return `
+        <div class="notice-banner notice-banner-warning" role="status">
+          <div>
+            <strong>Penugasan Panitia Tidak Terdaftar:</strong>
+            <span>Akun panitia Anda tidak ditugaskan pada turnamen ini, sehingga aksi mutasi tidak ditampilkan. Otorisasi akhir tetap ditegakkan oleh server API dan RLS.</span>
+          </div>
+        </div>
+      `;
+    }
+    return `
+      <div class="notice-banner notice-banner-warning" role="status">
+        <div>
+          <strong>Penugasan Panitia Belum Dapat Diverifikasi:</strong>
+          <span>Data penugasan panitia (tournament_staff) belum tersedia pada respons API turnamen ini, sehingga tombol aksi mutasi tidak ditampilkan untuk menghindari permintaan HTTP 403. Otorisasi akhir tetap ditegakkan oleh server API dan RLS.</span>
+        </div>
+      </div>
+    `;
   }
 
   function canPerform(action, context = {}) {
@@ -383,16 +401,102 @@
       case "announcement:create":
         if (role === "super_admin") return true;
         if (role === "committee") {
-          const assigned = getCommitteeTournamentAssignment(context.tournament, user);
-          return assigned !== false;
+          return getCommitteeTournamentAssignment(context.tournament, user) === true;
         }
         if (role === "organizer") {
-          return !context.tournament || context.tournament.organizer_id === user.id;
+          return Boolean(context.tournament && context.tournament.organizer_id === user.id);
         }
         return false;
       default:
         return false;
     }
+  }
+
+  const ALLOWED_TOURNAMENT_ACTION_ROLES = {
+    "tournament:edit": ["super_admin", "organizer"],
+    "tournament:delete": ["super_admin", "organizer"],
+    "registration:verify": ["super_admin", "organizer", "committee"],
+    "bracket:generate": ["super_admin", "organizer", "committee"],
+    "match:submit_result": ["super_admin", "organizer", "committee"],
+    "announcement:create": ["super_admin", "organizer", "committee"],
+  };
+
+  function getDeniedActionMessage(action, tournament) {
+    const user = getCurrentUserSafe();
+    if (!user || !user.role) {
+      return "Silakan masuk terlebih dahulu untuk melakukan aksi ini.";
+    }
+    const role = String(user.role).toLowerCase();
+    if (role === "committee" && tournament) {
+      const assigned = getCommitteeTournamentAssignment(tournament, user);
+      if (assigned === false) {
+        return "Akun panitia Anda tidak ditugaskan pada turnamen ini.";
+      }
+      if (assigned === null) {
+        return "Penugasan panitia pada turnamen ini belum dapat diverifikasi dari data API.";
+      }
+    }
+    if (role === "organizer" && tournament && tournament.organizer_id !== user.id) {
+      return "Anda hanya dapat mengelola turnamen milik Anda sendiri.";
+    }
+    if (action === "tournament:create") {
+      return "Hanya Organizer atau Super Admin yang dapat membuat turnamen.";
+    }
+    if (action === "team:create") {
+      return "Hanya Team Captain atau Super Admin yang dapat membuat tim.";
+    }
+    return "Anda tidak memiliki izin melakukan aksi ini.";
+  }
+
+  async function resolveAuthorizedTournament(tournamentId, action) {
+    const user = getCurrentUserSafe();
+    const role = user && user.role ? String(user.role).toLowerCase() : "";
+    const allowedRoles = ALLOWED_TOURNAMENT_ACTION_ROLES[action] || [];
+    if (!user || !allowedRoles.includes(role)) {
+      window.TurnamenUI.showToast(getDeniedActionMessage(action, null), "danger");
+      return null;
+    }
+    const tid = String(tournamentId || getRuntimeState().selectedTournamentId || "").trim();
+    if (!tid) {
+      window.TurnamenUI.showToast("Turnamen target tidak valid.", "warning");
+      return null;
+    }
+    const res = await window.TurnamenAPI.getTournamentById(tid);
+    if (!res.success || !res.data) {
+      window.TurnamenUI.showToast(res.message || "Gagal memuat detail turnamen.", "danger");
+      return null;
+    }
+    if (!canPerform(action, { tournament: res.data })) {
+      window.TurnamenUI.showToast(getDeniedActionMessage(action, res.data), "danger");
+      return null;
+    }
+    return res.data;
+  }
+
+  async function resolveAuthorizedTeam(
+    teamId,
+    deniedMessage = "Anda tidak memiliki izin mengelola tim ini."
+  ) {
+    const user = getCurrentUserSafe();
+    const role = user && user.role ? String(user.role).toLowerCase() : "";
+    if (!user || (role !== "super_admin" && role !== "team_captain")) {
+      window.TurnamenUI.showToast(deniedMessage, "danger");
+      return null;
+    }
+    if (!teamId) {
+      window.TurnamenUI.showToast("Tim target tidak valid.", "warning");
+      return null;
+    }
+    const res = await window.TurnamenAPI.getTeamById(teamId);
+    if (!res.success || !res.data) {
+      window.TurnamenUI.showToast(res.message || "Gagal memuat data tim.", "danger");
+      return null;
+    }
+    if (!canPerform("team:manage", { team: res.data })) {
+      window.TurnamenUI.showToast(deniedMessage, "danger");
+      return null;
+    }
+    return res.data;
   }
 
   function checkPageAccess(pageName) {
@@ -1563,6 +1667,12 @@
     const approvedTotal = allMyRegs.filter((r) => r.status === "approved").length;
     const activeSummary = activeReport && activeReport.summary ? activeReport.summary : null;
     const pendingActiveRegs = activeRegs.filter((r) => r.status === "pending");
+    const canAnnounceActive = Boolean(
+      ctx.active && canPerform("announcement:create", { tournament: ctx.active })
+    );
+    const canVerifyActive = Boolean(
+      ctx.active && canPerform("registration:verify", { tournament: ctx.active })
+    );
 
     container.innerHTML = `
       ${renderGamesErrorNotice()}
@@ -1573,7 +1683,7 @@
         </div>
         <div class="page-actions">
           ${
-            ctx.active
+            canAnnounceActive
               ? `<button type="button" class="btn btn-secondary" data-action="open-announcement-modal" data-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">+ Pengumuman</button>`
               : ""
           }
@@ -1638,7 +1748,11 @@
                     const max = Number(t.max_teams || 0);
                     const app = Number(t.approved_teams_count || 0);
                     const pct = max > 0 ? Math.round((app / max) * 100) : 0;
-                    const canDelete = t.status !== "ongoing" && t.status !== "completed";
+                    const canEdit = canPerform("tournament:edit", { tournament: t });
+                    const canDelete =
+                      canPerform("tournament:delete", { tournament: t }) &&
+                      t.status !== "ongoing" &&
+                      t.status !== "completed";
                     return `
                     <tr>
                       <td class="col-title">
@@ -1657,7 +1771,11 @@
                           <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
                           <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="match-management" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Skor</button>
                           <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
-                          <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Edit ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("edit", 14)}</button>
+                          ${
+                            canEdit
+                              ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Edit ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("edit", 14)}</button>`
+                              : ""
+                          }
                           ${
                             canDelete
                               ? `<button type="button" class="btn btn-danger btn-sm" data-action="confirm-delete-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Hapus ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("trash", 14)}</button>`
@@ -1681,14 +1799,19 @@
           <div class="card-header">
             <h3 class="card-title">Verifikasi Registrasi (${window.TurnamenUI.escapeHtml(ctx.active ? ctx.active.title : "Turnamen Aktif")})</h3>
             ${
-              ctx.active
+              canVerifyActive
                 ? `<button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Kelola Peserta</button>`
                 : ""
             }
           </div>
           ${
-            pendingActiveRegs.length > 0
-              ? `
+            !canVerifyActive
+              ? window.TurnamenUI.renderEmptyState(
+                  "Turnamen Bukan Milik Anda",
+                  "Turnamen aktif saat ini dikelola oleh organizer lain. Pilih turnamen dari daftar Turnamen Milik Anda untuk melakukan verifikasi peserta."
+                )
+              : pendingActiveRegs.length > 0
+                ? `
             <div class="table-container">
               <table class="data-table">
                 <thead><tr><th>Tim</th><th>Seed</th><th>Aksi</th></tr></thead>
@@ -1707,8 +1830,8 @@
                       <td class="tabular-nums">#${r.seed_number || "-"}</td>
                       <td>
                         <div class="row-actions">
-                          <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="approved">Setujui</button>
-                          <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="rejected">Tolak</button>
+                          <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-status="approved">Setujui</button>
+                          <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-status="rejected">Tolak</button>
                         </div>
                       </td>
                     </tr>
@@ -1719,10 +1842,10 @@
               </table>
             </div>
           `
-              : window.TurnamenUI.renderEmptyState(
-                  "Tidak Ada Antrean Pending",
-                  `${activeRegs.length} registrasi pada turnamen aktif sudah berada dalam status terverifikasi/selesai.`
-                )
+                : window.TurnamenUI.renderEmptyState(
+                    "Tidak Ada Antrean Pending",
+                    `${activeRegs.length} registrasi pada turnamen aktif sudah berada dalam status terverifikasi/selesai.`
+                  )
           }
         </div>
 
@@ -1769,6 +1892,22 @@
     );
     const completedMatches = activeMatches.filter((m) => m.status === "completed");
     const pendingRegs = activeRegs.filter((r) => r.status === "pending");
+    const committeeAssignment = ctx.active
+      ? getCommitteeTournamentAssignment(ctx.active, getCurrentUserSafe())
+      : null;
+    const canAnnounce = Boolean(
+      ctx.active && canPerform("announcement:create", { tournament: ctx.active })
+    );
+    const canSubmitScore = Boolean(
+      ctx.active && canPerform("match:submit_result", { tournament: ctx.active })
+    );
+    const canVerifyRegs = Boolean(
+      ctx.active && canPerform("registration:verify", { tournament: ctx.active })
+    );
+    const unverifiedLabel =
+      committeeAssignment === false
+        ? "Tidak ditugaskan pada turnamen ini"
+        : "Penugasan belum dapat diverifikasi";
 
     container.innerHTML = `
       ${renderGamesErrorNotice()}
@@ -1778,7 +1917,11 @@
         ctx.active
           ? `
           <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Bracket</button>
-          <button type="button" class="btn btn-primary btn-sm" data-action="open-announcement-modal" data-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">+ Buat Pengumuman</button>
+          ${
+            canAnnounce
+              ? `<button type="button" class="btn btn-primary btn-sm" data-action="open-announcement-modal" data-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">+ Buat Pengumuman</button>`
+              : ""
+          }
         `
           : ""
       )}
@@ -1846,6 +1989,18 @@
                 ${playableMatches
                   .map((m) => {
                     const maxWin = Math.ceil(Number(m.best_of || 3) / 2);
+                    const scoreActionHtml = canSubmitScore
+                      ? `
+                        <div class="score-inline-form">
+                          <label for="score-a-${window.TurnamenUI.escapeHtml(m.id)}" class="sr-only">Skor ${window.TurnamenUI.escapeHtml(m.team_a_name)}</label>
+                          <input id="score-a-${window.TurnamenUI.escapeHtml(m.id)}" type="number" min="0" max="${maxWin}" value="${m.score_a}" class="form-input tabular-nums score-inline-input" />
+                          <span aria-hidden="true">:</span>
+                          <label for="score-b-${window.TurnamenUI.escapeHtml(m.id)}" class="sr-only">Skor ${window.TurnamenUI.escapeHtml(m.team_b_name)}</label>
+                          <input id="score-b-${window.TurnamenUI.escapeHtml(m.id)}" type="number" min="0" max="${maxWin}" value="${m.score_b}" class="form-input tabular-nums score-inline-input" />
+                          <button type="button" class="btn btn-primary btn-sm" data-action="submit-score" data-id="${window.TurnamenUI.escapeHtml(m.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Sahkan</button>
+                        </div>
+                      `
+                      : `<span class="table-subtext">${unverifiedLabel}</span>`;
                     return `
                     <tr>
                       <td><strong>${window.TurnamenUI.escapeHtml(m.round_name)}</strong></td>
@@ -1863,16 +2018,7 @@
                         </div>
                       </td>
                       <td>${window.TurnamenUI.renderStatusBadge(m.status)}</td>
-                      <td>
-                        <div class="score-inline-form">
-                          <label for="score-a-${window.TurnamenUI.escapeHtml(m.id)}" class="sr-only">Skor ${window.TurnamenUI.escapeHtml(m.team_a_name)}</label>
-                          <input id="score-a-${window.TurnamenUI.escapeHtml(m.id)}" type="number" min="0" max="${maxWin}" value="${m.score_a}" class="form-input tabular-nums score-inline-input" />
-                          <span aria-hidden="true">:</span>
-                          <label for="score-b-${window.TurnamenUI.escapeHtml(m.id)}" class="sr-only">Skor ${window.TurnamenUI.escapeHtml(m.team_b_name)}</label>
-                          <input id="score-b-${window.TurnamenUI.escapeHtml(m.id)}" type="number" min="0" max="${maxWin}" value="${m.score_b}" class="form-input tabular-nums score-inline-input" />
-                          <button type="button" class="btn btn-primary btn-sm" data-action="submit-score" data-id="${window.TurnamenUI.escapeHtml(m.id)}">Sahkan</button>
-                        </div>
-                      </td>
+                      <td>${scoreActionHtml}</td>
                     </tr>
                   `;
                   })
@@ -1910,10 +2056,16 @@
                       </td>
                       <td>${window.TurnamenUI.renderStatusBadge(r.status)}</td>
                       <td>
-                        <div class="row-actions">
-                          <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="approved">Setujui</button>
-                          <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="rejected">Tolak</button>
-                        </div>
+                        ${
+                          canVerifyRegs
+                            ? `
+                          <div class="row-actions">
+                            <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-status="approved">Setujui</button>
+                            <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-status="rejected">Tolak</button>
+                          </div>
+                        `
+                            : `<span class="table-subtext">${unverifiedLabel}</span>`
+                        }
                       </td>
                     </tr>
                   `
@@ -2510,6 +2662,10 @@
   }
 
   async function submitCreateTournament() {
+    if (!canPerform("tournament:create")) {
+      window.TurnamenUI.showToast(getDeniedActionMessage("tournament:create", null), "danger");
+      return;
+    }
     const payload = {
       title: (document.getElementById("new-tour-title")?.value || "").trim(),
       game_id: document.getElementById("new-tour-game")?.value || "",
@@ -2536,16 +2692,8 @@
   }
 
   async function openEditTournamentModal(tournamentId) {
-    const res = await window.TurnamenAPI.getTournamentById(tournamentId);
-    if (!res.success || !res.data) {
-      window.TurnamenUI.showToast(res.message || "Gagal memuat detail turnamen.", "danger");
-      return;
-    }
-    const t = res.data;
-    if (!canPerform("tournament:edit", { tournament: t })) {
-      window.TurnamenUI.showToast("Anda tidak memiliki izin mengubah turnamen ini.", "danger");
-      return;
-    }
+    const t = await resolveAuthorizedTournament(tournamentId, "tournament:edit");
+    if (!t) return;
 
     window.TurnamenUI.openModal({
       title: `Edit Turnamen: ${t.title}`,
@@ -2594,6 +2742,8 @@
   }
 
   async function submitEditTournament(tournamentId) {
+    const t = await resolveAuthorizedTournament(tournamentId, "tournament:edit");
+    if (!t) return;
     const payload = {
       title: (document.getElementById("edit-tour-title")?.value || "").trim(),
       status: document.getElementById("edit-tour-status")?.value || "open_registration",
@@ -2602,7 +2752,7 @@
       prize_pool: Number(document.getElementById("edit-tour-prize")?.value || 0),
       description: (document.getElementById("edit-tour-desc")?.value || "").trim(),
     };
-    const res = await window.TurnamenAPI.updateTournament(tournamentId, payload);
+    const res = await window.TurnamenAPI.updateTournament(t.id, payload);
     if (!res.success) {
       window.TurnamenUI.showToast(res.message, "danger");
       return;
@@ -2612,23 +2762,34 @@
     await navigateTo(currentPage);
   }
 
-  function confirmDeleteTournament(tournamentId) {
+  async function confirmDeleteTournament(tournamentId) {
+    const t = await resolveAuthorizedTournament(tournamentId, "tournament:delete");
+    if (!t) return;
+    if (t.status === "ongoing" || t.status === "completed") {
+      window.TurnamenUI.showToast(
+        "Turnamen berstatus ongoing atau completed tidak dapat dihapus.",
+        "warning"
+      );
+      return;
+    }
     window.TurnamenUI.openModal({
       title: "Konfirmasi Hapus Turnamen",
       bodyHtml: `
         <p style="margin:0; color:var(--text-secondary);">
-          Apakah Anda yakin ingin menghapus turnamen ini? Turnamen berstatus <code>ongoing</code> atau <code>completed</code> tidak dapat dihapus oleh sistem.
+          Apakah Anda yakin ingin menghapus turnamen <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>? Turnamen berstatus <code>ongoing</code> atau <code>completed</code> tidak dapat dihapus oleh sistem.
         </p>
       `,
       footerHtml: `
         <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
-        <button type="button" class="btn btn-danger" data-action="execute-delete-tournament" data-id="${window.TurnamenUI.escapeHtml(tournamentId)}">Hapus Turnamen</button>
+        <button type="button" class="btn btn-danger" data-action="execute-delete-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}">Hapus Turnamen</button>
       `,
     });
   }
 
   async function executeDeleteTournament(tournamentId) {
-    const res = await window.TurnamenAPI.deleteTournament(tournamentId);
+    const t = await resolveAuthorizedTournament(tournamentId, "tournament:delete");
+    if (!t) return;
+    const res = await window.TurnamenAPI.deleteTournament(t.id);
     if (!res.success) {
       window.TurnamenUI.showToast(res.message, "danger");
       return;
@@ -2791,6 +2952,7 @@
           </div>
           ${registrationControlHtml}
         </div>
+        ${renderCommitteeAssignmentNotice(t)}
 
         ${
           regs.length === 0
@@ -2838,8 +3000,8 @@
                         canVerify
                           ? `
                         <div class="row-actions">
-                          <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="approved">Setujui</button>
-                          <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-status="rejected">Tolak</button>
+                          <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}" data-status="approved">Setujui</button>
+                          <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}" data-status="rejected">Tolak</button>
                         </div>
                       `
                           : ""
@@ -2860,13 +3022,25 @@
   }
 
   async function registerSelectedTeam(tournamentId) {
+    if (!canPerform("registration:create")) {
+      window.TurnamenUI.showToast(
+        "Hanya Team Captain atau Super Admin yang dapat mendaftarkan tim.",
+        "danger"
+      );
+      return;
+    }
     const teamId = document.getElementById("reg-team-select")?.value;
     if (!teamId) {
       window.TurnamenUI.showToast("Pilih tim yang valid terlebih dahulu.", "warning");
       return;
     }
+    const ownedTeam = await resolveAuthorizedTeam(
+      teamId,
+      "Anda hanya dapat mendaftarkan tim milik Anda sendiri."
+    );
+    if (!ownedTeam) return;
     const res = await window.TurnamenAPI.registerTeamToTournament(tournamentId, {
-      team_id: teamId,
+      team_id: ownedTeam.id,
       notes: "Pendaftaran via Desktop UI",
     });
     if (!res.success) {
@@ -2877,7 +3051,9 @@
     await navigateTo("tournament-detail");
   }
 
-  async function verifyRegistration(registrationId, newStatus) {
+  async function verifyRegistration(registrationId, newStatus, tournamentId = "") {
+    const t = await resolveAuthorizedTournament(tournamentId, "registration:verify");
+    if (!t) return;
     const res = await window.TurnamenAPI.updateRegistrationStatus(
       registrationId,
       newStatus,
@@ -3199,6 +3375,10 @@
   }
 
   async function submitCreateTeam() {
+    if (!canPerform("team:create")) {
+      window.TurnamenUI.showToast(getDeniedActionMessage("team:create", null), "danger");
+      return;
+    }
     const payload = {
       name: (document.getElementById("new-team-name")?.value || "").trim(),
       tag: (document.getElementById("new-team-tag")?.value || "").trim(),
@@ -3289,16 +3469,8 @@
   }
 
   async function openEditTeamModal(teamId) {
-    const res = await window.TurnamenAPI.getTeamById(teamId);
-    if (!res.success || !res.data) {
-      window.TurnamenUI.showToast(res.message || "Gagal memuat data tim.", "danger");
-      return;
-    }
-    const tm = res.data;
-    if (!canPerform("team:manage", { team: tm })) {
-      window.TurnamenUI.showToast("Anda tidak memiliki izin mengubah tim ini.", "danger");
-      return;
-    }
+    const tm = await resolveAuthorizedTeam(teamId, "Anda tidak memiliki izin mengubah tim ini.");
+    if (!tm) return;
 
     window.TurnamenUI.openModal({
       title: `Edit Tim: ${tm.name}`,
@@ -3326,12 +3498,14 @@
   }
 
   async function submitEditTeam(teamId) {
+    const tm = await resolveAuthorizedTeam(teamId, "Anda tidak memiliki izin mengubah tim ini.");
+    if (!tm) return;
     const payload = {
       name: (document.getElementById("edit-team-name")?.value || "").trim(),
       tag: (document.getElementById("edit-team-tag")?.value || "").trim(),
       region: (document.getElementById("edit-team-region")?.value || "").trim(),
     };
-    const res = await window.TurnamenAPI.updateTeam(teamId, payload);
+    const res = await window.TurnamenAPI.updateTeam(tm.id, payload);
     if (!res.success) {
       window.TurnamenUI.showToast(res.message, "danger");
       return;
@@ -3342,23 +3516,11 @@
   }
 
   async function openAddMemberModal(teamId) {
-    if (!teamId) {
-      window.TurnamenUI.showToast("Tim target tidak valid.", "warning");
-      return;
-    }
-    const res = await window.TurnamenAPI.getTeamById(teamId);
-    if (!res.success || !res.data) {
-      window.TurnamenUI.showToast(res.message || "Gagal memuat data tim.", "danger");
-      return;
-    }
-    const tm = res.data;
-    if (!canPerform("team:manage", { team: tm })) {
-      window.TurnamenUI.showToast(
-        "Anda tidak memiliki izin menambah anggota pada tim ini.",
-        "danger"
-      );
-      return;
-    }
+    const tm = await resolveAuthorizedTeam(
+      teamId,
+      "Anda tidak memiliki izin menambah anggota pada tim ini."
+    );
+    if (!tm) return;
 
     window.TurnamenUI.openModal({
       title: `Tambah Anggota Roster: ${tm.name} [${tm.tag}]`,
@@ -3389,12 +3551,17 @@
   }
 
   async function submitAddMember(teamId) {
+    const tm = await resolveAuthorizedTeam(
+      teamId,
+      "Anda tidak memiliki izin menambah anggota pada tim ini."
+    );
+    if (!tm) return;
     const payload = {
       nickname: (document.getElementById("member-nickname")?.value || "").trim(),
       ingame_id: (document.getElementById("member-ingame-id")?.value || "").trim(),
       member_role: document.getElementById("member-role")?.value || "starter",
     };
-    const res = await window.TurnamenAPI.addTeamMember(teamId, payload);
+    const res = await window.TurnamenAPI.addTeamMember(tm.id, payload);
     if (!res.success) {
       window.TurnamenUI.showToast(res.message, "danger");
       return;
@@ -3528,7 +3695,7 @@
                     let actionCell = `<span class="table-subtext">Menunggu Lawan</span>`;
                     if (m.status === "completed") {
                       actionCell = canManageMatches
-                        ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open-override-score" data-id="${window.TurnamenUI.escapeHtml(m.id)}" data-team-a="${window.TurnamenUI.escapeHtml(m.team_a_name)}" data-team-b="${window.TurnamenUI.escapeHtml(m.team_b_name)}" data-score-a="${m.score_a}" data-score-b="${m.score_b}" data-max="${maxWin}">Koreksi Audit</button>`
+                        ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open-override-score" data-id="${window.TurnamenUI.escapeHtml(m.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-team-a="${window.TurnamenUI.escapeHtml(m.team_a_name)}" data-team-b="${window.TurnamenUI.escapeHtml(m.team_b_name)}" data-score-a="${m.score_a}" data-score-b="${m.score_b}" data-max="${maxWin}">Koreksi Audit</button>`
                         : `<span class="table-subtext">Terkunci (Audited)</span>`;
                     } else if (m.status === "bye") {
                       actionCell = `<span class="table-subtext">Lolos Otomatis (BYE)</span>`;
@@ -3541,7 +3708,7 @@
                           <span aria-hidden="true">:</span>
                           <label for="score-b-${window.TurnamenUI.escapeHtml(m.id)}" class="sr-only">Skor ${window.TurnamenUI.escapeHtml(m.team_b_name)}</label>
                           <input id="score-b-${window.TurnamenUI.escapeHtml(m.id)}" type="number" min="0" max="${maxWin}" value="${m.score_b}" class="form-input tabular-nums score-inline-input" />
-                          <button type="button" class="btn btn-primary btn-sm" data-action="submit-score" data-id="${window.TurnamenUI.escapeHtml(m.id)}">Sahkan</button>
+                          <button type="button" class="btn btn-primary btn-sm" data-action="submit-score" data-id="${window.TurnamenUI.escapeHtml(m.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Sahkan</button>
                         </div>
                       `
                         : `<span class="table-subtext">Siap Bertanding</span>`;
@@ -3588,7 +3755,9 @@
     }
   }
 
-  async function submitScore(matchId) {
+  async function submitScore(matchId, tournamentId = "") {
+    const t = await resolveAuthorizedTournament(tournamentId, "match:submit_result");
+    if (!t) return;
     const scoreA = Number(document.getElementById(`score-a-${matchId}`)?.value ?? 0);
     const scoreB = Number(document.getElementById(`score-b-${matchId}`)?.value ?? 0);
 
@@ -3610,7 +3779,12 @@
     await navigateTo(currentPage);
   }
 
-  function openOverrideScoreModal(matchData) {
+  async function openOverrideScoreModal(matchData) {
+    const t = await resolveAuthorizedTournament(
+      matchData && matchData.tournamentId,
+      "match:submit_result"
+    );
+    if (!t) return;
     window.TurnamenUI.openModal({
       title: "Koreksi Audit Skor Pertandingan",
       bodyHtml: `
@@ -3634,12 +3808,14 @@
       `,
       footerHtml: `
         <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
-        <button type="button" class="btn btn-danger" data-action="submit-override-score" data-id="${window.TurnamenUI.escapeHtml(matchData.id)}">Sahkan Koreksi</button>
+        <button type="button" class="btn btn-danger" data-action="submit-override-score" data-id="${window.TurnamenUI.escapeHtml(matchData.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Sahkan Koreksi</button>
       `,
     });
   }
 
-  async function submitOverrideScore(matchId) {
+  async function submitOverrideScore(matchId, tournamentId = "") {
+    const t = await resolveAuthorizedTournament(tournamentId, "match:submit_result");
+    if (!t) return;
     const scoreA = Number(document.getElementById("override-score-a")?.value ?? 0);
     const scoreB = Number(document.getElementById("override-score-b")?.value ?? 0);
     const notes = (document.getElementById("override-notes")?.value || "").trim();
@@ -3723,6 +3899,7 @@
           <p>Pemenang setiap pertandingan otomatis melaju ke slot babak berikutnya setelah skor disahkan.</p>
         </div>
       </div>
+      ${renderCommitteeAssignmentNotice(ctx.active)}
 
       <div class="card">
         <div class="bracket-legend">
@@ -3808,7 +3985,9 @@
     scheduleBracketConnectors();
   }
 
-  function confirmRegenerateBracket(tournamentId) {
+  async function confirmRegenerateBracket(tournamentId) {
+    const t = await resolveAuthorizedTournament(tournamentId, "bracket:generate");
+    if (!t) return;
     window.TurnamenUI.openModal({
       title: "Konfirmasi Reset Bracket",
       bodyHtml: `
@@ -3818,13 +3997,15 @@
       `,
       footerHtml: `
         <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
-        <button type="button" class="btn btn-primary" data-action="regenerate-bracket" data-id="${window.TurnamenUI.escapeHtml(tournamentId)}">Lanjutkan Generate Ulang</button>
+        <button type="button" class="btn btn-primary" data-action="regenerate-bracket" data-id="${window.TurnamenUI.escapeHtml(t.id)}">Lanjutkan Generate Ulang</button>
       `,
     });
   }
 
   async function regenerateBracket(tournamentId) {
-    const res = await window.TurnamenAPI.generateBracket(tournamentId);
+    const t = await resolveAuthorizedTournament(tournamentId, "bracket:generate");
+    if (!t) return;
+    const res = await window.TurnamenAPI.generateBracket(t.id);
     if (!res.success) {
       window.TurnamenUI.showToast(res.message, "danger");
       return;
@@ -3886,6 +4067,7 @@
           <p>Informasi teknis, pembaruan jadwal, dan instruksi check-in resmi dari panitia.</p>
         </div>
       </div>
+      ${renderCommitteeAssignmentNotice(ctx.active)}
 
       <div class="filter-bar">
         <label for="filter-announcement-priority" class="context-bar-label">Prioritas:</label>
@@ -3940,7 +4122,9 @@
     }
   }
 
-  function openAnnouncementModal(tournamentId) {
+  async function openAnnouncementModal(tournamentId) {
+    const t = await resolveAuthorizedTournament(tournamentId, "announcement:create");
+    if (!t) return;
     window.TurnamenUI.openModal({
       title: "Publikasikan Pengumuman Resmi",
       bodyHtml: `
@@ -3969,19 +4153,21 @@
       `,
       footerHtml: `
         <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
-        <button type="button" class="btn btn-primary" data-action="submit-announcement" data-id="${window.TurnamenUI.escapeHtml(tournamentId)}">Publikasikan</button>
+        <button type="button" class="btn btn-primary" data-action="submit-announcement" data-id="${window.TurnamenUI.escapeHtml(t.id)}">Publikasikan</button>
       `,
     });
   }
 
   async function submitAnnouncement(tournamentId) {
+    const t = await resolveAuthorizedTournament(tournamentId, "announcement:create");
+    if (!t) return;
     const payload = {
       title: (document.getElementById("ann-title")?.value || "").trim(),
       priority: document.getElementById("ann-priority")?.value || "normal",
       content: (document.getElementById("ann-content")?.value || "").trim(),
       is_pinned: Boolean(document.getElementById("ann-pinned")?.checked),
     };
-    const res = await window.TurnamenAPI.createAnnouncement(tournamentId, payload);
+    const res = await window.TurnamenAPI.createAnnouncement(t.id, payload);
     if (!res.success) {
       window.TurnamenUI.showToast(res.message, "danger");
       return;
@@ -4563,11 +4749,11 @@
       if (!target) return;
       const action = target.getAttribute("data-action");
       const id = target.getAttribute("data-id") || "";
+      const tournamentId = target.getAttribute("data-tournament-id") || "";
 
       switch (action) {
         case "go-page": {
           const page = target.getAttribute("data-page") || "dashboard";
-          const tournamentId = target.getAttribute("data-tournament-id") || "";
           navigateTo(page, tournamentId ? { tournamentId } : {});
           break;
         }
@@ -4605,7 +4791,7 @@
           break;
         case "verify-registration": {
           const nextStatus = target.getAttribute("data-status") || "approved";
-          verifyRegistration(id, nextStatus);
+          verifyRegistration(id, nextStatus, tournamentId);
           break;
         }
         case "open-create-team":
@@ -4630,11 +4816,12 @@
           submitAddMember(id);
           break;
         case "submit-score":
-          submitScore(id);
+          submitScore(id, tournamentId);
           break;
         case "open-override-score":
           openOverrideScoreModal({
             id,
+            tournamentId,
             teamA: target.getAttribute("data-team-a") || "Team A",
             teamB: target.getAttribute("data-team-b") || "Team B",
             scoreA: Number(target.getAttribute("data-score-a") || 0),
@@ -4643,7 +4830,7 @@
           });
           break;
         case "submit-override-score":
-          submitOverrideScore(id);
+          submitOverrideScore(id, tournamentId);
           break;
         case "confirm-regenerate-bracket":
           confirmRegenerateBracket(id);
