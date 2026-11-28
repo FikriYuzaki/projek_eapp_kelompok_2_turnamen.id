@@ -11,7 +11,7 @@ Werkzeug==3.0.4
 requests==2.32.3
 
 # Desktop UI Bridge (Python Eel + Bottle/Gevent stack)
-Eel==0.16.0
+Eel==0.18.2
 bottle==0.12.25
 bottle-websocket==0.2.9
 gevent==24.2.1
@@ -23,7 +23,7 @@ pyparsing==3.1.4
 python-dotenv==1.0.1
 
 # Supabase Integration (used when APP_MODE=supabase)
-supabase==2.7.4
+supabase==2.34.1
 
 # Testing & Quality Gates
 pytest==8.3.2

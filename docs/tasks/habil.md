@@ -33,6 +33,7 @@ Menyediakan fondasi penyimpanan data dan keamanan identitas yang kokoh, di mana 
 
 ## 5. File yang Harus Dibuat / Diubah
 - `supabase/migrations/0001_initial_schema.sql`
+- `supabase/migrations/0002_security_hardening.sql`
 - `supabase/seed.sql`
 - `backend/infrastructure/supabase/client.py`
 - `backend/repositories/interfaces/repository_protocol.py`
@@ -42,6 +43,7 @@ Menyediakan fondasi penyimpanan data dan keamanan identitas yang kokoh, di mana 
 - `backend/repositories/factory.py`
 - `backend/modules/auth/permissions.py`
 - `backend/modules/auth/service.py`
+- `tests/unit/test_auth_and_permissions.py`
 
 ## 6. Batas File yang Tidak Boleh Diubah Tanpa Koordinasi
 - `desktop/web/pages/*` dan `desktop/web/assets/css/*` (Milik **Ferlita**).
@@ -63,28 +65,53 @@ File `backend/repositories/mock/mock_data.py` menyediakan dataset awal yang kons
 - 5 akun profil (`super_admin`, `organizer`, `committee`, `team_captain`, `player`) dengan password demo `turnamen123`.
 - 3 game, 2 turnamen, 8 tim, 16 anggota tim, 8 registrasi `approved`, 7 pertandingan bracket 8 tim, pengumuman, dan activity logs.
 
-## 10. Cara Menjalankan Modul
+## 10. Konfigurasi `.env`, Migrasi, dan Cara Menjalankan Pengujian
+
+### A. Konfigurasi `.env`
+- Mode default pengembangan lokal adalah `APP_MODE=mock` (tidak memerlukan koneksi internet atau kredensial cloud).
+- Untuk mode online (`APP_MODE=supabase`), isi variabel berikut di `.env` lokal (jangan pernah di-commit ke Git):
+  ```env
+  APP_MODE=supabase
+  SUPABASE_URL=https://<project-ref>.supabase.co
+  SUPABASE_ANON_KEY=eyJ... # Gunakan 'anon' 'public' key berformat JWT dari Project Settings -> API
+  ```
+- **Penting:** Jangan pernah menggunakan `service_role` key atau `sb_secret_` key. `create_supabase_client()` akan menolak key tersebut secara otomatis.
+
+### B. Cara Menjalankan Migrasi Database
+Jalankan secara berurutan pada Supabase SQL Editor:
+1. `supabase/migrations/0001_initial_schema.sql`
+2. `supabase/migrations/0002_security_hardening.sql`
+3. `supabase/seed.sql` *(opsional untuk data awal)*
+
+### C. Cara Menjalankan Pengujian
 ```powershell
-# Menjalankan unit test khusus autentikasi, permission, dan repository dalam mock mode
-pytest tests/unit/test_auth_and_permissions.py -v
+.\.venv\Scripts\python.exe -m pytest -v
+.\.venv\Scripts\python.exe run.py --check
+.\.venv\Scripts\python.exe scripts/verify_starter.py
+.\.venv\Scripts\python.exe -m pip check
+git diff --check
 ```
 
 ## 11. Skenario Pengujian
-1. **Test Login & Sesi Mock:** Login dengan `organizer@turnamen.in` / `turnamen123`, pastikan token dikembalikan dan `get_current_user(token)` mengenali role `organizer`.
-2. **Test Anti-Privilege Escalation:** Coba lakukan `register` dengan meminta `role="super_admin"`, pastikan ditolak oleh `AuthService` dengan `FORBIDDEN`.
-3. **Test Matriks RBAC:** Pastikan role `player` ditolak saat mencoba membuat turnamen atau mengesahkan skor pertandingan.
-4. **Test Konsistensi Repository:** Pastikan operasi CRUD pada `MockDataStoreRepository` menjaga integritas foreign key (`game_id`, `tournament_id`, `team_id`).
+1. **Test Login & Sesi Mock:** Login 5 akun demo (`admin`, `organizer`, `committee`, `captain`, `player`) dengan password `turnamen123`, pastikan token `tok_` dikembalikan, `get_user_by_token()` mengenali role, dan `logout()` menghapus sesi.
+2. **Test Pemisahan Mode Online Supabase Auth:** Pastikan pada mode Supabase (`is_supabase_mode=True`), registrasi, login, verifikasi token JWT, dan logout didelegasikan ke Supabase Auth (`auth_sign_up`, `auth_sign_in`, `auth_get_user`, `auth_sign_out`), tidak menyimpan `_sessions` atau `_password_hashes` di memori, menolak token `tok_`, dan menonaktifkan header simulasi mock.
+3. **Test Validasi Kredensial Supabase Client:** Pastikan `create_supabase_client()` menolak `service_role` JWT, `sb_secret_` key, dan URL tidak valid tanpa melakukan monkey-patch pada modul internal SDK.
+4. **Test Anti-Privilege Escalation:** Coba lakukan `register` dengan meminta `role="super_admin"`, `organizer`, atau `committee`, pastikan ditolak oleh `AuthService` dengan `FORBIDDEN` serta dijaga oleh trigger `trg_prevent_profile_privilege_escalation` di PostgreSQL.
+5. **Test Konsistensi Repository & Transaksi Atomik Bracket:** Pastikan operasi CRUD menjaga integritas foreign key dan `replace_tournament_matches()` bersifat atomik (menggunakan RPC `public.replace_tournament_matches` pada Supabase dan validasi pra-mutasi pada Mock).
 
 ## 12. Acceptance Criteria
-- 12 tabel PostgreSQL lengkap dengan PK UUID, FK, unique/check constraints, trigger `updated_at`, index, dan kebijakan dasar RLS.
-- Tidak ada penggunaan `service_role` key di sisi klien atau penyimpanan password plaintext.
-- Keputusan otorisasi didasarkan pada `profiles.role`, bukan metadata yang dapat diedit pengguna.
+- 12 tabel PostgreSQL lengkap dengan PK UUID, FK (termasuk `profiles.auth_user_id -> auth.users(id)`), unique/check constraints, trigger `updated_at`, index, dan kebijakan RLS least-privilege di `0002_security_hardening.sql`.
+- Tidak ada kebijakan RLS tulis terbuka (`FOR ALL USING (true)`) atau pembacaan publik pada tabel sensitif (`profiles`, `payments`, `activity_logs`, `tournament_staff`).
+- Tidak ada penggunaan `service_role` key di sisi klien, monkey-patch SDK, atau penyimpanan password plaintext/fallback demo hash pada mode produksi.
+- Keputusan otorisasi selalu didasarkan pada `public.profiles.role`, bukan metadata yang dapat diedit pengguna.
 
 ## 13. Checklist Pekerjaan
-- [ ] Memverifikasi DDL di `supabase/migrations/0001_initial_schema.sql` dan `supabase/seed.sql`.
-- [ ] Memastikan `MockDataStoreRepository` dan `SupabaseDataStoreRepository` mematuhi `DataStoreRepositoryProtocol`.
-- [ ] Memastikan seluruh 5 role diuji pada `tests/unit/test_auth_and_permissions.py`.
-- [ ] Menyempurnakan kebijakan RLS dan adapter Supabase saat kredensial proyek uji tersedia.
+- [x] Memverifikasi DDL dasar di `supabase/migrations/0001_initial_schema.sql` dan `supabase/seed.sql`.
+- [x] Menambahkan migrasi korektif keamanan RLS & Supabase Auth di `supabase/migrations/0002_security_hardening.sql`.
+- [x] Memperbaiki `backend/infrastructure/supabase/client.py` tanpa monkey-patch regex global.
+- [x] Memisahkan alur autentikasi `mock` dan `supabase` secara bersih di `AuthService` dan `SupabaseDataStoreRepository`.
+- [x] Memastikan `MockDataStoreRepository` dan `SupabaseDataStoreRepository` mematuhi `DataStoreRepositoryProtocol` dengan penggantian bracket atomik.
+- [x] Memastikan seluruh 5 role, validasi client, pemisahan auth online, dan kebijakan RLS diuji pada `tests/unit/test_auth_and_permissions.py`.
 
 ## 14. Git Branch Assignment & Workflow
 

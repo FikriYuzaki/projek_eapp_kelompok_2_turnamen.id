@@ -52,11 +52,13 @@ Daftar `error.code` standar:
 | **Auth** | `POST /api/v1/auth/login` | Publik | **Berfungsi Penuh (Mock)** | Login dengan `email` & `password`, mengembalikan token sesi dan profil. |
 | **Auth** | `POST /api/v1/auth/logout` | Terautentikasi | **Berfungsi Penuh (Mock)** | Mengakhiri sesi aktif pengguna. |
 | **Auth** | `GET /api/v1/auth/me` | Terautentikasi | **Berfungsi Penuh (Mock)** | Mengambil profil dan role pengguna yang sedang login. |
-| **Games** | `GET /api/v1/games` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil daftar seluruh game yang tersedia. |
-| **Games** | `GET /api/v1/games/<id>` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil detail konfigurasi satu game berdasarkan ID/slug. |
-| **Tournaments** | `GET /api/v1/tournaments` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil daftar turnamen (mendukung filter `?status=` & `?game_id=`). |
+| **Games** | `GET /api/v1/games` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil daftar seluruh game beserta metadata custom artwork (`custom_artwork_url`, `artwork_source`). |
+| **Games** | `GET /api/v1/games/<id>` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil detail konfigurasi satu game berdasarkan ID/slug beserta metadata artwork aktif. |
+| **Games** | `POST /api/v1/games/<id>/artwork` | `super_admin` | **Berfungsi Penuh** | Mengunggah dan menyimpan poster game kustom (JPEG/PNG/WebP <= 5 MB) ke bucket `game-artwork` dan tabel `game_artwork_overrides`. |
+| **Games** | `DELETE /api/v1/games/<id>/artwork` | `super_admin` | **Berfungsi Penuh** | Menghapus override poster kustom sehingga game kembali menggunakan artwork resmi Wave 6.10. |
+| **Tournaments** | `GET /api/v1/tournaments` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil daftar turnamen (filter `?status=` & `?game_id=`); bagi role `committee` menyertakan flag `is_assigned_committee` (`true`/`false`) tanpa mengekspos daftar staf ke publik. |
 | **Tournaments** | `POST /api/v1/tournaments` | `super_admin`, `organizer` | **Berfungsi Penuh** | Membuat turnamen baru. |
-| **Tournaments** | `GET /api/v1/tournaments/<id>` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil detail turnamen beserta jumlah tim terdaftar. |
+| **Tournaments** | `GET /api/v1/tournaments/<id>` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil detail turnamen beserta jumlah tim terdaftar dan `is_assigned_committee` khusus untuk actor `committee`. |
 | **Tournaments** | `PATCH /api/v1/tournaments/<id>` | `super_admin`, `organizer` | **Berfungsi Penuh** | Memperbarui informasi atau status turnamen. |
 | **Tournaments** | `DELETE /api/v1/tournaments/<id>` | `super_admin`, `organizer` | **Berfungsi Penuh** | Membatalkan atau menghapus turnamen berstatus draft. |
 | **Teams** | `GET /api/v1/teams` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil daftar seluruh tim. |
@@ -64,7 +66,7 @@ Daftar `error.code` standar:
 | **Teams** | `GET /api/v1/teams/<id>` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil detail tim beserta daftar anggotanya (`members`). |
 | **Teams** | `PATCH /api/v1/teams/<id>` | `super_admin`, `team_captain` | **Berfungsi Penuh** | Memperbarui nama, tag, atau region tim. |
 | **Teams** | `POST /api/v1/teams/<id>/members` | `super_admin`, `team_captain` | **Berfungsi Penuh** | Menambahkan anggota pemain ke dalam tim. |
-| **Registrations** | `GET /api/v1/tournaments/<id>/registrations` | Semua Role | **Berfungsi Penuh** | Mengambil daftar tim yang mendaftar pada turnamen `<id>`. |
+| **Registrations** | `GET /api/v1/tournaments/<id>/registrations` | Semua Role | **Berfungsi Penuh** | Mengambil daftar registrasi turnamen `<id>` sesuai visibilitas role (publik hanya `approved`, `team_captain` + tim miliknya, manajer melihat semua status). |
 | **Registrations** | `POST /api/v1/tournaments/<id>/registrations` | `super_admin`, `team_captain` | **Berfungsi Penuh** | Mendaftarkan tim ke turnamen `<id>`. |
 | **Registrations** | `PATCH /api/v1/registrations/<id>/status` | `super_admin`, `organizer`, `committee` | **Berfungsi Penuh** | Mengubah status pendaftaran (`approved` / `rejected` / `withdrawn`). |
 | **Matches** | `GET /api/v1/tournaments/<id>/matches` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil daftar pertandingan dan struktur bracket turnamen `<id>`. |
@@ -72,7 +74,7 @@ Daftar `error.code` standar:
 | **Matches** | `PATCH /api/v1/matches/<id>/result` | `super_admin`, `organizer`, `committee` | **Berfungsi Penuh** | Memvalidasi skor, menetapkan pemenang, dan memajukan ke babak berikutnya. |
 | **Announcements** | `GET /api/v1/tournaments/<id>/announcements` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil daftar pengumuman pada turnamen `<id>`. |
 | **Announcements** | `POST /api/v1/tournaments/<id>/announcements` | `super_admin`, `organizer`, `committee` | **Berfungsi Penuh** | Mempublikasikan pengumuman baru pada turnamen `<id>`. |
-| **Reports** | `GET /api/v1/tournaments/<id>/reports` | Semua Role | **Berfungsi Penuh** | Mengambil ringkasan statistik turnamen, progres pertandingan, dan juara. |
+| **Reports** | `GET /api/v1/tournaments/<id>/reports` | Semua Role | **Berfungsi Penuh** | Mengambil ringkasan statistik turnamen dan juara; data operasional (`pending_registrations`, `total_registrations`, `recent_activity`) hanya disertakan untuk `super_admin`, `organizer` pemilik, dan `committee` ditugaskan. |
 | **Reports** | `GET /api/v1/tournaments/<id>/standings` | Publik / Semua Role | **Berfungsi Penuh** | Mengambil peringkat/klasemen tim berdasarkan progres babak dan rekor menang-kalah. |
 
 ---

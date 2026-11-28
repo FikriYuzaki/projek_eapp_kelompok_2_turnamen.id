@@ -1,100 +1,117 @@
-# DESIGN.md — Arahan Visual Awal Turnamen.in (DRAFT)
+# DESIGN.md: Sistem Desain Futuristic Arena Turnamen.in
 
-> **Status Dokumen:** DRAFT AWAL — Menunggu Tinjauan dan Persetujuan **Ferlita** (*Project Coordinator & UI/UX Designer*).  
-> **Catatan Penting:** Dokumen ini memberikan fondasi awal agar pengembangan paralel dapat berjalan. Palet warna, tipografi, dan tata letak final **belum dikunci** dan berada di bawah wewenang Ferlita. Skill kualitas seperti `antislop-ui` dan `frontend-design` berfungsi sebagai filter kualitas dan keterbacaan, bukan pengganti keputusan desain koordinator.
+> **Status Dokumen:** ACTIVE DESIGN SYSTEM (Branch `feature/fikri-ui-ux`)
+> **Pemilik Desain:** Fikri (System Integration & Desktop UI/UX Redesign)
+> **Dial Desain:** `ENERGY 2 / RHYTHM 2 / MOTION 1`
 
 ---
 
-## 1. Karakter & Identitas Produk
+## 1. Arah Desain & Karakter Produk
 
 - **Nama Aplikasi:** Turnamen.in
-- **Target Platform:** Desktop Application (Windows 10/11, resolusi acuan awal `1366×820` hingga `1920×1080`)
-- **Tema Utama:** *Modern Dark Esports Management Dashboard*
-- **Kesan Visual:** Profesional, taktis, bersih, terstruktur, dan berfokus pada kejelasan data kompetisi (jadwal, skor, status registrasi, serta bagan pertandingan / *bracket*).
+- **Identitas Visual:** **Futuristic Arena** (platform manajemen turnamen esports modern bernuansa arena kompetitif masa depan).
+- **Target Platform:** Aplikasi desktop Windows 10/11 melalui Python Eel dan Chromium (`1024x768` hingga `1920x1080`, acuan utama `1366x820` dan `1440x900`).
+- **Design Read:** Esports tournament operations desktop suite untuk organizer, panitia/wasit, kapten tim, dan pemain dalam gaya tactical-broadcast Futuristic Arena.
 - **Prinsip Utama:**
-  1. **Kejelasan di Atas Dekorasi:** Panitia dan kapten tim membutuhkan informasi status turnamen, pertandingan berikutnya, dan skor secara instan tanpa gangguan elemen visual berlebihan (*no neon visual clutter*).
-  2. **Konsistensi Status:** Setiap status turnamen, pendaftaran, pembayaran, dan pertandingan wajib memiliki penanda teks dan warna (*status badge*) yang konsisten di seluruh halaman.
-  3. **Transparansi Mode Data:** Ketika aplikasi berjalan dalam `APP_MODE=mock`, antarmuka wajib menampilkan indikator yang jelas bahwa data yang sedang dilihat adalah data simulasi lokal.
+  1. **Kejelasan Arena di Atas Dekorasi:** Data pertandingan, jadwal, status verifikasi, dan skor harus terbaca seketika tanpa gangguan glitch atau neon berlebihan.
+  2. **Kontras Terukur (WCAG AA):** Seluruh pasangan teks diuji >= 4.5:1 dan seluruh batas kontrol interaktif/status diuji >= 3:1.
+  3. **Disiplin Dose Cap:** Efek blur (`backdrop-filter`) dibatasi maksimal 2 elemen (`.topbar` dan `.modal-backdrop`). Efek glow aksen cyan dibatasi maksimal 2 fokus (aksi utama hover/focus dan sorotan pemenang/juara bracket).
+  4. **Kejujuran Data & Mode:** Tidak ada metrik fiktif atau nilai fallback tersembunyi. Saat `APP_MODE=mock`, antarmuka menampilkan penanda simulasi yang tegas. Saat `APP_MODE=supabase`, fitur demo role disembunyikan dan kondisi `currentUser === null` ditangani sebagai tamu read-only.
 
 ---
 
-## 2. Draft Token Visual (Dapat Disesuaikan oleh Ferlita)
+## 2. Referensi UI UX Pro Max & Keputusan Desain (R-31)
 
-Nilai variabel CSS di `desktop/web/assets/css/variables.css` disiapkan sebagai titik awal yang mudah diubah oleh Ferlita:
+Pencarian design system melalui UI UX Pro Max (`esports tournament dashboard futuristic arena`) menekankan:
+- Navigasi keyboard yang konsisten dan urutan tab mengikuti alur visual.
+- Ikon SVG konsisten (tanpa emoji dekoratif), `cursor: pointer` pada seluruh elemen interaktif, dan dukungan `prefers-reduced-motion`.
+- Kontras teks >= 4.5:1 dan responsivitas lintas ukuran desktop hingga tablet (`768px`, `1024px`, `1366px`, `1440px`).
 
-### A. Warna Permukaan (Dark Slate Theme)
-| Token CSS | Nilai Awal (Draft) | Kegunaan |
+Alasan satu baris per keputusan utama:
+- **Warna:** Dark navy (`#060A14` / `#0B1120` / `#10182B`) menekan silau saat operasional turnamen panjang; Electric Cyan (`#00E5FF`) menandai aksi utama dan status aktif; Futuristic Violet (`#8B5CF6` / `#C4B5FD`) membedakan aksen sekunder konteks turnamen tanpa menyaingi CTA utama.
+- **Tipografi:** `Chakra Petch` / `Bahnschrift` pada judul dan display arena memberi karakter kompetitif tegas, `Plus Jakarta Sans` / `Segoe UI` menjaga keterbacaan tabel/form, dan `JetBrains Mono` / `Cascadia Mono` dengan `tabular-nums` meluruskan skor serta statistik secara vertikal.
+- **Layout:** Shell desktop dengan sidebar tetap (menjadi drawer pada lebar <= 1024px) plus komposisi per halaman yang bervariasi sesuai fungsi (hero komando + KPI strip di Dashboard, filter toolbar + katalog di Daftar Turnamen, board bracket horizontal di Bracket, panel split di Login/Auth).
+- **Spacing & Radius:** Skala spacing `4/8/12/16/20/24px` memisahkan konteks turnamen dari area aksi; radius terukur (`4px` badge/skor, `6px` input/tombol, `10px` kartu/panel, `12px` dialog) membedakan hirarki kontrol dari wadah data.
+- **Ikonografi:** Inline SVG stroke geometric berketebalan `1.75px` menggantikan seluruh emoji agar konsisten di semua versi Windows dan Chromium.
+
+---
+
+## 3. Token Warna Futuristic Arena (Terverifikasi WCAG AA)
+
+### A. Permukaan & Border
+| Token CSS | Nilai Hex | Rasio Kontras & Kegunaan |
 | :--- | :--- | :--- |
-| `--bg-primary` | `#0b0f17` | Latar belakang utama jendela aplikasi |
-| `--bg-secondary` | `#111827` | Latar sidebar, topbar, dan panel sekunder |
-| `--bg-surface` | `#161f30` | Kartu (*card*), kontainer tabel, dan kotak pertandingan |
-| `--bg-surface-hover` | `#1e293b` | State *hover* pada baris tabel dan navigasi |
-| `--border-subtle` | `#26334d` | Garis pemisah kartu, tabel, dan konektor bracket |
+| `--bg-primary` | `#060A14` | Kanvas utama aplikasi |
+| `--bg-secondary` | `#0B1120` | Latar sidebar dan panel sekunder |
+| `--bg-surface` | `#10182B` | Kartu data, tabel, dan kotak pertandingan |
+| `--bg-surface-elevated` | `#162038` | Panel terangkat, modal, dan baris header |
+| `--bg-surface-hover` | `#1D2A48` | State hover tabel dan item navigasi |
+| `--border-subtle` | `#233354` | Pemisah struktural kartu dan sel tabel |
+| `--border-interactive` | `#5572A4` | Border input/tombol sekunder (>= 3.34:1 pada semua permukaan) |
 
-### B. Warna Teks & Aksen
-| Token CSS | Nilai Awal (Draft) | Kegunaan |
+### B. Teks & Aksen
+| Token CSS | Nilai Hex | Rasio & Kegunaan |
 | :--- | :--- | :--- |
-| `--text-primary` | `#f8fafc` | Judul, nama tim, skor utama |
-| `--text-secondary` | `#94a3b8` | Label kolom, metadata jadwal, subjudul |
-| `--text-muted` | `#64748b` | Teks bantuan, placeholder, waktu lampau |
-| `--accent-primary` | `#3b82f6` | Aksi utama, fokus aktif, sorotan navigasi |
-| `--accent-secondary` | `#06b6d4` | Aksen sekunder untuk sorotan turnamen aktif |
+| `--text-primary` | `#F1F5F9` | Judul, nama tim, skor (>= 16.14:1 pada surface) |
+| `--text-secondary` | `#A8B8D0` | Label kolom, subjudul, deskripsi (>= 8.78:1 pada surface) |
+| `--text-muted` | `#8B9FBD` | Metadata sekunder, timestamp (>= 6.00:1 pada elevated) |
+| `--accent-primary` | `#00E5FF` | Electric Cyan untuk CTA utama (`#04101B` ink = 12.47:1) |
+| `--accent-cyan-text` | `#67E8F9` | Teks sorotan cyan pada latar gelap (12.20:1 pada surface) |
+| `--accent-violet` | `#6D28D9` | Aksen sekunder tombol/highlight violet (`#FFFFFF` = 7.10:1) |
+| `--accent-violet-text` | `#C4B5FD` | Teks/label violet pada permukaan gelap (9.58:1 pada surface) |
 
 ### C. Warna Semantik Status
-| Status | Token CSS | Nilai Awal | Contoh Penggunaan |
+| Status | Token | Teks pada Surface | Rasio pada `#10182B` |
 | :--- | :--- | :--- | :--- |
-| **Success / Completed / Approved** | `--status-success` | `#10b981` | Pertandingan selesai, registrasi disetujui, pembayaran lunas |
-| **Warning / Ongoing / Pending** | `--status-warning` | `#f59e0b` | Menunggu verifikasi panitia, pertandingan sedang berjalan, mode mock |
-| **Danger / Disputed / Rejected** | `--status-danger` | `#ef4444` | Pendaftaran ditolak, sengketa skor, kesalahan validasi |
-| **Info / Scheduled / Draft** | `--status-info` | `#6366f1` | Pertandingan terjadwal, turnamen dalam tahap persiapan |
+| Success / Approved / Completed | `--status-success` | `#34D399` | 9.20:1 |
+| Warning / Ongoing / Pending | `--status-warning` | `#FBBF24` | 10.59:1 |
+| Danger / Rejected / Disputed | `--status-danger` | `#FCA5A5` | 9.32:1 |
+| Info / Scheduled / Open | `--status-info` | `#67E8F9` | 12.20:1 |
 
 ---
 
-## 3. Tipografi (Draft)
+## 4. Standar Interaksi & Aksesibilitas
 
-- **Font Utama (UI & Data):** `'Segoe UI', Inter, system-ui, -apple-system, sans-serif` — dioptimalkan untuk keterbacaan di Windows 10/11 tanpa bergantung pada koneksi internet.
-- **Font Angka / Skor / Kode (`monospace`):** `'Cascadia Mono', 'Consolas', monospace` — wajib menggunakan `font-variant-numeric: tabular-nums` pada skor pertandingan, waktu jadwal, dan tabel klasemen agar angka sejajar secara vertikal.
-- **Skala Ukuran Teks:**
-  - Judul Halaman: `1.5rem` (24px), `font-weight: 700`
-  - Judul Bagian / Kartu: `1.125rem` (18px), `font-weight: 600`
-  - Teks Utama / Tabel: `0.875rem` (14px), `font-weight: 400`
-  - Badge / Label Kecil: `0.75rem` (12px), `font-weight: 600`
+1. **Keyboard & Focus:** Seluruh kontrol dapat dicapai via `Tab`, diaktifkan via `Enter`/`Space`, memiliki `:focus-visible` `2px solid #00E5FF`, serta memiliki *skip link* ke `#main-content`.
+2. **Modal Aksesibel:** Menggunakan `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, focus trap internal, penutupan via `Escape` atau klik backdrop, serta pemulihan fokus saat ditutup.
+3. **Affordance & Reduced Motion:** Base layer menerapkan `cursor: pointer` pada seluruh kontrol aktif dan `cursor: not-allowed` pada elemen nonaktif. Seluruh transisi menghormati `@media (prefers-reduced-motion: reduce)`.
+4. **State Data Lengkap:** Setiap view data menyediakan Loading State (`role="status"`), Empty State (penyebab + aksi lanjutan), dan Error State (`role="alert"` + tombol coba lagi).
 
 ---
 
-## 4. Tata Letak Desktop (App Shell)
+## 5. Arsitektur Role-Based Esports Experience
 
-1. **Sidebar Kiri Tetap (`250px`):**
-   - Logo & identitas **Turnamen.in**.
-   - Daftar menu utama: Dashboard, Daftar Turnamen, Detail Turnamen, Manajemen Tim, Manajemen Pertandingan, Bracket, Pengumuman, Laporan, Profil Pengguna, dan Pintu Masuk (Login).
-   - Indikator status koneksi API lokal (`Flask API Connected` / `Offline`).
-2. **Topbar (`64px`):**
-   - Judul halaman aktif & ringkasan konteks turnamen yang sedang dipilih.
-   - Badge mode aplikasi (`MOCK MODE` atau `SUPABASE ONLINE`).
-   - Pemilih peran simulasi (*Role Switcher* khusus mode mock untuk menguji tampilan per role) dan informasi profil aktif.
-3. **Area Konten Utama (`flex: 1`, scrollable):**
-   - Padding proporsional (`24px`), grid ringkasan metrik di bagian atas, diikuti filter/pencarian dan konten utama (tabel, daftar kartu, atau visualisasi bracket).
+Seluruh 5 role RBAC (`docs/contracts/role-permissions.md`) berbagi identitas visual **Futuristic Arena**, namun menerima struktur dashboard, navigasi, dan kontrol aksi sesuai hak akses masing-masing:
 
----
-
-## 5. Komponen Dasar yang Tersedia di Starter
-
-1. **Sidebar & Topbar Navigation**
-2. **Summary Metric Cards** (jumlah turnamen aktif, tim terdaftar, pertandingan selesai, total hadiah)
-3. **Data Tables** dengan kolom terstruktur, pencarian instan, dan filter status
-4. **Single Elimination Bracket View** (Quarter Final → Semi Final → Final untuk 8 tim)
-5. **Modal / Dialog** untuk detail dan form input terfokus
-6. **Forms** dengan validasi input yang jelas
-7. **Status Badges** (`draft`, `open_registration`, `ongoing`, `completed`, `pending`, `approved`, `rejected`, `scheduled`, ` bye`)
-8. **Toast Notifications** untuk umpan balik aksi pengguna
-9. **State Standar:** *Loading State*, *Empty State*, *Error State*, dan *Success State*.
+1. **Kelompok Competitive Experience (`player`, `team_captain`, dan tamu publik):**
+   - **Player (`Competitive Arena`):** Banner turnamen unggulan, galeri poster cabang game (`/api/v1/games`), kartu penemuan turnamen dengan progres kuota, identitas tim pribadi serta match cards relevan, dan ringkasan klasemen. Tidak ada tombol administrasi atau menu pengelolaan skor.
+   - **Team Captain (`Team Command`):** Hero identitas tim lengkap dengan emblem SVG geometris, pemilih tim milik kapten, grid roster anggota, status registrasi serta turnamen terbuka yang cocok dengan cabang game tim, dan jadwal/hasil pertandingan tim.
+2. **Kelompok Management Experience (`organizer`, `committee`, `super_admin`):**
+   - **Organizer (`Tournament Suite`):** Kontrol turnamen milik sendiri, metrik kuota & pending verification, antrean verifikasi peserta, dan akses cepat ke bracket serta audit log.
+   - **Committee (`Match Operations`):** Antrean pengesahan skor cepat langsung dari dashboard operasional, antrean verifikasi peserta, dan publikasi pengumuman teknis tanpa kontrol pembuatan turnamen/tim.
+   - **Super Admin (`System Control`):** Metrik sistem lintas organizer, kontrol penuh turnamen & tim, distribusi cabang game, telemetri runtime, dan jejak audit sistem.
+3. **Navigasi Dinamis & Access Guard:**
+   - Sidebar dirender ulang secara dinamis berdasarkan role aktif (`renderRoleNavigation`). Menu login hanya tampil saat belum masuk; tombol Keluar hanya tampil saat sesi aktif; halaman terlarang (seperti `match-management` untuk role non-staf atau `profile` untuk tamu) menampilkan Access Denied State yang aman ketika diakses langsung.
 
 ---
 
-## 6. Panduan Tinjauan untuk Ferlita
+## 6. Sistem Aset Visual, Emblem Tim, & Bracket Terhubung
 
-Ferlita dapat memperbarui dokumen ini serta file CSS di `desktop/web/assets/css/` dengan langkah berikut:
-1. Tinjau variabel warna dan tipografi di `desktop/web/assets/css/variables.css`.
-2. Periksa struktur komponen di `desktop/web/assets/css/components.css` dan halaman di `desktop/web/pages/`.
-3. Pastikan setiap tombol yang fiturnya masih berupa *blueprint* atau *placeholder* menampilkan keterangan status yang jujur (bukan tombol mati tanpa umpan balik).
-4. Setelah palet dan komponen disepakati bersama tim, ubah status dokumen ini dari `DRAFT` menjadi `APPROVED`.
+1. **Registry Artwork Game Lokal Siap-WebP (`desktop/web/assets/images/games/`):**
+   - Seluruh artwork game dipetakan terpusat lewat `GAME_ARTWORK_REGISTRY` dan `resolveGameArtwork(game)` di `ui-components.js` sesuai `games.slug` dari `/api/v1/games` (`mobile-legends`, `valorant`, `ea-sports-fc`, dan fallback `default-arena`).
+   - Setiap kartu poster game, banner utama, kartu partisipasi kapten, dan hero detail turnamen merender aset lokal berasio `16:9` dengan *contrast scrim* gelap dan fallback SVG inline tanpa hotlink eksternal. Mengganti `.svg` ke `.webp` hanya perlu memperbarui file lokal dan satu baris pada `GAME_ARTWORK_REGISTRY` tanpa mengubah logika bisnis.
+2. **Sistem Emblem Tim Deterministik (`renderTeamEmblem`):**
+   - Tag setiap tim di-hash secara deterministik ke salah satu dari 4 siluet perisai geometris dan 4 palet Futuristic Arena, sehingga identitas tim tetap konsisten di halaman Team Captain, Direktori Tim, Detail Turnamen, Match Management, Bracket, dan Klasemen.
+3. **Visualisasi Bracket Terhubung SVG (`drawBracketConnectors`):**
+   - Board Single Elimination merender lapisan `<svg class="bracket-connectors-svg">` di belakang kartu pertandingan yang menghitung jalur siku dari tengah sisi kanan match sumber menuju slot tujuan (`next_match_id` dan `next_slot` "A"/"B") serta menyalakan warna cyan untuk pertandingan yang telah selesai.
+4. **Disiplin Tabel Manajemen & Notifikasi Toast:**
+   - Tabel operasional Organizer dan Super Admin memisahkan lebar kolom judul (`.col-title`), chip game tanpa wrap patah (`.col-game`), kuota progres (`.col-quota`), nominal hadiah (`.col-money`), status (`.col-status`), dan tombol aksi (`.col-actions`).
+   - Komponen `showToast()` ditempatkan di area bawah kiri area kerja pada layar desktop (`> 1024px`) dan di bawah-tengah pada layar lebih sempit (`<= 1024px`) agar tidak menghalangi tombol CTA kanan atas maupun navigasi sidebar. Maksimal 3 notifikasi aktif, deduplikasi pesan identik, pembaruan in-place dalam satu grup (`demo-role-switch`) untuk simulasi mode mock (serta hening pada `APP_MODE=supabase`), jeda timer saat hover/fokus, dan dukungan penuh `prefers-reduced-motion`.
+
+---
+
+## 7. Catatan Koordinasi Lintas Modul (Pasca-Audit RBAC & Ownership)
+
+1. **Penugasan Committee per Turnamen (Anisa - REST API):** Payload `GET /api/v1/tournaments` dan `GET /api/v1/tournaments/<id>` saat ini belum menyertakan daftar penugasan `tournament_staff` (`staff_user_ids` / `is_assigned_committee`). Ketika field penugasan tersebut belum tersedia di respons API, UI menampilkan pemberitahuan bahwa penugasan panitia belum dapat diverifikasi dan tidak menampilkan tombol aksi mutasi (sehingga tidak memicu permintaan HTTP 403), serta menjaga seluruh handler aksi di frontend dengan validasi kepemilikan/penugasan sementara backend & RLS tetap menjadi otoritas akhir.
+2. **Distribusi `captain_id` Data Demo (Habil / Adriel - Mock & Seed):** Pada `mock_data.py` dan `supabase/seed.sql`, ke-8 tim demo saat ini seluruhnya menetapkan `captain_id = garuda_capt` (`...1104`). Koordinasikan pemecahan kepemilikan tim rival ke captain terpisah agar demo `garuda_capt` hanya menandai tim miliknya sendiri sebagai "Tim Anda".
+3. **Paritas Visibilitas Registrasi Publik Mock vs Supabase RLS (Habil / Anisa):** Pada `APP_MODE=supabase`, RLS membatasi pengguna publik/tamu hanya membaca registrasi berstatus `approved`, sedangkan `MockRepository` saat ini mengembalikan seluruh status registrasi pada endpoint publik. Perlu penyelarasan di backend agar konsisten antar mode.

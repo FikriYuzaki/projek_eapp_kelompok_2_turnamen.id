@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" fill="none">
+  <defs>
+    <linearGradient id="val-sky" x1="480" y1="0" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#060A14"/>
+      <stop offset="52%" stop-color="#0E1730"/>
+      <stop offset="100%" stop-color="#080D1B"/>
+    </linearGradient>
+    <radialGradient id="val-coral-flare" cx="28%" cy="46%" r="38%">
+      <stop offset="0%" stop-color="#FB7185" stop-opacity="0.28"/>
+      <stop offset="48%" stop-color="#00E5FF" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#080D1B" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="val-spike-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.5"/>
+      <stop offset="52%" stop-color="#00E5FF" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#080D1B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="val-holo" x1="360" y1="168" x2="620" y2="370" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.34"/>
+      <stop offset="55%" stop-color="#00E5FF" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.24"/>
+    </linearGradient>
+    <linearGradient id="val-agent-sil" x1="175" y1="120" x2="310" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1A274A"/>
+      <stop offset="100%" stop-color="#0B1224"/>
+    </linearGradient>
+    <linearGradient id="val-scrim" x1="480" y1="275" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#060A14" stop-opacity="0"/>
+      <stop offset="55%" stop-color="#060A14" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#060A14" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Tactical Night Sky -->
+  <rect width="960" height="540" fill="url(#val-sky)"/>
+  <ellipse cx="265" cy="245" rx="340" ry="200" fill="url(#val-coral-flare)"/>
+
+  <!-- Distant Megastructure Horizon -->
+  <g fill="#0B1328" stroke="#1A2B52" stroke-width="1">
+    <rect x="40" y="78" width="96" height="232"/>
+    <rect x="154" y="42" width="118" height="268"/>
+    <rect x="330" y="94" width="84" height="216"/>
+    <rect x="610" y="64" width="112" height="246"/>
+    <rect x="742" y="34" width="136" height="276"/>
+  </g>
+  <g stroke="#00E5FF" stroke-opacity="0.36" stroke-width="1.5">
+    <line x1="184" y1="68" x2="184" y2="188"/>
+    <line x1="214" y1="68" x2="214" y2="154"/>
+    <line x1="776" y1="62" x2="776" y2="196"/>
+    <line x1="812" y1="62" x2="812" y2="165"/>
+  </g>
+
+  <!-- Overhead Tactical Searchlights -->
+  <polygon points="210,0 295,0 440,395 310,395" fill="#00E5FF" fill-opacity="0.055"/>
+  <polygon points="585,0 680,0 795,395 640,395" fill="#8B5CF6" fill-opacity="0.065"/>
+
+  <!-- Brutalist Concrete Bombsite Floor & Lane Telemetry -->
+  <polygon points="0,362 230,302 770,302 960,374 960,540 0,540" fill="#0E172E"/>
+  <polygon points="215,308 745,308 925,540 35,540" fill="#131E3C"/>
+  <path d="M175,540 L345,308 M785,540 L615,308 M480,308 L480,540" stroke="#1E305C" stroke-width="1.5"/>
+  <path d="M125,468 L835,468 M192,390 L768,390" stroke="#1B2A52" stroke-width="1.2"/>
+
+  <!-- Left Elevated Catwalk & Bastion Wall -->
+  <polygon points="0,112 245,166 245,354 0,418" fill="#101933" stroke="#273C6E" stroke-width="1.5"/>
+  <polygon points="0,158 375,188 375,212 0,186" fill="#18274B" stroke="#00E5FF" stroke-width="1.1" stroke-opacity="0.6"/>
+  <line x1="0" y1="136" x2="375" y2="168" stroke="#38528C" stroke-width="1.5"/>
+
+  <!-- Right Angular Citadel Wall -->
+  <polygon points="960,104 714,160 714,352 960,414" fill="#101831" stroke="#2C4278" stroke-width="1.5"/>
+  <polygon points="714,160 634,196 634,332 714,352" fill="#162245" stroke="#2C4278" stroke-width="1.2"/>
+  <line x1="714" y1="188" x2="960" y2="142" stroke="#FB7185" stroke-width="2" stroke-opacity="0.65"/>
+
+  <!-- Tactical Holographic Containment Barrier -->
+  <g>
+    <polygon points="366,188 606,166 606,348 366,378" fill="url(#val-holo)" stroke="#00E5FF" stroke-width="2" stroke-opacity="0.88"/>
+    <line x1="366" y1="234" x2="606" y2="212" stroke="#67E8F9" stroke-width="1.1" stroke-opacity="0.48"/>
+    <line x1="366" y1="282" x2="606" y2="260" stroke="#67E8F9" stroke-width="1.1" stroke-opacity="0.48"/>
+    <line x1="366" y1="330" x2="606" y2="308" stroke="#67E8F9" stroke-width="1.1" stroke-opacity="0.48"/>
+    <line x1="446" y1="180" x2="446" y2="368" stroke="#00E5FF" stroke-width="1.1" stroke-opacity="0.45"/>
+    <line x1="526" y1="173" x2="526" y2="358" stroke="#00E5FF" stroke-width="1.1" stroke-opacity="0.45"/>
+  </g>
+
+  <!-- Right Foreground Cover Crate -->
+  <polygon points="722,368 814,392 814,468 692,468 692,390" fill="#162244" stroke="#3B3F87" stroke-width="1.5"/>
+  <line x1="712" y1="410" x2="796" y2="410" stroke="#A78BFA" stroke-width="2" stroke-opacity="0.72"/>
+
+  <!-- Focal Point 1 (Right Midground): Radiant Radianite Spike Monument -->
+  <ellipse cx="645" cy="364" rx="142" ry="32" fill="url(#val-spike-glow)"/>
+  <ellipse cx="645" cy="364" rx="94" ry="19" fill="#121A36" stroke="#8B5CF6" stroke-width="2"/>
+  <ellipse cx="645" cy="364" rx="56" ry="11" fill="none" stroke="#00E5FF" stroke-width="1.5" stroke-dasharray="10 5"/>
+  <g>
+    <polygon points="645,192 614,304 630,362 645,370" fill="#00E5FF" fill-opacity="0.9"/>
+    <polygon points="645,192 676,304 660,362 645,370" fill="#8B5CF6" fill-opacity="0.92"/>
+    <polygon points="645,160 634,192 645,208 656,192" fill="#ECFEFF"/>
+    <line x1="645" y1="138" x2="645" y2="370" stroke="#FFFFFF" stroke-width="1.4" stroke-opacity="0.68"/>
+  </g>
+
+  <!-- Kinetic Energy Shards -->
+  <polygon points="392,140 468,112 456,128 386,152" fill="#00E5FF" fill-opacity="0.65"/>
+  <polygon points="484,124 548,104 538,118 478,134" fill="#FB7185" fill-opacity="0.72"/>
+
+  <!-- Focal Point 2 (Left Off-Center): Stylized Tactical Striker Silhouette with Cyan/Coral Visor -->
+  <g>
+    <path d="M138,475 L154,312 L192,262 L212,248 L206,204 C206,174 226,154 250,154 C274,154 294,174 294,204 L288,248 L322,272 L348,342 L338,475 Z" fill="url(#val-agent-sil)" stroke="#00E5FF" stroke-width="2" stroke-opacity="0.88"/>
+    <polygon points="222,196 278,196 272,212 228,212" fill="#00E5FF" fill-opacity="0.95"/>
+    <line x1="194" y1="264" x2="250" y2="312" stroke="#FB7185" stroke-width="2.5" stroke-opacity="0.9"/>
+    <line x1="320" y1="274" x2="262" y2="322" stroke="#FB7185" stroke-width="2.5" stroke-opacity="0.85"/>
+    <polygon points="292,318 418,284 422,296 294,334" fill="#1E293B" stroke="#00E5FF" stroke-width="1.4"/>
+    <line x1="364" y1="296" x2="432" y2="278" stroke="#67E8F9" stroke-width="1.6" stroke-opacity="0.7"/>
+  </g>
+
+  <!-- Lower Third Contrast Scrim -->
+  <rect x="0" y="275" width="960" height="265" fill="url(#val-scrim)"/>
+</svg>

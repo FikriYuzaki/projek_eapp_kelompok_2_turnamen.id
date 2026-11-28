@@ -1,19 +1,22 @@
-"""Unit tests for Single Elimination Bracket Engine, score validation, BYEs, and round progression."""
-
-from __future__ import annotations
-
 import pytest
 
-from backend.core.exceptions import DomainConflictError, DomainValidationError
+from backend.core.exceptions import (
+    DomainConflictError,
+    DomainForbiddenError,
+    DomainNotFoundError,
+    DomainValidationError,
+)
 from backend.modules.matches.bracket_engine import (
     SingleEliminationBracketEngine,
     validate_match_score,
 )
 from backend.modules.matches.service import MatchService
+from backend.modules.teams.service import TeamService
+from backend.modules.tournaments.service import TournamentService
 from backend.repositories.mock.mock_repository import MockDataStoreRepository
 
 
-def test_generate_8_team_bracket_structure() -> None:
+def test_generate_8_team_bracket_structure():
     team_ids = [f"team-{i}" for i in range(1, 9)]
     matches = SingleEliminationBracketEngine.generate_bracket(
         tournament_id="tour-8",
@@ -21,7 +24,6 @@ def test_generate_8_team_bracket_structure() -> None:
         best_of=3,
     )
 
-    # 8 teams -> 4 QF + 2 SF + 1 Grand Final = 7 matches
     assert len(matches) == 7
     qf = [m for m in matches if m["round_number"] == 1]
     sf = [m for m in matches if m["round_number"] == 2]
@@ -34,12 +36,10 @@ def test_generate_8_team_bracket_structure() -> None:
     assert sf[0]["round_name"] == "Semi Final"
     assert final[0]["round_name"] == "Grand Final"
 
-    # Unplayed matches must not have a winner
     for m in matches:
         assert m["status"] == "scheduled"
         assert m["winner_team_id"] is None
 
-    # Verify next_match_id and next_slot links
     assert qf[0]["next_match_id"] == sf[0]["id"]
     assert qf[0]["next_slot"] == "A"
     assert qf[1]["next_match_id"] == sf[0]["id"]
@@ -50,8 +50,7 @@ def test_generate_8_team_bracket_structure() -> None:
     assert sf[1]["next_slot"] == "B"
 
 
-def test_generate_non_power_of_two_bracket_assigns_byes() -> None:
-    # 6 teams -> padded to 8 slots -> 2 BYEs in Round 1
+def test_generate_non_power_of_two_bracket_assigns_byes():
     team_ids = [f"team-{i}" for i in range(1, 7)]
     matches = SingleEliminationBracketEngine.generate_bracket(
         tournament_id="tour-6",
@@ -67,41 +66,136 @@ def test_generate_non_power_of_two_bracket_assigns_byes() -> None:
     assert len(byes) == 2
     assert len(scheduled) == 2
 
-    # The 2 BYE winners in QF #1 and QF #2 must already be promoted to SF #1 (slot A and B)
     assert byes[0]["winner_team_id"] == "team-1"
     assert byes[1]["winner_team_id"] == "team-2"
     assert sf[0]["team_a_id"] == "team-1"
     assert sf[0]["team_b_id"] == "team-2"
 
 
-def test_score_validation_rules() -> None:
+def test_generate_7_team_bracket_byes():
+    team_ids = [f"team-{i}" for i in range(1, 8)]
+    matches = SingleEliminationBracketEngine.generate_bracket(
+        tournament_id="tour-7",
+        team_ids=team_ids,
+        best_of=3,
+    )
+    assert len(matches) == 7
+    qf = [m for m in matches if m["round_number"] == 1]
+    sf = [m for m in matches if m["round_number"] == 2]
+    final = [m for m in matches if m["round_number"] == 3]
+
+    assert len(qf) == 4
+    assert len(sf) == 2
+    assert len(final) == 1
+
+    byes = [m for m in qf if m["status"] == "bye"]
+    scheduled = [m for m in qf if m["status"] == "scheduled"]
+    assert len(byes) == 1
+    assert len(scheduled) == 3
+
+    assert byes[0]["winner_team_id"] == "team-1"
+    assert sf[0]["team_a_id"] == "team-1"
+
+
+def test_score_validation_rules():
     assert validate_match_score(2, 0, best_of=3) == "A"
     assert validate_match_score(1, 2, best_of=3) == "B"
 
-    # Ties/draws are rejected
     with pytest.raises(DomainValidationError, match="seri"):
         validate_match_score(1, 1, best_of=3)
 
-    # Impossible Bo3 scores (e.g., 3-0 or 1-0) are rejected
     with pytest.raises(DomainValidationError):
         validate_match_score(3, 0, best_of=3)
 
     with pytest.raises(DomainValidationError):
         validate_match_score(1, 0, best_of=3)
 
-    # Negative scores are rejected
     with pytest.raises(DomainValidationError):
         validate_match_score(-1, 2, best_of=3)
 
 
+def test_generate_4_team_bracket_structure():
+    team_ids = [f"team-{i}" for i in range(1, 5)]
+    matches = SingleEliminationBracketEngine.generate_bracket(
+        tournament_id="tour-4",
+        team_ids=team_ids,
+        best_of=3,
+    )
+
+    assert len(matches) == 3
+    sf = [m for m in matches if m["round_number"] == 1]
+    gf = [m for m in matches if m["round_number"] == 2]
+
+    assert len(sf) == 2
+    assert len(gf) == 1
+    assert sf[0]["round_name"] == "Semi Final"
+    assert gf[0]["round_name"] == "Grand Final"
+
+    assert sf[0]["next_match_id"] == gf[0]["id"]
+    assert sf[0]["next_slot"] == "A"
+    assert sf[1]["next_match_id"] == gf[0]["id"]
+    assert sf[1]["next_slot"] == "B"
+
+
+def test_generate_5_team_bracket_byes():
+    team_ids = [f"team-{i}" for i in range(1, 6)]
+    matches = SingleEliminationBracketEngine.generate_bracket(
+        tournament_id="tour-5",
+        team_ids=team_ids,
+        best_of=3,
+    )
+    assert len(matches) == 7
+    qf = [m for m in matches if m["round_number"] == 1]
+    byes = [m for m in qf if m["status"] == "bye"]
+    assert len(byes) == 3
+
+
+def test_bracket_engine_input_validations():
+    with pytest.raises(DomainValidationError, match="Minimal 2 tim"):
+        SingleEliminationBracketEngine.generate_bracket(
+            tournament_id="tour-err",
+            team_ids=["team-1"],
+        )
+
+    with pytest.raises(DomainValidationError, match="duplikasi tim"):
+        SingleEliminationBracketEngine.generate_bracket(
+            tournament_id="tour-err",
+            team_ids=["team-1", "team-1"],
+        )
+
+
+def test_score_validation_bo1_bo5_bo7():
+    assert validate_match_score(1, 0, best_of=1) == "A"
+    assert validate_match_score(0, 1, best_of=1) == "B"
+    with pytest.raises(DomainValidationError):
+        validate_match_score(0, 0, best_of=1)
+    with pytest.raises(DomainValidationError):
+        validate_match_score(2, 0, best_of=1)
+
+    assert validate_match_score(3, 0, best_of=5) == "A"
+    assert validate_match_score(3, 2, best_of=5) == "A"
+    assert validate_match_score(1, 3, best_of=5) == "B"
+    with pytest.raises(DomainValidationError):
+        validate_match_score(2, 2, best_of=5)
+    with pytest.raises(DomainValidationError):
+        validate_match_score(4, 1, best_of=5)
+
+    assert validate_match_score(4, 0, best_of=7) == "A"
+    assert validate_match_score(4, 3, best_of=7) == "A"
+    assert validate_match_score(2, 4, best_of=7) == "B"
+    with pytest.raises(DomainValidationError):
+        validate_match_score(3, 3, best_of=7)
+    with pytest.raises(DomainValidationError):
+        validate_match_score(5, 2, best_of=7)
+
+
 def test_match_winner_advancement_and_audit_lock(
     mock_repo: MockDataStoreRepository,
-) -> None:
+):
     match_service = MatchService(mock_repo)
     committee_user = mock_repo.get_profile_by_email("committee@turnamen.in")
     assert committee_user is not None
 
-    # QF #4 (`88888888-8888-4888-8888-888888888804`) is currently scheduled
     qf4_id = "88888888-8888-4888-8888-888888888804"
     sf2_id = "88888888-8888-4888-8888-888888888806"
 
@@ -113,15 +207,324 @@ def test_match_winner_advancement_and_audit_lock(
     assert res["match"]["status"] == "completed"
     assert res["match"]["winner_team_id"] == "44444444-4444-4444-8444-444444444408"
 
-    # Winner must automatically advance to Semi Final #2 Slot B
     sf2 = mock_repo.get_match_by_id(sf2_id)
     assert sf2 is not None
     assert sf2["team_b_id"] == "44444444-4444-4444-8444-444444444408"
 
-    # Attempting to overwrite a completed match without force_override must fail
     with pytest.raises(DomainConflictError, match="sudah disahkan dan dikunci"):
         match_service.submit_match_result(
             actor=committee_user,
             match_id=qf4_id,
             payload={"score_a": 2, "score_b": 0},
         )
+
+    # Verifikasi force_override berhasil mengubah hasil pertandingan terkunci
+    override_res = match_service.submit_match_result(
+        actor=committee_user,
+        match_id=qf4_id,
+        payload={
+            "score_a": 2,
+            "score_b": 0,
+            "force_override": True,
+            "notes": "Koreksi skor panitia",
+        },
+    )
+    assert override_res["match"]["winner_team_id"] == "44444444-4444-4444-8444-444444444407"
+
+
+def test_grand_final_completion_updates_tournament_status(
+    mock_repo: MockDataStoreRepository,
+):
+    match_service = MatchService(mock_repo)
+    committee_user = mock_repo.get_profile_by_email("committee@turnamen.in")
+    assert committee_user is not None
+
+    sf1_id = "88888888-8888-4888-8888-888888888805"
+    gf_id = "88888888-8888-4888-8888-888888888807"
+    tournament_id = "33333333-3333-4333-8333-333333333301"
+
+    # Jalankan SF1
+    match_service.submit_match_result(
+        actor=committee_user,
+        match_id=sf1_id,
+        payload={"score_a": 2, "score_b": 1},
+    )
+
+    # QF4 lalu SF2
+    qf4_id = "88888888-8888-4888-8888-888888888804"
+    match_service.submit_match_result(
+        actor=committee_user,
+        match_id=qf4_id,
+        payload={"score_a": 2, "score_b": 0},
+    )
+    sf2_id = "88888888-8888-4888-8888-888888888806"
+    match_service.submit_match_result(
+        actor=committee_user,
+        match_id=sf2_id,
+        payload={"score_a": 2, "score_b": 1},
+    )
+
+    # Grand Final selesai
+    gf_res = match_service.submit_match_result(
+        actor=committee_user,
+        match_id=gf_id,
+        payload={"score_a": 2, "score_b": 0, "notes": "Grand Final selesai"},
+    )
+    assert gf_res["match"]["status"] == "completed"
+    assert gf_res["next_match"] is None
+
+    tournament = mock_repo.get_tournament_by_id(tournament_id)
+    assert tournament is not None
+    assert tournament["status"] == "completed"
+
+
+def test_staff_access_control_on_match_management(
+    mock_repo: MockDataStoreRepository,
+):
+    match_service = MatchService(mock_repo)
+    captain_user = mock_repo.get_profile_by_email("captain@turnamen.in")
+    other_organizer = mock_repo.get_profile_by_email("organizer2@turnamen.in")
+    qf4_id = "88888888-8888-4888-8888-888888888804"
+
+    # Kapten tidak memiliki izin submit hasil match
+    with pytest.raises(DomainForbiddenError):
+        match_service.submit_match_result(
+            actor=captain_user,
+            match_id=qf4_id,
+            payload={"score_a": 2, "score_b": 0},
+        )
+
+    # Organizer lain yang tidak memiliki turnamen ditolak
+    if other_organizer:
+        with pytest.raises(DomainForbiddenError):
+            match_service.submit_match_result(
+                actor=other_organizer,
+                match_id=qf4_id,
+                payload={"score_a": 2, "score_b": 0},
+            )
+
+
+def test_tournament_capacity_and_duplicate_registration(
+    mock_repo: MockDataStoreRepository,
+):
+    tournament_service = TournamentService(mock_repo)
+    organizer_user = mock_repo.get_profile_by_email("organizer@turnamen.in")
+    captain_user = mock_repo.get_profile_by_email("captain@turnamen.in")
+    assert organizer_user is not None
+    assert captain_user is not None
+
+    tour = tournament_service.create_tournament(
+        actor=organizer_user,
+        payload={
+            "title": "Open MLBB Mini Cup 2026",
+            "game_id": "22222222-2222-4222-8222-222222222201",
+            "start_date": "2026-12-01T10:00:00Z",
+            "max_teams": 2,
+            "status": "open_registration",
+        },
+    )
+
+    # Pendaftaran tim pertama berhasil
+    reg1 = tournament_service.register_team(
+        actor=captain_user,
+        tournament_id=tour["id"],
+        payload={"team_id": "44444444-4444-4444-8444-444444444401"},
+    )
+    assert reg1["status"] == "pending"
+
+    # Tim yang sudah terdaftar ditolak
+    with pytest.raises(DomainConflictError, match="sudah terdaftar"):
+        tournament_service.register_team(
+            actor=captain_user,
+            tournament_id=tour["id"],
+            payload={"team_id": "44444444-4444-4444-8444-444444444401"},
+        )
+
+    # Pendaftaran tim kedua berhasil (kuota penuh: 2/2)
+    tournament_service.register_team(
+        actor=captain_user,
+        tournament_id=tour["id"],
+        payload={"team_id": "44444444-4444-4444-8444-444444444402"},
+    )
+
+    # Pendaftaran tim ketiga ditolak karena kuota penuh
+    with pytest.raises(DomainConflictError, match="Kuota turnamen sudah penuh"):
+        tournament_service.register_team(
+            actor=captain_user,
+            tournament_id=tour["id"],
+            payload={"team_id": "44444444-4444-4444-8444-444444444403"},
+        )
+
+
+def test_team_roster_and_member_role_validations(
+    mock_repo: MockDataStoreRepository,
+):
+    team_service = TeamService(mock_repo)
+    captain_user = mock_repo.get_profile_by_email("captain@turnamen.in")
+    assert captain_user is not None
+
+    # Tag duplikat ditolak
+    with pytest.raises(DomainConflictError, match="sudah digunakan"):
+        team_service.create_team(
+            actor=captain_user,
+            payload={
+                "name": "Garuda Muda Esports",
+                "tag": "GRD",
+                "game_id": "22222222-2222-4222-8222-222222222201",
+            },
+        )
+
+    # Role anggota tidak valid
+    with pytest.raises(DomainValidationError, match="tidak valid"):
+        team_service.add_member(
+            actor=captain_user,
+            team_id="44444444-4444-4444-8444-444444444401",
+            payload={
+                "nickname": "PlayerX",
+                "ingame_id": "ML-99999999 (2011)",
+                "member_role": "cheerleader",
+            },
+        )
+
+    # ID Game duplikat di tim yang sama
+    with pytest.raises(DomainConflictError, match="sudah terdaftar"):
+        team_service.add_member(
+            actor=captain_user,
+            team_id="44444444-4444-4444-8444-444444444401",
+            payload={
+                "nickname": "Clone",
+                "ingame_id": "ML-10293801 (2011)",
+                "member_role": "substitute",
+            },
+        )
+
+
+def test_register_team_enforces_captain_ownership_and_rbac(
+    mock_repo: MockDataStoreRepository,
+    client,
+):
+    tournament_service = TournamentService(mock_repo)
+    organizer_user = mock_repo.get_profile_by_email("organizer@turnamen.in")
+    owner_captain = mock_repo.get_profile_by_email("captain@turnamen.in")
+    super_admin = mock_repo.get_profile_by_email("admin@turnamen.in")
+    assert organizer_user is not None
+    assert owner_captain is not None
+    assert super_admin is not None
+
+    other_captain = mock_repo.create_profile(
+        {
+            "email": "other.captain@turnamen.in",
+            "username": "other_captain",
+            "full_name": "Kapten Lain",
+            "role": "team_captain",
+        }
+    )
+
+    tour = tournament_service.create_tournament(
+        actor=organizer_user,
+        payload={
+            "title": "RBAC Ownership Test Cup",
+            "game_id": "22222222-2222-4222-8222-222222222201",
+            "start_date": "2026-12-15T10:00:00Z",
+            "max_teams": 4,
+            "status": "open_registration",
+        },
+    )
+
+    with pytest.raises(DomainForbiddenError, match="miliknya sendiri") as exc_info:
+        tournament_service.register_team(
+            actor=other_captain,
+            tournament_id=tour["id"],
+            payload={"team_id": "44444444-4444-4444-8444-444444444401"},
+        )
+    assert exc_info.value.http_status == 403
+
+    http_forbidden = client.post(
+        f"/api/v1/tournaments/{tour['id']}/registrations",
+        json={"team_id": "44444444-4444-4444-8444-444444444401"},
+        headers={"X-Mock-User-Id": other_captain["id"]},
+    )
+    assert http_forbidden.status_code == 403
+    assert http_forbidden.get_json()["error"]["code"] == "FORBIDDEN"
+
+    # Organizer tetap mengikuti matriks permission registration:create (hanya super_admin & team_captain)
+    with pytest.raises(DomainForbiddenError) as org_exc:
+        tournament_service.register_team(
+            actor=organizer_user,
+            tournament_id=tour["id"],
+            payload={"team_id": "44444444-4444-4444-8444-444444444401"},
+        )
+    assert org_exc.value.http_status == 403
+
+    own_reg = tournament_service.register_team(
+        actor=owner_captain,
+        tournament_id=tour["id"],
+        payload={"team_id": "44444444-4444-4444-8444-444444444401"},
+    )
+    assert own_reg["status"] == "pending"
+
+    admin_reg = tournament_service.register_team(
+        actor=super_admin,
+        tournament_id=tour["id"],
+        payload={"team_id": "44444444-4444-4444-8444-444444444402"},
+    )
+    assert admin_reg["status"] == "pending"
+
+
+def test_submit_match_result_rejects_non_boolean_force_override(
+    mock_repo: MockDataStoreRepository,
+    client,
+):
+    match_service = MatchService(mock_repo)
+    committee_user = mock_repo.get_profile_by_email("committee@turnamen.in")
+    captain_user = mock_repo.get_profile_by_email("captain@turnamen.in")
+    assert committee_user is not None
+    assert captain_user is not None
+
+    completed_qf1_id = "88888888-8888-4888-8888-888888888801"
+    original_winner = "44444444-4444-4444-8444-444444444401"
+
+    for invalid_value in ("false", "true", "", 1, 0, None, [], {}):
+        with pytest.raises(DomainValidationError, match="force_override") as exc_info:
+            match_service.submit_match_result(
+                actor=committee_user,
+                match_id=completed_qf1_id,
+                payload={"score_a": 0, "score_b": 2, "force_override": invalid_value},
+            )
+        assert exc_info.value.http_status == 400
+        assert exc_info.value.details.get("field") == "force_override"
+
+        locked = mock_repo.get_match_by_id(completed_qf1_id)
+        assert locked is not None
+        assert locked["winner_team_id"] == original_winner
+        assert locked["score_a"] == 2
+        assert locked["score_b"] == 0
+
+    http_bad = client.patch(
+        f"/api/v1/matches/{completed_qf1_id}/result",
+        json={"score_a": 0, "score_b": 2, "force_override": "false"},
+        headers={"X-Mock-Role": "committee"},
+    )
+    assert http_bad.status_code == 400
+    assert http_bad.get_json()["error"]["code"] == "VALIDATION_ERROR"
+
+    with pytest.raises(DomainConflictError):
+        match_service.submit_match_result(
+            actor=committee_user,
+            match_id=completed_qf1_id,
+            payload={"score_a": 0, "score_b": 2, "force_override": False},
+        )
+
+    with pytest.raises(DomainForbiddenError):
+        match_service.submit_match_result(
+            actor=captain_user,
+            match_id=completed_qf1_id,
+            payload={"score_a": 0, "score_b": 2, "force_override": True},
+        )
+
+    overridden = match_service.submit_match_result(
+        actor=committee_user,
+        match_id=completed_qf1_id,
+        payload={"score_a": 0, "score_b": 2, "force_override": True, "notes": "Audit panitia"},
+    )
+    assert overridden["match"]["winner_team_id"] == "44444444-4444-4444-8444-444444444402"

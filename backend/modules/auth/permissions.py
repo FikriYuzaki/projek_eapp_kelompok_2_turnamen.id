@@ -19,23 +19,19 @@ from backend.contracts.dtos import (
 from backend.core.exceptions import DomainForbiddenError, DomainUnauthorizedError
 
 PERMISSION_MATRIX: dict[str, tuple[str, ...]] = {
-    # Tournaments
+    "profile:update_own": ALL_ROLES,
+    "game:manage": (ROLE_SUPER_ADMIN,),
     "tournament:create": (ROLE_SUPER_ADMIN, ROLE_ORGANIZER),
     "tournament:update": (ROLE_SUPER_ADMIN, ROLE_ORGANIZER),
     "tournament:delete": (ROLE_SUPER_ADMIN, ROLE_ORGANIZER),
-    # Teams
     "team:create": (ROLE_SUPER_ADMIN, ROLE_TEAM_CAPTAIN),
     "team:update": (ROLE_SUPER_ADMIN, ROLE_TEAM_CAPTAIN),
     "team:add_member": (ROLE_SUPER_ADMIN, ROLE_TEAM_CAPTAIN),
-    # Registrations
     "registration:create": (ROLE_SUPER_ADMIN, ROLE_TEAM_CAPTAIN),
     "registration:verify": (ROLE_SUPER_ADMIN, ROLE_ORGANIZER, ROLE_COMMITTEE),
-    # Matches & Bracket
     "bracket:generate": (ROLE_SUPER_ADMIN, ROLE_ORGANIZER, ROLE_COMMITTEE),
     "match:submit_result": (ROLE_SUPER_ADMIN, ROLE_ORGANIZER, ROLE_COMMITTEE),
-    # Announcements
     "announcement:create": (ROLE_SUPER_ADMIN, ROLE_ORGANIZER, ROLE_COMMITTEE),
-    # User & Role Management
     "user:assign_role": (ROLE_SUPER_ADMIN,),
 }
 
@@ -85,3 +81,28 @@ def require_any_role(user: dict[str, Any] | None, allowed_roles: Iterable[str]) 
             details={"required_roles": list(allowed_set), "current_role": role},
         )
     return active_user
+
+
+class RolePermissionGuard:
+    """Helper class exposing RBAC checks for API endpoints and domain services."""
+
+    has_permission = staticmethod(has_permission)
+    require_authenticated = staticmethod(require_authenticated)
+    require_permission = staticmethod(require_permission)
+    require_any_role = staticmethod(require_any_role)
+
+
+def is_tournament_manager(
+    repository: Any, actor: dict[str, Any] | None, tournament: dict[str, Any]
+) -> bool:
+    """Return True when `actor` holds management authority over `tournament`."""
+    if not actor or not actor.get("is_active", True):
+        return False
+    role = str(actor.get("role") or "").strip().lower()
+    if role == ROLE_SUPER_ADMIN:
+        return True
+    if role == ROLE_ORGANIZER:
+        return tournament.get("organizer_id") == actor.get("id")
+    if role == ROLE_COMMITTEE:
+        return bool(repository.is_staff_assigned(tournament["id"], str(actor.get("id") or "")))
+    return False

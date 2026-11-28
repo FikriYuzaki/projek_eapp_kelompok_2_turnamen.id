@@ -17,8 +17,24 @@ from backend.core.exceptions import (
     DomainNotFoundError,
     DomainValidationError,
 )
-from backend.modules.auth.permissions import require_permission
+from backend.modules.auth.permissions import is_tournament_manager, require_permission
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
+
+
+TITLE_MIN_LENGTH = 4
+TITLE_MAX_LENGTH = 180
+CONTENT_MIN_LENGTH = 5
+
+
+def _require_str_field(payload: dict[str, Any], field: str, label: str, default: str | None = None) -> str:
+    raw = payload.get(field)
+    if raw is None:
+        if default is not None:
+            return default
+        return ""
+    if not isinstance(raw, str):
+        raise DomainValidationError(f"{label} harus berupa teks.", {"field": field})
+    return raw.strip()
 
 
 class AnnouncementService:
@@ -27,12 +43,18 @@ class AnnouncementService:
     def __init__(self, repository: DataStoreRepositoryProtocol) -> None:
         self._repo = repository
 
-    def list_announcements(self, tournament_id: str) -> list[dict[str, Any]]:
+    def list_announcements(
+        self, tournament_id: str, actor: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         tournament = self._repo.get_tournament_by_id(tournament_id)
         if not tournament:
             raise DomainNotFoundError(
                 "Turnamen tidak ditemukan.", {"tournament_id": tournament_id}
             )
+        if tournament.get("status") == "draft" and not is_tournament_manager(
+            self._repo, actor, tournament
+        ):
+            return []
         return self._repo.list_announcements_by_tournament(tournament["id"])
 
     def create_announcement(
@@ -56,18 +78,26 @@ class AnnouncementService:
                 "Panitia hanya dapat membuat pengumuman pada turnamen yang ditugaskan."
             )
 
-        title = str(payload.get("title") or "").strip()
-        content = str(payload.get("content") or "").strip()
-        priority = str(payload.get("priority") or "normal").strip().lower()
-        is_pinned = bool(payload.get("is_pinned", False))
-
-        if len(title) < 4:
+        title = _require_str_field(payload, "title", "Judul pengumuman")
+        content = _require_str_field(payload, "content", "Isi pengumuman")
+        priority = _require_str_field(payload, "priority", "Prioritas pengumuman", default="normal").lower()
+        raw_pinned = payload.get("is_pinned", False)
+        if not isinstance(raw_pinned, bool):
             raise DomainValidationError(
-                "Judul pengumuman minimal terdiri dari 4 karakter.", {"field": "title"}
+                "Field is_pinned harus berupa boolean (true/false).",
+                {"field": "is_pinned"},
             )
-        if len(content) < 5:
+        is_pinned = raw_pinned
+
+        if len(title) < TITLE_MIN_LENGTH or len(title) > TITLE_MAX_LENGTH:
             raise DomainValidationError(
-                "Isi pengumuman minimal terdiri dari 5 karakter.", {"field": "content"}
+                f"Judul pengumuman harus terdiri dari {TITLE_MIN_LENGTH} hingga {TITLE_MAX_LENGTH} karakter.",
+                {"field": "title"},
+            )
+        if len(content) < CONTENT_MIN_LENGTH:
+            raise DomainValidationError(
+                f"Isi pengumuman minimal terdiri dari {CONTENT_MIN_LENGTH} karakter.",
+                {"field": "content"},
             )
         if priority not in ANNOUNCEMENT_PRIORITIES:
             raise DomainValidationError(
