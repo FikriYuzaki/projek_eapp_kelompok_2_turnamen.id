@@ -15,9 +15,16 @@ from backend.core.exceptions import (
 from backend.modules.auth.permissions import require_permission
 from backend.modules.matches.bracket_engine import (
     SingleEliminationBracketEngine,
+    parse_best_of,
+    parse_strict_int,
+    validate_bracket_graph,
     validate_match_score,
 )
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
+
+MIN_OVERRIDE_NOTES_LENGTH = 4
+LOCKED_TOURNAMENT_STATUSES = ("completed", "cancelled")
+STARTED_MATCH_STATUSES = ("ongoing", "completed")
 
 
 class MatchService:
@@ -92,18 +99,50 @@ class MatchService:
                 "Turnamen tidak ditemukan.", {"tournament_id": tournament_id}
             )
         self._verify_tournament_staff_access(user, tournament)
+        if tournament["status"] in LOCKED_TOURNAMENT_STATUSES:
+            raise DomainConflictError(
+                f"Bracket tidak dapat dibuat ulang untuk turnamen berstatus '{tournament['status']}'.",
+                {"tournament_id": tournament["id"], "status": tournament["status"]},
+            )
 
         payload = payload or {}
-        explicit_team_ids = payload.get("team_ids")
-        if explicit_team_ids and isinstance(explicit_team_ids, list):
-            team_ids = [str(tid) for tid in explicit_team_ids]
+        raw_best_of = payload.get("best_of")
+        if raw_best_of is None:
+            raw_best_of = tournament.get("best_of") or 3
+        best_of = parse_best_of(raw_best_of)
+
+        existing_matches = self._repo.list_matches_by_tournament(tournament["id"])
+        if any(m.get("status") in STARTED_MATCH_STATUSES for m in existing_matches):
+            raise DomainConflictError(
+                "Bracket tidak dapat dibuat ulang karena sudah ada pertandingan yang berjalan atau selesai.",
+                {"tournament_id": tournament["id"]},
+            )
+
+        if "team_ids" in payload and payload["team_ids"] is not None:
+            raw_team_ids = payload["team_ids"]
+            if not isinstance(raw_team_ids, list):
+                raise DomainValidationError(
+                    "Field team_ids harus berupa daftar ID tim (array).", {"field": "team_ids"}
+                )
+            team_ids: list[str] = []
+            for idx, tid in enumerate(raw_team_ids):
+                if not isinstance(tid, str) or not tid.strip():
+                    raise DomainValidationError(
+                        "Setiap item team_ids harus berupa ID tim yang valid.",
+                        {"field": "team_ids", "index": idx},
+                    )
+                clean_tid = tid.strip()
+                if not self._repo.get_team_by_id(clean_tid):
+                    raise DomainNotFoundError(
+                        "Tim peserta bracket tidak ditemukan.",
+                        {"field": "team_ids", "team_id": clean_tid},
+                    )
+                team_ids.append(clean_tid)
         else:
             regs = self._repo.list_registrations_by_tournament(tournament["id"])
             approved_regs = [r for r in regs if r["status"] == "approved"]
             approved_regs.sort(key=lambda r: (r.get("seed_number") or 999))
             team_ids = [r["team_id"] for r in approved_regs]
-
-        best_of = int(payload.get("best_of") or tournament.get("best_of") or 3)
         generated_matches = SingleEliminationBracketEngine.generate_bracket(
             tournament_id=tournament["id"],
             team_ids=team_ids,
@@ -113,7 +152,7 @@ class MatchService:
             tournament["id"], generated_matches
         )
         if tournament["status"] in ("draft", "open_registration", "registration_closed"):
-            self._repo.update_tournament(tournament["id"], {"status": "ongoing"})
+            self._repo.transition_tournament_status(tournament["id"], "ongoing")
 
         self._repo.log_activity(
             actor_id=user["id"],
@@ -142,6 +181,16 @@ class MatchService:
         if not tournament:
             raise DomainNotFoundError("Turnamen pertandingan tidak ditemukan.")
         self._verify_tournament_staff_access(user, tournament)
+        if tournament["status"] == "cancelled":
+            raise DomainConflictError(
+                "Hasil pertandingan tidak dapat disahkan karena turnamen telah dibatalkan.",
+                {"tournament_id": tournament["id"], "status": tournament["status"]},
+            )
+        if match["status"] == "bye":
+            raise DomainConflictError(
+                "Pertandingan BYE otomatis dimenangkan dan tidak dapat diisi skor secara manual.",
+                {"match_id": match_id, "status": match["status"]},
+            )
 
         raw_force_override = payload.get("force_override", False)
         if not isinstance(raw_force_override, bool):
@@ -150,11 +199,38 @@ class MatchService:
                 {"field": "force_override"},
             )
         force_override = raw_force_override
-        if match["status"] == "completed" and not force_override:
+
+        raw_idem_key = payload.get("idempotency_key")
+        idempotency_key: str | None = None
+        if raw_idem_key is not None:
+            if not isinstance(raw_idem_key, str) or not raw_idem_key.strip():
+                raise DomainValidationError(
+                    "Field idempotency_key harus berupa string tidak kosong.",
+                    {"field": "idempotency_key"},
+                )
+            idempotency_key = raw_idem_key.strip()
+            if len(idempotency_key) > 128:
+                raise DomainValidationError(
+                    "Field idempotency_key maksimal 128 karakter.",
+                    {"field": "idempotency_key"},
+                )
+
+        if match["status"] == "completed" and not force_override and idempotency_key is None:
             raise DomainConflictError(
                 "Hasil pertandingan ini sudah disahkan dan dikunci. "
                 "Gunakan otorisasi force_override beserta catatan audit untuk mengubahnya.",
                 {"match_id": match_id, "status": match["status"]},
+            )
+
+        raw_notes = payload.get("notes")
+        if raw_notes is not None and not isinstance(raw_notes, str):
+            raise DomainValidationError("Field notes harus berupa teks.", {"field": "notes"})
+        notes = (raw_notes or "").strip()
+        if force_override and len(notes) < MIN_OVERRIDE_NOTES_LENGTH:
+            raise DomainValidationError(
+                "Koreksi hasil (force_override) wajib menyertakan alasan audit "
+                f"minimal {MIN_OVERRIDE_NOTES_LENGTH} karakter.",
+                {"field": "notes"},
             )
 
         if not match.get("team_a_id") or not match.get("team_b_id"):
@@ -166,13 +242,10 @@ class MatchService:
         if "score_a" not in payload or "score_b" not in payload:
             raise DomainValidationError("Field score_a dan score_b wajib diisi.")
 
-        try:
-            score_a = int(payload["score_a"])
-            score_b = int(payload["score_b"])
-        except (TypeError, ValueError) as exc:
-            raise DomainValidationError("score_a dan score_b harus berupa angka bulat.") from exc
+        score_a = parse_strict_int(payload["score_a"], "score_a")
+        score_b = parse_strict_int(payload["score_b"], "score_b")
 
-        best_of = int(match.get("best_of") or tournament.get("best_of") or 3)
+        best_of = parse_best_of(match.get("best_of") or tournament.get("best_of") or 3)
         winning_side = validate_match_score(
             score_a=score_a,
             score_b=score_b,
@@ -182,65 +255,67 @@ class MatchService:
         winner_team_id = (
             match["team_a_id"] if winning_side == "A" else match["team_b_id"]
         )
-        now = datetime.now(timezone.utc).isoformat()
-        notes = str(payload.get("notes") or "").strip()
 
-        updated_match = self._repo.update_match(
-            match["id"],
-            {
-                "score_a": score_a,
-                "score_b": score_b,
-                "winner_team_id": winner_team_id,
-                "status": "completed",
-                "completed_at": now,
-            },
-        )
-
-        self._repo.record_match_result(
-            {
-                "match_id": match["id"],
-                "game_number": 1,
-                "score_a": score_a,
-                "score_b": score_b,
-                "winner_team_id": winner_team_id,
-                "notes": notes,
-                "verified_by": user["id"],
-            }
-        )
-
-        # Pemenang otomatis lanjut ke slot pertandingan babak berikutnya
-        updated_next_match: dict[str, Any] | None = None
         next_match_id = match.get("next_match_id")
         next_slot = match.get("next_slot")
-        if next_match_id and next_slot in ("A", "B"):
-            slot_field = "team_a_id" if next_slot == "A" else "team_b_id"
-            updated_next_match = self._repo.update_match(
-                next_match_id, {slot_field: winner_team_id}
-            )
-        elif not next_match_id:
-            # Grand Final selesai, update status turnamen
-            self._repo.update_tournament(tournament["id"], {"status": "completed"})
+        slot_field = "team_a_id" if next_slot == "A" else "team_b_id"
+        if idempotency_key is None:
+            if next_match_id and next_slot in ("A", "B"):
+                self._guard_downstream_match(match, next_match_id, slot_field, winner_team_id)
+            else:
+                self._validate_grand_final_completion(tournament, match)
 
-        action_name = (
-            "MATCH_RESULT_OVERRIDDEN" if force_override else "MATCH_RESULT_VERIFIED"
-        )
-        self._repo.log_activity(
+        return self._repo.submit_match_result_atomic(
+            match_id=match["id"],
+            score_a=score_a,
+            score_b=score_b,
+            winner_team_id=winner_team_id,
+            notes=notes,
+            force_override=force_override,
             actor_id=user["id"],
-            tournament_id=tournament["id"],
-            entity_type="match",
-            entity_id=match["id"],
-            action=action_name,
-            details={
-                "score_a": score_a,
-                "score_b": score_b,
-                "winner_team_id": winner_team_id,
-                "next_match_id": next_match_id,
-                "next_slot": next_slot,
-                "notes": notes,
-            },
+            game_number=1,
+            idempotency_key=idempotency_key,
         )
 
-        return {
-            "match": updated_match,
-            "next_match": updated_next_match,
-        }
+    def _guard_downstream_match(
+        self,
+        match: dict[str, Any],
+        next_match_id: str,
+        slot_field: str,
+        winner_team_id: str,
+    ) -> None:
+        """Reject a winner change once the next-round match has started or finished.
+
+        Rewriting the slot at that point would leave the next match's result pointing at a team
+        that no longer plays in it, which corrupts the bracket and standings.
+        """
+        next_match = self._repo.get_match_by_id(next_match_id)
+        if not next_match or next_match.get(slot_field) == winner_team_id:
+            return
+        if next_match.get("status") in STARTED_MATCH_STATUSES or next_match.get("winner_team_id"):
+            raise DomainConflictError(
+                "Pemenang tidak dapat diubah karena pertandingan babak berikutnya sudah "
+                "berjalan atau selesai. Koreksi pertandingan lanjutan terlebih dahulu.",
+                {
+                    "match_id": match["id"],
+                    "next_match_id": next_match_id,
+                    "next_match_status": next_match.get("status"),
+                },
+            )
+
+    def _validate_grand_final_completion(
+        self, tournament: dict[str, Any], match: dict[str, Any]
+    ) -> None:
+        """Verify full bracket graph structure and prerequisite completion before closing tournament."""
+        if tournament["status"] not in ("ongoing", "completed"):
+            raise DomainConflictError(
+                "Grand Final hanya dapat disahkan ketika turnamen berstatus 'ongoing' atau 'completed'.",
+                {"tournament_id": tournament["id"], "status": tournament["status"]},
+            )
+
+        tournament_matches = self._repo.list_matches_by_tournament(tournament["id"])
+        validate_bracket_graph(
+            tournament["id"],
+            tournament_matches,
+            pending_final_id=match["id"],
+        )
