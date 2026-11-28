@@ -53,7 +53,7 @@ def test_standings_ranks_bye_champion_above_runner_up_with_higher_game_diff(
             "game_id": "22222222-2222-4222-8222-222222222201",
             "organizer_id": organizer["id"],
             "format": "single_elimination",
-            "status": "registration_open",
+            "status": "open_registration",
             "max_teams": 8,
             "best_of": 3,
             "registration_fee": 0,
