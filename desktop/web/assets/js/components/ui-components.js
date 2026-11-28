@@ -67,10 +67,25 @@
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/>',
     login:
       '<path d="M10 17l5-5-5-5M15 12H3M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/>',
+    image:
+      '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 15l-5-5L5 20"/>',
   };
 
   let modalCleanup = null;
   let lastFocusedBeforeModal = null;
+  let modalBusy = false;
+
+  function setModalBusy(isBusy) {
+    modalBusy = Boolean(isBusy);
+    const backdrop = document.getElementById("app-modal-backdrop");
+    if (!backdrop) return;
+    backdrop.setAttribute("data-busy", modalBusy ? "true" : "false");
+    const closeBtn = document.getElementById("app-modal-close-btn");
+    if (closeBtn) closeBtn.disabled = modalBusy;
+    backdrop.querySelectorAll("[data-modal-close='true']").forEach((btn) => {
+      btn.disabled = modalBusy;
+    });
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -146,12 +161,206 @@
     detail = "Mengambil data terbaru dari server API lokal."
   ) {
     return `
-      <div class="state-box" role="status" aria-live="polite">
+      <div class="state-box" role="status" aria-live="polite" aria-busy="true">
         <div class="state-icon">
           <span class="arena-spinner" aria-hidden="true"></span>
         </div>
         <h3>${escapeHtml(message)}</h3>
         <p>${escapeHtml(detail)}</p>
+      </div>
+    `;
+  }
+
+  function renderRefreshBanner(label = "Memperbarui data terbaru...") {
+    return `
+      <div class="skeleton-refresh-bar" role="status" aria-live="polite">
+        <span class="arena-spinner-sm" aria-hidden="true"></span>
+        <span>${escapeHtml(label)}</span>
+      </div>
+    `;
+  }
+
+  function renderStatCardsSkeleton(count = 4) {
+    const safeCount = Math.max(1, Math.min(8, Number(count) || 4));
+    const cards = Array.from({ length: safeCount }, () => `
+      <div class="metric-card skeleton-metric-card" aria-hidden="true">
+        <span class="arena-skeleton arena-skeleton-line is-sm" style="width:58%;"></span>
+        <span class="arena-skeleton arena-skeleton-line is-xl" style="width:44%;"></span>
+        <span class="arena-skeleton arena-skeleton-line is-xs" style="width:76%;"></span>
+      </div>
+    `).join("");
+    return `
+      <div class="grid-4" data-skeleton="true" role="status" aria-busy="true" aria-label="Memuat ringkasan statistik">
+        ${cards}
+      </div>
+    `;
+  }
+
+  function renderTournamentCardsSkeleton(count = 4) {
+    const safeCount = Math.max(1, Math.min(8, Number(count) || 4));
+    const cards = Array.from({ length: safeCount }, () => `
+      <div class="card skeleton-tournament-card" aria-hidden="true">
+        <span class="arena-skeleton arena-skeleton-media"></span>
+        <div class="skeleton-card-header" style="margin-bottom:4px;">
+          <span class="arena-skeleton arena-skeleton-pill"></span>
+          <span class="arena-skeleton arena-skeleton-line is-xs" style="width:68px;"></span>
+        </div>
+        <span class="arena-skeleton arena-skeleton-line is-lg" style="width:78%;"></span>
+        <span class="arena-skeleton arena-skeleton-line is-sm" style="width:56%;"></span>
+        <span class="arena-skeleton arena-skeleton-line is-xs" style="width:100%;height:8px;margin-top:4px;"></span>
+        <div class="skeleton-card-header" style="margin-top:auto;margin-bottom:0;padding-top:8px;">
+          <span class="arena-skeleton arena-skeleton-btn" style="width:92px;"></span>
+          <span class="arena-skeleton arena-skeleton-btn" style="width:108px;"></span>
+        </div>
+      </div>
+    `).join("");
+    return `
+      <div class="grid-2" data-skeleton="true" role="status" aria-busy="true" aria-label="Memuat daftar turnamen">
+        ${cards}
+      </div>
+    `;
+  }
+
+  function renderTableSkeleton(options = {}) {
+    const rows = Math.max(1, Math.min(10, Number(options.rows) || 5));
+    const columns = Math.max(2, Math.min(6, Number(options.columns) || 4));
+    const title = String(options.title || "").trim();
+    const widths = ["78%", "52%", "64%", "48%", "58%", "40%"];
+    const rowHtml = Array.from({ length: rows }, () => {
+      const cells = Array.from({ length: columns }, (_, cIdx) => {
+        const width = widths[cIdx % widths.length];
+        return `<span class="arena-skeleton arena-skeleton-line" style="width:${width};"></span>`;
+      }).join("");
+      return `<div class="skeleton-table-row">${cells}</div>`;
+    }).join("");
+
+    return `
+      <div class="card" data-skeleton="true" role="status" aria-busy="true" aria-label="${escapeHtml(title || "Memuat tabel data")}">
+        <div class="skeleton-card-header">
+          <div style="flex:1;min-width:0;">
+            ${title ? `<h3 class="card-title">${escapeHtml(title)}</h3>` : '<span class="arena-skeleton arena-skeleton-line is-lg" style="width:210px;"></span>'}
+          </div>
+          <span class="arena-skeleton arena-skeleton-btn" style="width:94px;"></span>
+        </div>
+        <div class="skeleton-table-rows" aria-hidden="true">${rowHtml}</div>
+      </div>
+    `;
+  }
+
+  function renderListSkeleton(options = {}) {
+    const rows = Math.max(1, Math.min(10, Number(options.rows) || 4));
+    const title = String(options.title || "").trim();
+    const withAvatar = options.withAvatar !== false;
+    const itemsHtml = Array.from({ length: rows }, (_, idx) => `
+      <div class="skeleton-list-item">
+        ${withAvatar ? '<span class="arena-skeleton arena-skeleton-avatar"></span>' : ""}
+        <div class="skeleton-list-copy">
+          <span class="arena-skeleton arena-skeleton-line" style="width:${idx % 2 === 0 ? "62%" : "50%"};"></span>
+          <span class="arena-skeleton arena-skeleton-line is-xs" style="width:${idx % 2 === 0 ? "42%" : "36%"};"></span>
+        </div>
+        <span class="arena-skeleton arena-skeleton-pill" style="width:78px;"></span>
+      </div>
+    `).join("");
+
+    return `
+      <div class="card" data-skeleton="true" role="status" aria-busy="true" aria-label="${escapeHtml(title || "Memuat daftar")}">
+        <div class="skeleton-card-header">
+          <div style="flex:1;min-width:0;">
+            ${title ? `<h3 class="card-title">${escapeHtml(title)}</h3>` : '<span class="arena-skeleton arena-skeleton-line is-lg" style="width:190px;"></span>'}
+          </div>
+          <span class="arena-skeleton arena-skeleton-pill" style="width:72px;"></span>
+        </div>
+        <div class="skeleton-list" aria-hidden="true">${itemsHtml}</div>
+      </div>
+    `;
+  }
+
+  function renderAnnouncementCardsSkeleton(count = 3) {
+    const safeCount = Math.max(1, Math.min(8, Number(count) || 3));
+    const cards = Array.from({ length: safeCount }, () => `
+      <div class="card skeleton-announcement-card" aria-hidden="true">
+        <div class="skeleton-card-header" style="margin-bottom:4px;">
+          <span class="arena-skeleton arena-skeleton-pill" style="width:84px;"></span>
+          <span class="arena-skeleton arena-skeleton-line is-xs" style="width:110px;"></span>
+        </div>
+        <span class="arena-skeleton arena-skeleton-line is-lg" style="width:66%;"></span>
+        <span class="arena-skeleton arena-skeleton-line is-sm" style="width:94%;"></span>
+        <span class="arena-skeleton arena-skeleton-line is-sm" style="width:72%;"></span>
+      </div>
+    `).join("");
+    return `
+      <div class="stack-md" data-skeleton="true" role="status" aria-busy="true" aria-label="Memuat pengumuman">
+        ${cards}
+      </div>
+    `;
+  }
+
+  function renderReportChartSkeleton() {
+    const barHeights = [46, 74, 58, 92, 66, 84];
+    const bars = barHeights
+      .map(
+        (h) =>
+          `<span class="arena-skeleton skeleton-chart-bar" style="height:${h}%;"></span>`
+      )
+      .join("");
+    return `
+      <div data-skeleton="true" role="status" aria-busy="true" aria-label="Memuat statistik dan grafik laporan">
+        ${renderStatCardsSkeleton(4)}
+        <div class="skeleton-chart-box" aria-hidden="true">
+          <div class="skeleton-card-header">
+            <span class="arena-skeleton arena-skeleton-line is-lg" style="width:220px;"></span>
+            <span class="arena-skeleton arena-skeleton-pill"></span>
+          </div>
+          <div class="skeleton-chart-bars">${bars}</div>
+        </div>
+        ${renderTableSkeleton({ rows: 5, columns: 4 })}
+      </div>
+    `;
+  }
+
+  function renderDashboardSkeleton(roleKey = "super_admin") {
+    if (roleKey === "super_admin") {
+      return `
+        <div data-skeleton="true" role="status" aria-busy="true" aria-label="Memuat dashboard administrasi">
+          <div class="page-header" aria-hidden="true">
+            <div class="page-header-copy" style="flex:1;">
+              <span class="arena-skeleton arena-skeleton-line is-xl" style="width:290px;margin-bottom:8px;"></span>
+              <span class="arena-skeleton arena-skeleton-line is-sm" style="width:420px;max-width:100%;"></span>
+            </div>
+            <div class="page-actions">
+              <span class="arena-skeleton arena-skeleton-btn"></span>
+              <span class="arena-skeleton arena-skeleton-btn"></span>
+              <span class="arena-skeleton arena-skeleton-btn"></span>
+            </div>
+          </div>
+          ${renderStatCardsSkeleton(4)}
+          <div class="workspace-split">
+            ${renderTableSkeleton({ rows: 4, columns: 4, title: "Kontrol Seluruh Turnamen" })}
+            <div class="stack-md">
+              ${renderListSkeleton({ rows: 3, title: "Katalog & Pengaturan Game", withAvatar: false })}
+              ${renderListSkeleton({ rows: 2, title: "Telemetri Lingkungan Sistem", withAvatar: false })}
+            </div>
+          </div>
+          <div style="margin-bottom:20px;">
+            ${renderTableSkeleton({ rows: 4, columns: 5, title: "Manajemen Pengguna & Penetapan Role" })}
+          </div>
+          ${renderTableSkeleton({ rows: 4, columns: 3, title: "Jejak Audit Aktivitas Sistem" })}
+        </div>
+      `;
+    }
+    return `
+      <div data-skeleton="true" role="status" aria-busy="true" aria-label="Memuat dashboard arena">
+        <div class="page-header" aria-hidden="true">
+          <div class="page-header-copy" style="flex:1;">
+            <span class="arena-skeleton arena-skeleton-line is-xl" style="width:260px;margin-bottom:8px;"></span>
+            <span class="arena-skeleton arena-skeleton-line is-sm" style="width:380px;max-width:100%;"></span>
+          </div>
+        </div>
+        ${renderStatCardsSkeleton(4)}
+        <div class="workspace-split">
+          ${renderTournamentCardsSkeleton(2)}
+          ${renderAnnouncementCardsSkeleton(2)}
+        </div>
       </div>
     `;
   }
@@ -228,11 +437,22 @@
     `;
   }
 
+  const GAME_ARTWORK_BY_ID = {
+    "22222222-2222-4222-8222-222222222201": "mobile-legends",
+    "22222222-2222-4222-8222-222222222202": "valorant",
+    "22222222-2222-4222-8222-222222222203": "ea-sports-fc",
+  };
+
   const GAME_ARTWORK_REGISTRY = {
     "mobile-legends": {
+      id: "22222222-2222-4222-8222-222222222201",
       slug: "mobile-legends",
-      src: "assets/images/games/mobile-legends.svg",
-      webpSrc: "assets/images/games/mobile-legends.webp",
+      officialTitle: "Mobile Legends: Bang Bang",
+      aliases: ["mobile-legends", "mobile-legends-bang-bang", "mobile legends: bang bang"],
+      src: "https://akmweb.youngjoygame.com/web/gms/image/c3d1596795b86dc26e5f1ef2d48c3dfd.jpg",
+      fallbackSrc: "assets/images/games/mobile-legends.svg",
+      sourceLabel: "MOONTON Official (mobilelegends.com)",
+      hasOfficialArtwork: true,
       primary: "#00E5FF",
       secondary: "#8B5CF6",
       code: "MOBA 5V5",
@@ -240,9 +460,14 @@
         '<polygon points="160,18 214,64 194,116 126,116 106,64" fill="none" stroke="#00E5FF" stroke-width="2"/><polygon points="160,34 196,66 182,102 138,102 124,66" fill="rgba(0,229,255,0.14)" stroke="#8B5CF6" stroke-width="1.5"/>',
     },
     valorant: {
+      id: "22222222-2222-4222-8222-222222222202",
       slug: "valorant",
-      src: "assets/images/games/valorant.svg",
-      webpSrc: "assets/images/games/valorant.webp",
+      officialTitle: "VALORANT",
+      aliases: ["valorant"],
+      src: "https://cmsassets.rgpub.io/sanity/images/dsfx7636/news_live/a3d06721391f4c274e588c380ca6903c8b3e129e-1920x1080.jpg",
+      fallbackSrc: "assets/images/games/valorant.svg",
+      sourceLabel: "Riot Games Official (playvalorant.com)",
+      hasOfficialArtwork: true,
       primary: "#38EEFF",
       secondary: "#A78BFA",
       code: "TACTICAL FPS",
@@ -250,9 +475,14 @@
         '<path d="M116 30L160 112L204 30" fill="none" stroke="#00E5FF" stroke-width="2.5"/><path d="M134 42L160 90L186 42" fill="none" stroke="#8B5CF6" stroke-width="1.5"/><circle cx="160" cy="34" r="4" fill="#00E5FF"/>',
     },
     "ea-sports-fc": {
+      id: "22222222-2222-4222-8222-222222222203",
       slug: "ea-sports-fc",
-      src: "assets/images/games/ea-sports-fc.svg",
-      webpSrc: "assets/images/games/ea-sports-fc.webp",
+      officialTitle: "EA Sports FC 25",
+      aliases: ["ea-sports-fc", "ea sports fc 25", "ea sports fc™ 25"],
+      src: "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/2669320/capsule_616x353.jpg",
+      fallbackSrc: "assets/images/games/ea-sports-fc.svg",
+      sourceLabel: "Steam Store Official (App ID 2669320)",
+      hasOfficialArtwork: true,
       primary: "#34D399",
       secondary: "#00E5FF",
       code: "SPORTS 1V1",
@@ -260,9 +490,14 @@
         '<circle cx="160" cy="70" r="38" fill="rgba(0,229,255,0.08)" stroke="#00E5FF" stroke-width="2"/><circle cx="160" cy="70" r="20" fill="none" stroke="#8B5CF6" stroke-width="1.5"/><path d="M90 70H230" stroke="#233354" stroke-width="1.5"/>',
     },
     "default-arena": {
+      id: "",
       slug: "default-arena",
+      officialTitle: "Esports Arena",
+      aliases: [],
       src: "assets/images/games/default-arena.svg",
-      webpSrc: "assets/images/games/default-arena.webp",
+      fallbackSrc: "assets/images/games/default-arena.svg",
+      sourceLabel: "Fallback Lokal Turnamen.in",
+      hasOfficialArtwork: false,
       primary: "#00E5FF",
       secondary: "#8B5CF6",
       code: "ESPORTS ARENA",
@@ -271,26 +506,149 @@
     },
   };
 
-  function resolveGameArtwork(game) {
-    const rawSlug =
-      game && typeof game === "object"
-        ? String(game.slug || game.game_id || game.name || game.game_name || "")
-        : String(game || "");
-    const normalized = rawSlug.trim().toLowerCase();
+  const ARTWORK_CACHE = new Map();
+  const SENSITIVE_ARTWORK_PARAM_RE = /^(?:token|access_token|refresh_token|api_key|apikey|key|secret|password|service_role)$/i;
 
-    if (normalized && GAME_ARTWORK_REGISTRY[normalized]) {
-      return GAME_ARTWORK_REGISTRY[normalized];
+  function isSafeArtworkUrl(rawUrl) {
+    const clean = String(rawUrl || "").trim();
+    if (!clean || /[\u0000-\u001f\u007f]/.test(clean) || clean.includes("..")) return false;
+    if (/^assets\/images\/[a-zA-Z0-9_./-]+$/.test(clean)) {
+      return true;
     }
-    if (normalized.includes("mobile-legends") || normalized.includes("mobile legends") || normalized.includes("mlbb")) {
-      return GAME_ARTWORK_REGISTRY["mobile-legends"];
+    if (/^\/api\/v1\/games\/artwork-assets\/[a-z0-9-]+\/[0-9a-f-]+\.(?:jpe?g|png|webp)$/i.test(clean)) {
+      return true;
     }
-    if (normalized.includes("valorant")) {
-      return GAME_ARTWORK_REGISTRY.valorant;
+    try {
+      const parsed = new URL(clean);
+      if (parsed.username || parsed.password) {
+        return false;
+      }
+      if (
+        parsed.protocol === "http:" &&
+        parsed.hostname === "127.0.0.1" &&
+        /^\/api\/v1\/games\/artwork-assets\/[a-z0-9-]+\/[0-9a-f-]+\.(?:jpe?g|png|webp)$/i.test(parsed.pathname)
+      ) {
+        return true;
+      }
+      if (parsed.protocol !== "https:") {
+        return false;
+      }
+      for (const paramKey of parsed.searchParams.keys()) {
+        if (SENSITIVE_ARTWORK_PARAM_RE.test(paramKey)) {
+          return false;
+        }
+      }
+      return true;
+    } catch (_err) {
+      return false;
     }
-    if (normalized.includes("ea-sports-fc") || normalized.includes("fc 25") || normalized.includes("fc25")) {
-      return GAME_ARTWORK_REGISTRY["ea-sports-fc"];
+  }
+
+  function resolveGameArtwork(game) {
+    let resolvedKey = "";
+    const isObj = game && typeof game === "object";
+
+    const rawId = isObj ? String(game.id || game.game_id || "").trim().toLowerCase() : "";
+    if (rawId && GAME_ARTWORK_BY_ID[rawId]) {
+      resolvedKey = GAME_ARTWORK_BY_ID[rawId];
     }
-    return GAME_ARTWORK_REGISTRY["default-arena"];
+
+    const rawSlug = isObj ? String(game.slug || game.game_slug || "").trim().toLowerCase() : "";
+    if (!resolvedKey && rawSlug && GAME_ARTWORK_REGISTRY[rawSlug]) {
+      resolvedKey = rawSlug;
+    }
+
+    const candidates = isObj
+      ? [
+          String(game.external_rawg_slug || "").trim().toLowerCase(),
+          String(game.name || game.game_name || "").trim().toLowerCase(),
+        ]
+      : [String(game || "").trim().toLowerCase()];
+
+    if (!resolvedKey) {
+      for (const cand of candidates) {
+        if (!cand) continue;
+        if (GAME_ARTWORK_REGISTRY[cand]) {
+          resolvedKey = cand;
+          break;
+        }
+        const matched = Object.keys(GAME_ARTWORK_REGISTRY).find((key) => {
+          if (key === "default-arena") return false;
+          const entry = GAME_ARTWORK_REGISTRY[key];
+          return (
+            entry.officialTitle.toLowerCase() === cand ||
+            (Array.isArray(entry.aliases) && entry.aliases.includes(cand))
+          );
+        });
+        if (matched) {
+          resolvedKey = matched;
+          break;
+        }
+      }
+    }
+
+    const baseEntry = resolvedKey
+      ? GAME_ARTWORK_REGISTRY[resolvedKey]
+      : GAME_ARTWORK_REGISTRY["default-arena"];
+    const customOverrideUrl =
+      isObj && isSafeArtworkUrl(game.custom_artwork_url)
+        ? String(game.custom_artwork_url).trim()
+        : "";
+    const customIconUrl =
+      isObj && !customOverrideUrl && isSafeArtworkUrl(game.icon_url)
+        ? String(game.icon_url).trim()
+        : "";
+    const officialOrFallbackPrimary =
+      isSafeArtworkUrl(baseEntry.src) ? baseEntry.src : baseEntry.fallbackSrc;
+    const primarySrc =
+      customOverrideUrl ||
+      (baseEntry.hasOfficialArtwork ? officialOrFallbackPrimary : customIconUrl || baseEntry.fallbackSrc);
+    const secondaryFallback =
+      customOverrideUrl && isSafeArtworkUrl(baseEntry.src)
+        ? baseEntry.src
+        : baseEntry.fallbackSrc;
+    const activeSrc =
+      ARTWORK_CACHE.get(primarySrc) === "failed" ? secondaryFallback : primarySrc;
+
+    return {
+      ...baseEntry,
+      src: activeSrc,
+      primarySrc,
+      fallbackSrc: secondaryFallback,
+      isCustomArtwork: Boolean(customOverrideUrl && ARTWORK_CACHE.get(customOverrideUrl) !== "failed"),
+      sourceLabel:
+        customOverrideUrl && ARTWORK_CACHE.get(customOverrideUrl) !== "failed"
+          ? "Poster Kustom Super Admin"
+          : baseEntry.sourceLabel,
+      hasOfficialArtwork: Boolean(customOverrideUrl || customIconUrl || baseEntry.hasOfficialArtwork),
+    };
+  }
+
+  function handleArtworkLoad(imgEl) {
+    if (!imgEl) return;
+    const url = imgEl.getAttribute("data-primary-src") || imgEl.getAttribute("src") || "";
+    if (url && !imgEl.dataset.fallbackApplied) {
+      ARTWORK_CACHE.set(url, "loaded");
+    }
+  }
+
+  function handleArtworkError(imgEl, fallbackSrc = "assets/images/games/default-arena.svg") {
+    if (!imgEl) return;
+    const primaryUrl = imgEl.getAttribute("data-primary-src") || "";
+    if (primaryUrl) {
+      ARTWORK_CACHE.set(primaryUrl, "failed");
+    }
+    if (!imgEl.dataset.fallbackApplied && fallbackSrc && imgEl.getAttribute("src") !== fallbackSrc) {
+      imgEl.dataset.fallbackApplied = "1";
+      imgEl.setAttribute("src", fallbackSrc);
+      imgEl.src = fallbackSrc;
+      return;
+    }
+    imgEl.style.display = "none";
+    if (imgEl.nextElementSibling) {
+      imgEl.nextElementSibling.classList.add("is-visible");
+      imgEl.nextElementSibling.classList.remove("is-hidden");
+    }
   }
 
   function getGamePalette(gameSlugOrName) {
@@ -301,7 +659,7 @@
     const gameName = (game && (game.name || game.game_name)) || "Esports";
     const asset = resolveGameArtwork(game);
     const label = labelOverride || asset.code;
-    const loadingAttr = options && options.eager ? "eager" : "lazy";
+    const loadingAttr = options && options.eager === true ? "eager" : "lazy";
     const hideLabels = Boolean(options && options.hideLabels);
     const hideCaption = Boolean(options && options.hideCaption);
 
@@ -310,14 +668,18 @@
         <img
           class="artwork-img"
           src="${escapeHtml(asset.src)}"
+          data-primary-src="${escapeHtml(asset.primarySrc)}"
+          data-artwork-slug="${escapeHtml(asset.slug)}"
           alt="Artwork ${escapeHtml(gameName)}"
           width="960"
           height="540"
           loading="${loadingAttr}"
           decoding="async"
-          onerror="this.style.display='none'; if (this.nextElementSibling) { this.nextElementSibling.classList.add('is-visible'); }"
+          referrerpolicy="no-referrer"
+          onload="window.TurnamenUI && window.TurnamenUI.handleArtworkLoad(this)"
+          onerror="window.TurnamenUI && window.TurnamenUI.handleArtworkError(this, '${escapeHtml(asset.fallbackSrc)}')"
         />
-        <svg class="artwork-fallback-svg" viewBox="0 0 320 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ilustrasi game ${escapeHtml(gameName)}">
+        <svg class="artwork-fallback-svg" viewBox="0 0 320 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fallback artwork ${escapeHtml(gameName)}">
           <rect width="320" height="160" fill="#0B1120"/>
           <path d="M0 132L72 132L96 108L320 108" stroke="#1D2A48" stroke-width="1.5"/>
           <path d="M0 28L210 28L232 50L320 50" stroke="#1D2A48" stroke-width="1.5"/>
@@ -330,9 +692,23 @@
     `;
   }
 
-  function renderGameChip(gameName, gameSlug = "") {
-    const asset = resolveGameArtwork(gameSlug || gameName);
-    return `<span class="game-chip"><span class="game-chip-dot" style="background-color:${asset.primary};" aria-hidden="true"></span><span>${escapeHtml(gameName || "Esports")}</span></span>`;
+  function renderGameChip(gameNameOrObj, gameSlugOrObj = "") {
+    const isFirstObj = gameNameOrObj && typeof gameNameOrObj === "object";
+    const gameName = isFirstObj
+      ? gameNameOrObj.name || gameNameOrObj.game_name || "Esports"
+      : gameNameOrObj || "Esports";
+    const resolverInput = isFirstObj
+      ? gameNameOrObj
+      : gameSlugOrObj && typeof gameSlugOrObj === "object"
+        ? gameSlugOrObj
+        : gameSlugOrObj || gameName;
+    const asset = resolveGameArtwork(resolverInput);
+    const thumbHtml =
+      asset.hasOfficialArtwork || asset.src !== asset.fallbackSrc
+        ? `<img class="game-chip-thumb" src="${escapeHtml(asset.src)}" data-primary-src="${escapeHtml(asset.primarySrc)}" alt="" width="22" height="14" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="window.TurnamenUI && window.TurnamenUI.handleArtworkLoad(this)" onerror="this.style.display='none'; if (this.nextElementSibling) { this.nextElementSibling.classList.remove('is-hidden'); }" />`
+        : "";
+    const dotClass = thumbHtml ? "game-chip-dot is-hidden" : "game-chip-dot";
+    return `<span class="game-chip">${thumbHtml}<span class="${dotClass}" style="background-color:${asset.primary};" aria-hidden="true"></span><span>${escapeHtml(gameName)}</span></span>`;
   }
 
   function hashIdentifier(text) {
@@ -430,6 +806,7 @@
 
   function renderMatchCard(match, options = {}) {
     const highlightTeamIds = new Set(options.highlightTeamIds || []);
+    const isBye = String(match.status || "").toLowerCase() === "bye";
     const winA = match.winner_team_id && match.winner_team_id === match.team_a_id;
     const winB = match.winner_team_id && match.winner_team_id === match.team_b_id;
     const involvesOwnTeam =
@@ -437,31 +814,33 @@
 
     const teamABadge = match.team_a_id
       ? renderTeamEmblem(match.team_a_tag, 24)
-      : `<span class="badge badge-neutral tabular-nums">TBD</span>`;
+      : `<span class="badge badge-neutral tabular-nums">${isBye ? "BYE" : "TBD"}</span>`;
     const teamBBadge = match.team_b_id
       ? renderTeamEmblem(match.team_b_tag, 24)
-      : `<span class="badge badge-neutral tabular-nums">TBD</span>`;
+      : `<span class="badge badge-neutral tabular-nums">${isBye ? "BYE" : "TBD"}</span>`;
+    const scoreAText = isBye ? (match.team_a_id ? "ADV" : "-") : match.score_a ?? 0;
+    const scoreBText = isBye ? (match.team_b_id ? "ADV" : "BYE") : match.score_b ?? 0;
 
     return `
-      <article class="match-card ${involvesOwnTeam ? "is-highlighted" : ""}">
+      <article class="match-card ${involvesOwnTeam ? "is-highlighted" : ""} ${isBye ? "is-bye-match" : ""}">
         <div class="match-card-header">
           <span class="tabular-nums"><strong>${escapeHtml(match.round_name || "Match")}</strong> #${match.match_number} (Bo${match.best_of || 3})</span>
           ${renderStatusBadge(match.status)}
         </div>
         <div class="match-card-teams">
-          <div class="match-card-team ${winA ? "is-winner" : ""}">
+          <div class="match-card-team ${winA ? "is-winner" : ""} ${!match.team_a_id ? "is-bye-slot" : ""}">
             <div class="match-card-team-name">
               ${teamABadge}
-              <span>${escapeHtml(match.team_a_name || "TBD")}</span>
+              <span>${escapeHtml(match.team_a_name || (isBye ? "BYE" : "TBD"))}</span>
             </div>
-            <span class="match-card-score">${match.score_a ?? 0}</span>
+            <span class="match-card-score ${isBye ? "is-bye" : ""}">${scoreAText}</span>
           </div>
-          <div class="match-card-team ${winB ? "is-winner" : ""}">
+          <div class="match-card-team ${winB ? "is-winner" : ""} ${!match.team_b_id ? "is-bye-slot" : ""}">
             <div class="match-card-team-name">
               ${teamBBadge}
-              <span>${escapeHtml(match.team_b_name || "TBD")}</span>
+              <span>${escapeHtml(match.team_b_name || (isBye ? "BYE" : "TBD"))}</span>
             </div>
-            <span class="match-card-score">${match.score_b ?? 0}</span>
+            <span class="match-card-score ${isBye ? "is-bye" : ""}">${scoreBText}</span>
           </div>
         </div>
       </article>
@@ -621,9 +1000,12 @@
     );
   }
 
-  function closeModal() {
+  function closeModal(force = false) {
+    if (modalBusy && !force) return;
     const backdrop = document.getElementById("app-modal-backdrop");
     if (!backdrop) return;
+    modalBusy = false;
+    backdrop.setAttribute("data-busy", "false");
 
     if (typeof modalCleanup === "function") {
       modalCleanup();
@@ -632,6 +1014,14 @@
 
     backdrop.classList.add("hidden");
     backdrop.setAttribute("aria-hidden", "true");
+    if (document.body) {
+      if (document.body.classList && typeof document.body.classList.remove === "function") {
+        document.body.classList.remove("modal-open");
+      }
+      if (document.body.style) {
+        document.body.style.overflow = "";
+      }
+    }
 
     if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === "function") {
       try {
@@ -671,6 +1061,14 @@
 
     backdrop.classList.remove("hidden");
     backdrop.setAttribute("aria-hidden", "false");
+    if (document.body) {
+      if (document.body.classList && typeof document.body.classList.add === "function") {
+        document.body.classList.add("modal-open");
+      }
+      if (document.body.style) {
+        document.body.style.overflow = "hidden";
+      }
+    }
 
     const onKeydown = (e) => {
       if (e.key === "Escape") {
@@ -737,11 +1135,28 @@
     renderStatusBadge,
     renderRoleBadge,
     renderLoadingState,
+    renderRefreshBanner,
+    renderStatCardsSkeleton,
+    renderTournamentCardsSkeleton,
+    renderTableSkeleton,
+    renderListSkeleton,
+    renderAnnouncementCardsSkeleton,
+    renderReportChartSkeleton,
+    renderDashboardSkeleton,
     renderEmptyState,
     renderErrorState,
     renderAuthNotice,
     renderAccessDeniedState,
     resolveGameArtwork,
+    isSafeArtworkUrl,
+    handleArtworkLoad,
+    handleArtworkError,
+    getArtworkCacheStats() {
+      return { size: ARTWORK_CACHE.size, entries: Object.fromEntries(ARTWORK_CACHE.entries()) };
+    },
+    clearArtworkCache() {
+      ARTWORK_CACHE.clear();
+    },
     renderGameArtwork,
     renderGameChip,
     renderTeamEmblem,
@@ -751,5 +1166,9 @@
     showToast,
     openModal,
     closeModal,
+    setModalBusy,
+    isModalBusy() {
+      return Boolean(modalBusy);
+    },
   };
 })(window, document);

@@ -135,6 +135,7 @@ def _extract_config_secrets(config: AppConfig | None) -> tuple[str, ...]:
         return ()
     candidates = (
         getattr(config, "secret_key", ""),
+        getattr(config, "supabase_publishable_key", ""),
         getattr(config, "supabase_anon_key", ""),
         getattr(config, "rawg_api_key", ""),
     )

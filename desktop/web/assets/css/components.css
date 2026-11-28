@@ -179,6 +179,35 @@
   transform: translateY(1px);
 }
 
+.btn:disabled,
+.btn[aria-busy="true"] {
+  opacity: 0.62;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.arena-spinner-sm {
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  animation: arena-spin 0.75s linear infinite;
+}
+
+.match-card-score.is-bye {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.notice-banner-info {
+  border-color: rgba(0, 229, 255, 0.35);
+  background-color: rgba(0, 229, 255, 0.07);
+}
+
 .btn-primary {
   background-color: var(--accent-primary);
   color: var(--text-on-cyan);
@@ -546,7 +575,7 @@
   position: relative;
   display: inline-flex;
   min-width: 100%;
-  padding: 6px 4px;
+  padding: 6px 12px 10px 6px;
 }
 
 .bracket-connectors-svg {
@@ -746,6 +775,51 @@
   background-color: var(--status-danger-bg);
 }
 
+.notice-banner-success {
+  border-color: rgba(52, 211, 153, 0.45);
+  background-color: var(--status-success-bg);
+}
+
+.auth-inline-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: -6px;
+  margin-bottom: 14px;
+}
+
+.auth-link-btn {
+  padding: 4px 8px;
+  color: var(--accent-cyan-text);
+}
+
+.auth-recovery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.auth-recovery-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.auth-recovery-box {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.auth-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 /* States: Loading, Empty, Error */
 .state-box {
   padding: 36px 24px;
@@ -942,13 +1016,23 @@
   }
 }
 
+@media (max-width: 1180px) {
+  .bracket-board {
+    gap: 36px;
+  }
+
+  .bracket-round {
+    min-width: 245px;
+  }
+}
+
 @media (max-width: 1024px) {
   .toast-container {
-    bottom: 16px;
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    width: min(380px, calc(100vw - 28px));
+    bottom: 14px;
+    right: 14px;
+    left: auto;
+    transform: none;
+    width: min(340px, calc(100vw - 28px));
     max-width: calc(100vw - 28px);
   }
 }
@@ -969,7 +1053,18 @@
   background: transparent;
   border: none;
   color: var(--text-muted);
-  padding: 2px;
+  min-width: 32px;
+  min-height: 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin: -4px -6px -4px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-xs, 6px);
+  cursor: pointer;
   line-height: 1;
 }
 
@@ -1534,6 +1629,21 @@
   flex-shrink: 0;
 }
 
+.game-chip-dot.is-hidden {
+  display: none;
+}
+
+.game-chip-thumb {
+  width: 22px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: cover;
+  object-position: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(35, 51, 84, 0.85);
+  background-color: var(--bg-secondary);
+}
+
 /* Access Denied State */
 .state-box-denied {
   border-style: solid;
@@ -1851,4 +1961,328 @@
   width: 38px;
   height: 38px;
   flex-shrink: 0;
+}
+
+/* ============================================================================
+ * Wave 6.9: Futuristic Arena Skeleton Shimmer & Progressive Loading
+ * ============================================================================ */
+@keyframes arena-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.arena-skeleton {
+  display: block;
+  position: relative;
+  border-radius: var(--radius-xs);
+  background-color: #121d33;
+  background-image: linear-gradient(
+    110deg,
+    #121d33 20%,
+    rgba(0, 229, 255, 0.08) 38%,
+    rgba(56, 238, 255, 0.16) 45%,
+    rgba(0, 229, 255, 0.06) 52%,
+    #121d33 70%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(35, 51, 84, 0.55);
+  animation: arena-shimmer 1.65s ease-in-out infinite;
+  pointer-events: none;
+  user-select: none;
+}
+
+.arena-skeleton-line {
+  height: 13px;
+  width: 100%;
+}
+
+.arena-skeleton-line.is-xs {
+  height: 10px;
+}
+
+.arena-skeleton-line.is-sm {
+  height: 11px;
+}
+
+.arena-skeleton-line.is-lg {
+  height: 18px;
+}
+
+.arena-skeleton-line.is-xl {
+  height: 28px;
+}
+
+.arena-skeleton-pill {
+  height: 22px;
+  width: 96px;
+  border-radius: 999px;
+}
+
+.arena-skeleton-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.arena-skeleton-btn {
+  height: 32px;
+  width: 108px;
+  border-radius: var(--radius-sm);
+}
+
+.arena-skeleton-media {
+  height: 112px;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
+.skeleton-metric-card {
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skeleton-tournament-card {
+  min-height: 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.skeleton-table-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-table-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 2fr) repeat(3, minmax(70px, 1fr));
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(11, 17, 32, 0.52);
+  border: 1px solid rgba(35, 51, 84, 0.45);
+}
+
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(11, 17, 32, 0.52);
+  border: 1px solid rgba(35, 51, 84, 0.45);
+}
+
+.skeleton-list-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.skeleton-announcement-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 132px;
+}
+
+.skeleton-chart-box {
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background-color: rgba(11, 17, 32, 0.56);
+  border: 1px solid rgba(35, 51, 84, 0.55);
+  margin-bottom: 18px;
+}
+
+.skeleton-chart-bars {
+  height: 124px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.skeleton-chart-bar {
+  width: 100%;
+  border-radius: var(--radius-xs) var(--radius-xs) 2px 2px;
+}
+
+.skeleton-refresh-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.28);
+  color: var(--accent-cyan-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+@media (max-width: 1024px) {
+  .skeleton-table-row {
+    grid-template-columns: minmax(120px, 1.8fr) repeat(2, minmax(60px, 1fr));
+  }
+  .skeleton-table-row > :nth-child(n + 4) {
+    display: none;
+  }
+  .skeleton-chart-bars {
+    gap: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arena-skeleton {
+    animation: none;
+    background-image: none;
+    background-color: #16233b;
+  }
+}
+
+/* Wave 6.11 Custom Game Artwork Management */
+.artwork-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 18px;
+}
+
+.artwork-manager-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.artwork-manager-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.artwork-manager-poster {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  aspect-ratio: 16 / 9;
+  background-color: var(--bg-secondary);
+}
+
+.artwork-manager-poster .artwork-media {
+  height: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.artwork-manager-preview-box {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background-color: rgba(11, 17, 32, 0.78);
+  border: 1px dashed rgba(0, 229, 255, 0.48);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.artwork-manager-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--accent-cyan-text);
+  font-weight: 600;
+}
+
+.artwork-manager-preview-frame {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-secondary);
+}
+
+.artwork-manager-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.artwork-manager-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.artwork-manager-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.artwork-upload-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.artwork-file-input-sr {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1024px) {
+  .artwork-manager-grid {
+    grid-template-columns: 1fr;
+  }
 }

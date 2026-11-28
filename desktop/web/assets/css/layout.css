@@ -4,9 +4,10 @@
  * ============================================================================ */
 
 .app-shell {
+  position: relative;
   display: flex;
-  min-height: 100vh;
-  height: 100vh;
+  height: 100%;
+  min-height: 100%;
   width: 100%;
   overflow: hidden;
   background-color: var(--bg-primary);
@@ -15,6 +16,9 @@
 /* Sidebar */
 .sidebar {
   width: var(--sidebar-width);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-subtle);
   display: flex;
@@ -90,6 +94,7 @@ button.sidebar-toggle-btn {
 
 .sidebar-nav {
   flex: 1;
+  min-height: 0;
   padding: 12px 10px 16px;
   overflow-y: auto;
   display: flex;
@@ -171,7 +176,9 @@ button.sidebar-toggle-btn {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100vh;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Topbar (Blur Surface #1 of 2 allowed) */
@@ -245,7 +252,9 @@ button.sidebar-toggle-btn {
 
 /* Content Area */
 .content-area {
+  position: relative;
   flex: 1;
+  min-height: 0;
   padding: 24px;
   overflow-y: auto;
   overflow-x: hidden;

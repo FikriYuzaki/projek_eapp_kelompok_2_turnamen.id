@@ -24,8 +24,9 @@
     return raw
       .replace(/(Bearer\s+)[A-Za-z0-9\-._~+/]+=*/gi, "$1***REDACTED***")
       .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "***REDACTED***")
+      .replace(/\bsb_(?:publishable|secret)_[A-Za-z0-9_-]+\b/g, "***REDACTED***")
       .replace(
-        /((?:password|passwd|secret_key|supabase_anon_key|service_role|rawg_api_key|api_key|apikey|access_token|refresh_token|auth_token|token|secret|key|authorization)['"\s:=]+)[^\s,'"};&]+/gi,
+        /((?:password|passwd|secret_key|supabase_publishable_key|supabase_anon_key|service_role|rawg_api_key|api_key|apikey|access_token|refresh_token|auth_token|token|secret|key|authorization)['"\s:=]+)[^\s,'"};&]+/gi,
         "$1***REDACTED***"
       );
   }

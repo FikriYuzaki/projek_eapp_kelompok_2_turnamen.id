@@ -28,6 +28,7 @@ ALLOWED_BASE_HEADERS = {
     "authorization": "Authorization",
     "content-type": "Content-Type",
     "accept": "Accept",
+    "idempotency-key": "Idempotency-Key",
 }
 ALLOWED_MOCK_HEADERS = {
     "x-mock-user-id": "X-Mock-User-Id",
@@ -343,6 +344,24 @@ def _get_active_config() -> AppConfig:
     return _ACTIVE_CONFIG
 
 
+def _run_without_blocking_gevent(fn: Any, *args: Any, **kwargs: Any) -> Any:
+    """Offload blocking HTTP calls to gevent's threadpool when running inside an unpatched Eel greenlet."""
+    try:
+        import gevent
+        import gevent.monkey
+    except ImportError:
+        return fn(*args, **kwargs)
+
+    if gevent.monkey.is_module_patched("socket"):
+        return fn(*args, **kwargs)
+
+    current = gevent.getcurrent()
+    hub = gevent.get_hub()
+    if current is not hub and isinstance(current, gevent.Greenlet):
+        return hub.threadpool.spawn(fn, *args, **kwargs).get()
+    return fn(*args, **kwargs)
+
+
 def eel_get_runtime_info() -> dict[str, Any]:
     """Exposed Eel function returning safe runtime configuration."""
     return get_runtime_info_payload(_get_active_config())
@@ -350,7 +369,9 @@ def eel_get_runtime_info() -> dict[str, Any]:
 
 def eel_check_api_health() -> dict[str, Any]:
     """Exposed Eel function checking `/api/v1/health` on the local Flask API."""
-    return forward_api_request(_get_active_config(), "GET", "/api/v1/health")
+    return _run_without_blocking_gevent(
+        forward_api_request, _get_active_config(), "GET", "/api/v1/health"
+    )
 
 
 def eel_api_request(
@@ -360,7 +381,9 @@ def eel_api_request(
     headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Exposed Eel function proxying `/api/v1/*` requests to the local Flask API."""
-    return forward_api_request(_get_active_config(), method, endpoint, payload, headers)
+    return _run_without_blocking_gevent(
+        forward_api_request, _get_active_config(), method, endpoint, payload, headers
+    )
 
 
 def register_eel_bridge(config: AppConfig) -> None:

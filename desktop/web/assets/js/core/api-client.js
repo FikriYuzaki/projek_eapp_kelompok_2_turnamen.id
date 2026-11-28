@@ -256,7 +256,7 @@
     return runtimeBootstrapPromise;
   }
 
-  async function request(method, path, payload = null) {
+  async function request(method, path, payload = null, requestOptions = {}) {
     const normalizedMethod = String(method || "GET").trim().toUpperCase();
     if (!ALLOWED_METHODS.has(normalizedMethod)) {
       return buildErrorResponse(
@@ -283,12 +283,63 @@
       Accept: "application/json",
     };
 
-    if (cfg.token) {
-      headers["Authorization"] = `Bearer ${cfg.token}`;
-    } else if (cfg.isSimulation && cfg.appMode === "mock" && cfg.currentUser) {
-      headers["X-Mock-Role"] = cfg.currentUser.role;
-      headers["X-Mock-User-Id"] = cfg.currentUser.id;
+    if (requestOptions && isPlainObject(requestOptions.headers)) {
+      Object.entries(requestOptions.headers).forEach(([k, v]) => {
+        if (typeof k === "string" && k.trim() && typeof v === "string" && v.trim()) {
+          headers[k.trim()] = v.trim();
+        }
+      });
     }
+
+    if (
+      cfg.token &&
+      window.TurnamenConfig &&
+      typeof window.TurnamenConfig.isTokenExpired === "function" &&
+      window.TurnamenConfig.isTokenExpired(cfg.token) &&
+      cleanPath !== "/auth/login" &&
+      cleanPath !== "/auth/register" &&
+      cleanPath !== "/auth/password-recovery" &&
+      cleanPath !== "/auth/password-recovery/update" &&
+      cleanPath !== "/health"
+    ) {
+      clearLocalAuthSession();
+      return buildErrorResponse(
+        "Sesi autentikasi telah kedaluwarsa. Silakan masuk kembali.",
+        "UNAUTHORIZED",
+        { reason: "token_expired" }
+      );
+    }
+
+    if (
+      !headers["Authorization"] &&
+      cleanPath !== "/auth/password-recovery" &&
+      cleanPath !== "/auth/password-recovery/update"
+    ) {
+      if (cfg.token) {
+        headers["Authorization"] = `Bearer ${cfg.token}`;
+      } else if (cfg.isSimulation && cfg.appMode === "mock" && cfg.currentUser) {
+        headers["X-Mock-Role"] = cfg.currentUser.role;
+        headers["X-Mock-User-Id"] = cfg.currentUser.id;
+      }
+    }
+
+    const finalizeAuthenticatedResponse = (normalizedRes) => {
+      if (
+        normalizedRes &&
+        !normalizedRes.success &&
+        cfg.token &&
+        normalizedRes.error &&
+        normalizedRes.error.code === "UNAUTHORIZED" &&
+        cleanPath !== "/auth/login" &&
+        cleanPath !== "/auth/register" &&
+        cleanPath !== "/auth/logout" &&
+        cleanPath !== "/auth/password-recovery" &&
+        cleanPath !== "/auth/password-recovery/update"
+      ) {
+        clearLocalAuthSession();
+      }
+      return normalizedRes;
+    };
 
     if (window.TurnamenBridge && window.TurnamenBridge.hasEel()) {
       const bridged = await window.TurnamenBridge.proxyApiRequest(
@@ -308,7 +359,7 @@
           (bridgeErrorCode === "BRIDGE_EXECUTION_ERROR" ||
             bridgeErrorCode === "BRIDGE_INVALID_RESPONSE");
         if (!canFallbackToHttp) {
-          return normalizeResponse(bridged);
+          return finalizeAuthenticatedResponse(normalizeResponse(bridged));
         }
       } else if (!SAFE_HTTP_FALLBACK_METHODS.has(normalizedMethod)) {
         return buildErrorResponse(
@@ -370,7 +421,7 @@
         );
       }
 
-      return normalizeResponse(parsed, response.status);
+      return finalizeAuthenticatedResponse(normalizeResponse(parsed, response.status));
     } catch (err) {
       if (err && err.name === "AbortError") {
         return buildErrorResponse(
@@ -404,10 +455,22 @@
     }
   }
 
+  function createIdempotencyKey() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
   window.TurnamenAPI = {
     request,
     bootstrapRuntime,
     validateAndNormalizePath,
+    createIdempotencyKey,
 
     async getHealth() {
       const res = await request("GET", "/health");
@@ -482,26 +545,118 @@
     },
     async logout() {
       const res = await request("POST", "/auth/logout");
-      if (typeof window.TurnamenConfig.clearAuthSession === "function") {
+      if (typeof window.TurnamenConfig.enterGuestMode === "function") {
+        window.TurnamenConfig.enterGuestMode();
+      } else if (typeof window.TurnamenConfig.clearAuthSession === "function") {
         window.TurnamenConfig.clearAuthSession();
       } else {
-        window.TurnamenConfig.setSimulatedRole("player");
+        window.TurnamenConfig.setSimulatedRole("guest");
       }
       return res;
     },
     getCurrentUser() {
       return request("GET", "/auth/me");
     },
+    requestPasswordRecovery(email, redirectTo = null) {
+      const payload = { email };
+      if (typeof redirectTo === "string" && redirectTo.trim()) {
+        payload.redirect_to = redirectTo.trim();
+      }
+      return request("POST", "/auth/password-recovery", payload);
+    },
+    updatePasswordWithRecoveryToken(recoverySession, newPassword) {
+      const session = isPlainObject(recoverySession) ? recoverySession : {};
+      const accessToken =
+        typeof session.accessToken === "string" ? session.accessToken.trim() : "";
+      const refreshToken =
+        typeof session.refreshToken === "string" ? session.refreshToken.trim() : "";
+      const tokenHash =
+        typeof session.tokenHash === "string" ? session.tokenHash.trim() : "";
+
+      const payload = { new_password: newPassword };
+      if (refreshToken) payload.refresh_token = refreshToken;
+      if (tokenHash) payload.token_hash = tokenHash;
+
+      const options = accessToken
+        ? { headers: { Authorization: `Bearer ${accessToken}` } }
+        : {};
+      return request("POST", "/auth/password-recovery/update", payload, options);
+    },
+    async updateProfile(payload) {
+      const res = await request("PATCH", "/auth/me", payload);
+      if (res.success && res.data && res.data.user && window.TurnamenConfig) {
+        const cfg = window.TurnamenConfig.getState();
+        if (cfg.token) {
+          window.TurnamenConfig.setAuthSession(cfg.token, res.data.user);
+        } else if (cfg.isSimulation && cfg.appMode === "mock") {
+          window.TurnamenConfig.setAuthSession(null, res.data.user);
+        }
+      }
+      return res;
+    },
+    getUsers() {
+      return request("GET", "/users");
+    },
+    assignUserRole(userId, role) {
+      return safeSegmentCall(() =>
+        request("PATCH", `/users/${encodeSegment(userId, "userId")}/role`, { role })
+      );
+    },
     setSimulatedRole(roleName) {
       return window.TurnamenConfig.setSimulatedRole(roleName);
     },
 
-    getGames() {
-      return request("GET", "/games");
+    getGames(options = {}) {
+      const includeInactive = Boolean(options && options.includeInactive);
+      return request("GET", `/games${includeInactive ? "?include_inactive=true" : ""}`);
     },
     getGameById(gameId) {
       return safeSegmentCall(() =>
         request("GET", `/games/${encodeSegment(gameId, "gameId")}`)
+      );
+    },
+    createGame(payload) {
+      return request("POST", "/games", payload);
+    },
+    updateGame(gameId, payload) {
+      return safeSegmentCall(() =>
+        request("PATCH", `/games/${encodeSegment(gameId, "gameId")}`, payload)
+      );
+    },
+    uploadGameArtwork(gameId, payload) {
+      return safeSegmentCall(() =>
+        request("POST", `/games/${encodeSegment(gameId, "gameId")}/artwork`, payload)
+      );
+    },
+    restoreGameArtwork(gameId) {
+      return safeSegmentCall(() =>
+        request("DELETE", `/games/${encodeSegment(gameId, "gameId")}/artwork`)
+      );
+    },
+
+    getCommitteeCandidates() {
+      return request("GET", "/staff/candidates");
+    },
+    getTournamentStaff(tournamentId) {
+      return safeSegmentCall(() =>
+        request("GET", `/tournaments/${encodeSegment(tournamentId, "tournamentId")}/staff`)
+      );
+    },
+    addTournamentStaff(tournamentId, payload) {
+      return safeSegmentCall(() =>
+        request(
+          "POST",
+          `/tournaments/${encodeSegment(tournamentId, "tournamentId")}/staff`,
+          payload
+        )
+      );
+    },
+    removeTournamentStaff(tournamentId, userId) {
+      return safeSegmentCall(() =>
+        request(
+          "DELETE",
+          `/tournaments/${encodeSegment(tournamentId, "tournamentId")}/staff/${encodeSegment(userId, "userId")}`
+        )
       );
     },
 
@@ -614,10 +769,22 @@
         )
       );
     },
-    submitMatchResult(matchId, payload) {
-      return safeSegmentCall(() =>
-        request("PATCH", `/matches/${encodeSegment(matchId, "matchId")}/result`, payload)
-      );
+    submitMatchResult(matchId, payload, options = {}) {
+      return safeSegmentCall(() => {
+        const body = isPlainObject(payload) ? { ...payload } : {};
+        const optKey =
+          options && typeof options.idempotencyKey === "string" ? options.idempotencyKey.trim() : "";
+        const bodyKey =
+          typeof body.idempotency_key === "string" ? body.idempotency_key.trim() : "";
+        const idempotencyKey = optKey || bodyKey || createIdempotencyKey();
+        body.idempotency_key = idempotencyKey;
+        return request(
+          "PATCH",
+          `/matches/${encodeSegment(matchId, "matchId")}/result`,
+          body,
+          { headers: { "Idempotency-Key": idempotencyKey } }
+        );
+      });
     },
 
     getAnnouncements(tournamentId) {

@@ -1,35 +1,18 @@
-# Game Artwork Assets & Licensing (`desktop/web/assets/images/games/`)
+# Game Artwork Assets & Official Sources (`desktop/web/assets/images/games/`)
 
-Dokumen ini mencatat seluruh aset ilustrasi cabang game lokal untuk Turnamen.in (`Futuristic Arena`), pemetaan terhadap slug game dari REST API, hasil peninjauan lisensi aset penerbit, serta panduan penggantian *drop-in* ke format `.webp` di masa mendatang.
+Dokumen ini mencatat konfigurasi artwork resmi game pada aplikasi Turnamen.in serta aset SVG lokal yang dipertahankan sebagai fallback offline/error.
 
-## Evaluasi Lisensi Sumber Aset Resmi
+## Daftar Game & Sumber Resmi (Wave 6.10)
 
-Sebelum memilih sumber visual untuk repository ini, dilakukan pemeriksaan terhadap ketentuan penggunaan aset resmi masing-masing penerbit:
+| Game UUID (`games.id`) | Slug (`games.slug`) | Nama Game | Sumber Resmi Terverifikasi | Fallback Lokal (`assets/images/games/`) |
+| :--- | :--- | :--- | :--- | :--- |
+| `22222222-2222-4222-8222-222222222201` | `mobile-legends` | Mobile Legends: Bang Bang | `https://akmweb.youngjoygame.com/web/gms/image/c3d1596795b86dc26e5f1ef2d48c3dfd.jpg` (MOONTON Official `mobilelegends.com`, `600x315` JPEG) | `mobile-legends.svg` |
+| `22222222-2222-4222-8222-222222222202` | `valorant` | VALORANT | `https://cmsassets.rgpub.io/sanity/images/dsfx7636/news_live/a3d06721391f4c274e588c380ca6903c8b3e129e-1920x1080.jpg` (Riot Games Official `playvalorant.com`, `1920x1080` JPEG) | `valorant.svg` |
+| `22222222-2222-4222-8222-222222222203` | `ea-sports-fc` | EA Sports FC 25 | `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/2669320/capsule_616x353.jpg` (Steam Store Official App ID `2669320`, `616x353` JPEG) | `ea-sports-fc.svg` |
+| *(Game lain tanpa artwork terverifikasi)* | `default-arena` | Game Baru / Tidak Dikenal | Tidak ada substitusi artwork game lain | `default-arena.svg` |
 
-1. **Mobile Legends: Bang Bang (Moonton):** Splash art, hero art, logo, dan aset resmi Moonton bersifat *proprietary* tanpa izin redistribusi ulang ke dalam repository open-source publik tanpa perjanjian lisensi tertulis.
-2. **EA Sports FC 25 (Electronic Arts):** Press kit dan media kit EA ditujukan untuk liputan pers/editorial dan bukan untuk dibundel ulang sebagai file distribusi bebas dalam repository source code tanpa perjanjian khusus.
-3. **VALORANT (Riot Games):** Kebijakan *Legal Jibber Jabber* membolehkan proyek komunitas non-komersial dengan disclaimer dan atribut kepemilikan Riot Games, namun tetap melarang klaim kepemilikan logo resmi maupun pembundelan bebas tanpa konteks aset resmi CDN; sementara Turnamen.in dilarang melakukan *hotlink* eksternal demi keandalan lokal offline-first.
+## Mekanisme Pemetaan, Lazy Loading & Fallback
 
-**Keputusan Teknis:** Seluruh file pada folder ini adalah ilustrasi SVG kustom bergaya *promotional key art* **original buatan proyek Turnamen.in** (bebas klaim merek penerbit, 0 *hotlink* eksternal, dapat berjalan penuh pada mode `APP_MODE=mock` maupun `APP_MODE=supabase` tanpa internet).
-
-## Daftar Aset Lokal Saat Ini
-
-| Slug API (`games.slug`) | Nama Game | File Aset | Format | Rasio & Dimensi | Lisensi & Sumber |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `mobile-legends` | Mobile Legends: Bang Bang | `mobile-legends.svg` | SVG lokal | `16:9` (`960x540`) | Ilustrasi *promotional key art* kustom original Turnamen.in (MOBA Arcane Nexus & Energy River) |
-| `valorant` | VALORANT | `valorant.svg` | SVG lokal | `16:9` (`960x540`) | Ilustrasi *promotional key art* kustom original Turnamen.in (Tactical Courtyard & Holo Barrier) |
-| `ea-sports-fc` | EA Sports FC 25 | `ea-sports-fc.svg` | SVG lokal | `16:9` (`960x540`) | Ilustrasi *promotional key art* kustom original Turnamen.in (Night Floodlit Stadium & Match Ball) |
-| *(Fallback umum)* | Game Baru / Lainnya | `default-arena.svg` | SVG lokal | `16:9` (`960x540`) | Ilustrasi *promotional key art* arena kejuaraan original Turnamen.in |
-
-## Arsitektur Siap-WebP (Zero Business-Logic Changes)
-
-1. Seluruh pemetaan aset terpusat pada `GAME_ARTWORK_REGISTRY` dan `resolveGameArtwork(game)` di `desktop/web/assets/js/components/ui-components.js`.
-2. Seluruh kartu dan banner di `desktop/web/assets/js/pages/app-pages.js` memanggil `window.TurnamenUI.renderGameArtwork(game, labelOverride, options)` tanpa pernah melakukan *hardcode* path file.
-3. Tidak ada teks atau logo yang tertanam permanen di dalam file SVG; label kategori dan judul game selalu dirender sebagai HTML di atas *contrast scrim*.
-4. `renderGameArtwork()` menyertakan *fallback* SVG inline apabila elemen `<img>` gagal dimuat.
-
-## Cara Mengganti ke Aset `.webp` di Masa Mendatang
-
-1. Simpan file `.webp` berukuran `960x540` (rasio `16:9`, optimal `< 180 KB`) ke folder ini dengan nama sesuai slug game (`mobile-legends.webp`, `valorant.webp`, `ea-sports-fc.webp`, `default-arena.webp`).
-2. Perbarui properti `src` pada `GAME_ARTWORK_REGISTRY` di `desktop/web/assets/js/components/ui-components.js` dari `.svg` ke `.webp`.
-3. Tidak diperlukan perubahan pada `app-pages.js`, backend Flask, skema Supabase, ataupun kontrak REST API.
+1. Seluruh pemetaan dipusatkan di `GAME_ARTWORK_BY_ID`, `GAME_ARTWORK_REGISTRY`, `resolveGameArtwork(game)`, `renderGameArtwork()`, dan `renderGameChip()` dalam `desktop/web/assets/js/components/ui-components.js`.
+2. Seluruh `<img>` memakai `loading="lazy"`, `decoding="async"`, `referrerpolicy="no-referrer"`, serta `object-fit: cover` pada kontainer berasio `16:9`.
+3. `ARTWORK_CACHE` mencatat status `"loaded"` dan `"failed"` per URL selama sesi berjalan. Apabila URL resmi gagal dimuat (misalnya mode offline), `handleArtworkError()` langsung beralih ke fallback lokal lalu SVG inline jika diperlukan.

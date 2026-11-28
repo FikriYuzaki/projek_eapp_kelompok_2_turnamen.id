@@ -12,6 +12,7 @@
     "tournament-list": "Daftar Turnamen",
     "tournament-detail": "Detail & Peserta Turnamen",
     "team-management": "Manajemen Tim & Roster",
+    "game-management": "Manajemen Game",
     "match-management": "Jadwal & Skor Pertandingan",
     bracket: "Bracket Turnamen",
     announcements: "Pengumuman Kompetisi",
@@ -136,6 +137,7 @@
           label: "Administrasi Sistem",
           items: [
             { page: "dashboard", label: "Dashboard Sistem", icon: "dashboard" },
+            { page: "game-management", label: "Manajemen Game", icon: "image" },
             { page: "tournament-list", label: "Kelola Turnamen", icon: "trophy" },
             { page: "tournament-detail", label: "Verifikasi & Peserta", icon: "detail" },
             { page: "team-management", label: "Manajemen Tim", icon: "shield" },
@@ -203,13 +205,157 @@
   let currentPage = "dashboard";
   let navigationSeq = 0;
   let loginActiveTab = "login";
+  let pendingRecoverySession = null;
+  let pendingAuthNotice = null;
   let selectedCaptainTeamId = "";
   let tournamentFilterState = { status: "", gameId: "", search: "" };
   let teamFilterState = { gameId: "", search: "" };
   let matchRoundFilter = "";
+  let matchStatusFilter = "";
   let announcementPriorityFilter = "";
 
+  const inFlightActions = new Set();
+  const pendingMatchIdempotency = new Map();
+  const pendingArtworkDrafts = new Map();
+  const artworkUploadState = new Map();
+  const uiPageSnapshots = new Map();
+
+  function getPageSnapshotKey(pageName) {
+    const roleKey = getActiveRoleKey();
+    const user = getCurrentUserSafe();
+    const uid = user && user.id ? String(user.id) : "guest";
+    const tid = getRuntimeState().selectedTournamentId || "";
+    if (pageName === "tournament-list") {
+      return `${roleKey}:${uid}:${pageName}:${tournamentFilterState.status}:${tournamentFilterState.gameId}:${tournamentFilterState.search}`;
+    }
+    if (pageName === "team-management") {
+      return `${roleKey}:${uid}:${pageName}:${teamFilterState.gameId}:${teamFilterState.search}`;
+    }
+    if (pageName === "announcements") {
+      return `${roleKey}:${uid}:${pageName}:${tid}:${announcementPriorityFilter}`;
+    }
+    if (pageName === "reports") {
+      return `${roleKey}:${uid}:${pageName}:${tid}`;
+    }
+    return `${roleKey}:${uid}:${pageName}`;
+  }
+
+  function clearUiPageSnapshots() {
+    uiPageSnapshots.clear();
+  }
+
+  function generateClientIdempotencyKey() {
+    if (window.TurnamenAPI && typeof window.TurnamenAPI.createIdempotencyKey === "function") {
+      return window.TurnamenAPI.createIdempotencyKey();
+    }
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    return `idem-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  }
+
+  function resetRoleScopedUiState() {
+    selectedCaptainTeamId = "";
+    tournamentFilterState = { status: "", gameId: "", search: "" };
+    teamFilterState = { gameId: "", search: "" };
+    matchRoundFilter = "";
+    matchStatusFilter = "";
+    announcementPriorityFilter = "";
+    cachedTournaments = [];
+    adminGamesCache = [];
+    pendingMatchIdempotency.clear();
+    pendingArtworkDrafts.clear();
+    artworkUploadState.clear();
+    clearUiPageSnapshots();
+  }
+
+  function isRetryableSubmissionError(res) {
+    if (!res || res.success) return false;
+    const code = res.error && res.error.code ? String(res.error.code) : "";
+    const statusCode = Number((res.error && res.error.details && res.error.details.status_code) || 0);
+    return (
+      code === "REQUEST_TIMEOUT" ||
+      code === "NETWORK_ERROR" ||
+      code === "BRIDGE_TIMEOUT" ||
+      code === "BRIDGE_UNCERTAIN_STATE" ||
+      statusCode >= 500
+    );
+  }
+
+  function getOrCreateMatchIdempotencyKey(slotKey, fingerprint) {
+    const existing = pendingMatchIdempotency.get(slotKey);
+    if (existing && existing.fingerprint === fingerprint && existing.key) {
+      return existing.key;
+    }
+    const freshKey = generateClientIdempotencyKey();
+    pendingMatchIdempotency.set(slotKey, { fingerprint, key: freshKey });
+    return freshKey;
+  }
+
+  function clearMatchIdempotencyKey(slotKey) {
+    pendingMatchIdempotency.delete(slotKey);
+  }
+
+  async function withSubmissionGuard(lockKey, triggerEl, loadingLabel, taskFn, options = {}) {
+    if (inFlightActions.has(lockKey)) {
+      window.TurnamenUI.showToast(
+        "Permintaan sebelumnya masih diproses. Mohon tunggu sebentar.",
+        "info",
+        { group: `busy-${lockKey}` }
+      );
+      return null;
+    }
+
+    inFlightActions.add(lockKey);
+    const btn = triggerEl && triggerEl.nodeType === 1 ? triggerEl : null;
+    const extraButtons = Array.isArray(options.disableSelectors)
+      ? options.disableSelectors
+          .map((sel) => document.querySelector(sel))
+          .filter((el) => el && el !== btn)
+      : [];
+    const prevHtml = btn ? btn.innerHTML : "";
+    const prevDisabled = btn ? btn.disabled : false;
+
+    if (options.lockModal && window.TurnamenUI && typeof window.TurnamenUI.setModalBusy === "function") {
+      window.TurnamenUI.setModalBusy(true);
+    }
+    if (btn) {
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      if (loadingLabel) {
+        btn.innerHTML = `<span class="arena-spinner-sm" aria-hidden="true"></span><span>${window.TurnamenUI.escapeHtml(loadingLabel)}</span>`;
+      }
+    }
+    extraButtons.forEach((el) => {
+      el.disabled = true;
+    });
+
+    try {
+      return await taskFn();
+    } finally {
+      inFlightActions.delete(lockKey);
+      if (options.lockModal && window.TurnamenUI && typeof window.TurnamenUI.setModalBusy === "function") {
+        window.TurnamenUI.setModalBusy(false);
+      }
+      if (btn && btn.isConnected !== false) {
+        btn.disabled = prevDisabled;
+        btn.removeAttribute("aria-busy");
+        if (!options.skipRestoreHtml) {
+          btn.innerHTML = prevHtml;
+        }
+      }
+      extraButtons.forEach((el) => {
+        if (el && el.isConnected !== false) el.disabled = false;
+      });
+    }
+  }
+
+  function isModalRequestStale(startNavSeq, startRoleKey) {
+    return startNavSeq !== navigationSeq || startRoleKey !== getActiveRoleKey();
+  }
+
   const gamesState = { items: [], loaded: false, error: null };
+  let adminGamesCache = [];
   let cachedTournaments = [];
   let bracketResizeListenerBound = false;
   let bracketResizeTimer = null;
@@ -524,6 +670,19 @@
       };
     }
 
+    if (pageName === "game-management" && roleKey !== "super_admin") {
+      return {
+        allowed: false,
+        title: "Akses Halaman Manajemen Game Ditolak",
+        message:
+          "Pengelolaan katalog dan poster kustom cabang game hanya diizinkan bagi Super Admin aktif.",
+        actionHtml:
+          roleKey === "guest"
+            ? `<button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="login">Masuk Akun</button><button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="dashboard">Kembali ke Arena Publik</button>`
+            : `<button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="dashboard">Kembali ke Dashboard</button>`,
+      };
+    }
+
     return { allowed: true };
   }
 
@@ -546,7 +705,259 @@
   // =========================================================================
   // INITIALIZATION, DYNAMIC ROLE NAVIGATION & SHELL BINDINGS
   // =========================================================================
+  function getDesktopRecoveryRedirectUrl() {
+    try {
+      const loc = window.location;
+      if (
+        loc &&
+        (loc.protocol === "http:" || loc.protocol === "https:") &&
+        (loc.hostname === "127.0.0.1" || loc.hostname === "localhost")
+      ) {
+        const cleanPath = loc.pathname && loc.pathname !== "/" ? loc.pathname : "/index.html";
+        return `${loc.origin}${cleanPath}`;
+      }
+    } catch (_err) {
+      // Fall back to default Eel URL if window.location is restricted.
+    }
+    return "http://127.0.0.1:8080/index.html";
+  }
+
+  function isAllowedLocalRedirectUrl(urlObj) {
+    if (!urlObj) return false;
+    const protocol = String(urlObj.protocol || "").toLowerCase();
+    const hostname = String(urlObj.hostname || "").toLowerCase();
+    return (
+      (protocol === "http:" || protocol === "https:") &&
+      !urlObj.username &&
+      !urlObj.password &&
+      (hostname === "127.0.0.1" || hostname === "localhost")
+    );
+  }
+
+  function isTrustedSupabaseVerifyUrl(urlObj, expectedSupabaseHost) {
+    if (!urlObj || !expectedSupabaseHost) return false;
+    const protocol = String(urlObj.protocol || "").toLowerCase();
+    const hostname = String(urlObj.hostname || "").toLowerCase();
+    if (
+      protocol !== "https:" ||
+      urlObj.username ||
+      urlObj.password ||
+      hostname !== expectedSupabaseHost ||
+      urlObj.pathname !== "/auth/v1/verify"
+    ) {
+      return false;
+    }
+
+    const redirectRaw = (urlObj.searchParams.get("redirect_to") || "").trim();
+    if (redirectRaw) {
+      try {
+        const redirectObj = new URL(redirectRaw);
+        if (!isAllowedLocalRedirectUrl(redirectObj)) {
+          return false;
+        }
+      } catch (_err) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function parseSupabaseRecoveryUrl(rawInput, expectedSupabaseHost = null) {
+    const raw = String(rawInput || "").trim();
+    if (!raw) return null;
+
+    const configuredHost = (
+      typeof expectedSupabaseHost === "string" && expectedSupabaseHost.trim()
+        ? expectedSupabaseHost
+        : (getRuntimeState().supabaseHost || "")
+    )
+      .trim()
+      .toLowerCase();
+
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw)) {
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(raw);
+      } catch (_err) {
+        return null;
+      }
+
+      const searchParams = parsedUrl.searchParams;
+      const hashPart = parsedUrl.hash || "";
+      const hashParams = new URLSearchParams(hashPart.startsWith("#") ? hashPart.slice(1) : hashPart);
+      const pick = (key) => (hashParams.get(key) || searchParams.get(key) || "").trim();
+
+      const isVerifyEndpoint =
+        parsedUrl.pathname === "/auth/v1/verify" || searchParams.has("token");
+      if (isVerifyEndpoint) {
+        if (!isTrustedSupabaseVerifyUrl(parsedUrl, configuredHost)) {
+          return null;
+        }
+
+        const err = (searchParams.get("error") || "").trim();
+        const errCode = (searchParams.get("error_code") || "").trim();
+        const errDesc = (searchParams.get("error_description") || "").trim();
+        if (err || errDesc || errCode) {
+          return {
+            errorMessage:
+              errDesc ||
+              "Tautan pemulihan password tidak valid atau sudah kedaluwarsa. Silakan minta email pemulihan baru.",
+          };
+        }
+
+        const type = (searchParams.get("type") || "").trim().toLowerCase();
+        const verifyToken = (searchParams.get("token") || "").trim();
+        if (type === "recovery" && verifyToken && !/\s/.test(verifyToken)) {
+          return {
+            type: "recovery",
+            accessToken: "",
+            refreshToken: "",
+            tokenHash: verifyToken,
+          };
+        }
+        return null;
+      }
+
+      if (!isAllowedLocalRedirectUrl(parsedUrl)) {
+        return null;
+      }
+
+      const error = pick("error");
+      const errorCode = pick("error_code");
+      const errorDescription = pick("error_description");
+      if (error || errorDescription || errorCode) {
+        return {
+          errorMessage:
+            errorDescription ||
+            "Tautan pemulihan password tidak valid atau sudah kedaluwarsa. Silakan minta email pemulihan baru.",
+        };
+      }
+
+      const type = pick("type").toLowerCase();
+      const accessToken = pick("access_token");
+      const refreshToken = pick("refresh_token");
+      const tokenHash = pick("token_hash");
+      if (type === "recovery" && (accessToken || tokenHash)) {
+        return {
+          type: "recovery",
+          accessToken,
+          refreshToken,
+          tokenHash,
+        };
+      }
+      return null;
+    }
+
+    let searchPart = "";
+    let hashPart = "";
+    const hashIdx = raw.indexOf("#");
+    const queryIdx = raw.indexOf("?");
+    if (hashIdx >= 0) {
+      hashPart = raw.slice(hashIdx);
+      if (queryIdx >= 0 && queryIdx < hashIdx) {
+        searchPart = raw.slice(queryIdx, hashIdx);
+      }
+    } else if (queryIdx >= 0) {
+      searchPart = raw.slice(queryIdx);
+    } else if (raw.includes("=")) {
+      hashPart = `#${raw}`;
+    }
+
+    const hashParams = new URLSearchParams(hashPart.startsWith("#") ? hashPart.slice(1) : hashPart);
+    const searchParams = new URLSearchParams(searchPart.startsWith("?") ? searchPart.slice(1) : searchPart);
+    const pick = (key) => (hashParams.get(key) || searchParams.get(key) || "").trim();
+
+    const type = pick("type").toLowerCase();
+    const accessToken = pick("access_token");
+    const refreshToken = pick("refresh_token");
+    const tokenHash = pick("token_hash");
+    const error = pick("error");
+    const errorCode = pick("error_code");
+    const errorDescription = pick("error_description");
+
+    if (error || errorDescription || errorCode) {
+      return {
+        errorMessage:
+          errorDescription ||
+          "Tautan pemulihan password tidak valid atau sudah kedaluwarsa. Silakan minta email pemulihan baru.",
+      };
+    }
+
+    if (type === "recovery" && (accessToken || tokenHash)) {
+      return {
+        type: "recovery",
+        accessToken,
+        refreshToken,
+        tokenHash,
+      };
+    }
+    return null;
+  }
+
+  function consumeRecoveryCallbackFromLocation() {
+    try {
+      const loc = window.location;
+      if (!loc || (!loc.hash && !loc.search)) {
+        return false;
+      }
+      const parsed = parseSupabaseRecoveryUrl(`${loc.search || ""}${loc.hash || ""}`);
+      if (!parsed) {
+        return false;
+      }
+
+      // Remove recovery tokens from address bar history immediately.
+      if (window.history && typeof window.history.replaceState === "function") {
+        window.history.replaceState(null, "", loc.pathname || "/index.html");
+      }
+
+      if (parsed.errorMessage) {
+        pendingRecoverySession = null;
+        loginActiveTab = "recovery-request";
+        pendingAuthNotice = {
+          message: parsed.errorMessage,
+          variant: "danger",
+        };
+        return true;
+      }
+
+      pendingRecoverySession = {
+        accessToken: parsed.accessToken || "",
+        refreshToken: parsed.refreshToken || "",
+        tokenHash: parsed.tokenHash || "",
+      };
+      loginActiveTab = "recovery-update";
+      pendingAuthNotice = {
+        message: "Mode PASSWORD_RECOVERY aktif. Masukkan password baru Anda di bawah ini.",
+        variant: "success",
+      };
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function consumeInitialPageRequest() {
+    try {
+      const loc = window.location;
+      if (!loc || !loc.search) return "";
+      const params = new URLSearchParams(loc.search);
+      const requested = (params.get("page") || "").trim().toLowerCase();
+      if (requested === "login") {
+        if (window.history && typeof window.history.replaceState === "function") {
+          window.history.replaceState(null, "", loc.pathname || "/index.html");
+        }
+        return "login";
+      }
+      return "";
+    } catch (_err) {
+      return "";
+    }
+  }
+
   async function initApp() {
+    const hasRecoveryCallback = consumeRecoveryCallbackFromLocation();
+    const initialRequestedPage = hasRecoveryCallback ? "" : consumeInitialPageRequest();
+
     bindSidebarNavigation();
     bindResponsiveSidebar();
     bindRoleSwitcher();
@@ -556,8 +967,39 @@
     const healthRes = await window.TurnamenAPI.getHealth();
     updateRuntimeIndicators(healthRes);
 
+    if (hasRecoveryCallback) {
+      await ensureGamesLoaded(true);
+      await navigateTo("login");
+      return;
+    }
+
+    const restoredState = getRuntimeState();
+    if (restoredState.token && healthRes && healthRes.success) {
+      const meRes = await window.TurnamenAPI.getCurrentUser();
+      if (meRes && meRes.success && meRes.data && meRes.data.user) {
+        if (window.TurnamenConfig && typeof window.TurnamenConfig.setAuthSession === "function") {
+          window.TurnamenConfig.setAuthSession(restoredState.token, meRes.data.user);
+        }
+        updateUserTopbar(meRes.data.user);
+      } else if (
+        meRes &&
+        !meRes.success &&
+        meRes.error &&
+        meRes.error.code === "UNAUTHORIZED"
+      ) {
+        if (window.TurnamenConfig && typeof window.TurnamenConfig.enterGuestMode === "function") {
+          window.TurnamenConfig.enterGuestMode();
+        }
+        updateUserTopbar(null);
+        window.TurnamenUI.showToast(
+          "Sesi login sebelumnya telah berakhir. Silakan masuk kembali.",
+          "warning"
+        );
+      }
+    }
+
     await ensureGamesLoaded(true);
-    await navigateTo("dashboard");
+    await navigateTo(initialRequestedPage || "dashboard");
   }
 
   function renderRoleNavigation(activePage = currentPage) {
@@ -639,26 +1081,55 @@
     if (backdrop) backdrop.classList.add("hidden");
   }
 
+  async function applySimulatedRoleChange(roleName, toastMode = "switcher") {
+    if (!isMockMode()) {
+      updateRuntimeIndicators(null);
+      return;
+    }
+    const prevPage = currentPage || "dashboard";
+    resetRoleScopedUiState();
+    const user = window.TurnamenAPI.setSimulatedRole(roleName);
+    updateUserTopbar(user);
+    if (!user && roleName !== "guest") {
+      window.TurnamenUI.showToast(
+        toastMode === "quick" ? "Role simulasi tidak tersedia." : "Gagal mengubah peran simulasi.",
+        "warning"
+      );
+      return;
+    }
+    if (!user && roleName === "guest") {
+      if (
+        window.TurnamenConfig &&
+        typeof window.TurnamenConfig.clearSelectedTournamentId === "function"
+      ) {
+        window.TurnamenConfig.clearSelectedTournamentId();
+      }
+      window.TurnamenUI.showToast(
+        "Beralih ke mode Tamu (Public Guest).",
+        "info",
+        { group: "demo-role-switch" }
+      );
+    } else if (user) {
+      window.TurnamenUI.showToast(
+        toastMode === "quick"
+          ? `Beralih ke akun demo: ${user.full_name}`
+          : `Peran simulasi diubah ke: ${user.full_name} (${user.role})`,
+        toastMode === "quick" ? "success" : "info",
+        { group: "demo-role-switch" }
+      );
+    }
+    const preserveAllowed =
+      Boolean(prevPage) &&
+      prevPage !== "login" &&
+      checkPageAccess(prevPage).allowed === true;
+    await navigateTo(preserveAllowed ? prevPage : "dashboard");
+  }
+
   function bindRoleSwitcher() {
     const switcher = document.getElementById("topbar-role-switcher");
     if (!switcher) return;
     switcher.addEventListener("change", (e) => {
-      if (!isMockMode()) {
-        updateRuntimeIndicators(null);
-        return;
-      }
-      const user = window.TurnamenAPI.setSimulatedRole(e.target.value);
-      updateUserTopbar(user);
-      if (!user) {
-        window.TurnamenUI.showToast("Gagal mengubah peran simulasi.", "warning");
-        return;
-      }
-      window.TurnamenUI.showToast(
-        `Peran simulasi diubah ke: ${user.full_name} (${user.role})`,
-        "info",
-        { group: "demo-role-switch" }
-      );
-      navigateTo("dashboard");
+      applySimulatedRoleChange(e.target.value, "switcher");
     });
   }
 
@@ -667,7 +1138,7 @@
     if (!btn) return;
     btn.addEventListener("click", () => {
       if (getCurrentUserSafe()) {
-        handleLogout();
+        handleLogout(btn);
       } else {
         navigateTo("login");
       }
@@ -736,13 +1207,19 @@
       }
     }
 
-    if (switcher && user && user.role && isMock) {
-      switcher.value = user.role;
+    if (switcher && isMock) {
+      switcher.value = user && user.role ? user.role : "guest";
     }
 
     if (authBtn) {
-      authBtn.hidden = !user;
-      authBtn.textContent = "Keluar";
+      authBtn.hidden = false;
+      if (user) {
+        authBtn.className = "btn btn-secondary btn-sm";
+        authBtn.textContent = "Keluar";
+      } else {
+        authBtn.className = "btn btn-primary btn-sm";
+        authBtn.textContent = "Masuk";
+      }
     }
 
     renderRoleNavigation(currentPage);
@@ -784,6 +1261,17 @@
     `;
   }
 
+  function isTournamentAccessibleForRole(tournament, roleKey) {
+    if (!tournament) return false;
+    if (
+      (roleKey === "guest" || roleKey === "player" || roleKey === "team_captain") &&
+      String(tournament.status || "").toLowerCase() === "draft"
+    ) {
+      return false;
+    }
+    return true;
+  }
+
   async function resolveActiveTournamentContext(preloadedList = null) {
     let list = preloadedList;
     if (!Array.isArray(list)) {
@@ -796,13 +1284,41 @@
 
     cachedTournaments = list;
     if (list.length === 0) {
+      if (
+        window.TurnamenConfig &&
+        typeof window.TurnamenConfig.clearSelectedTournamentId === "function"
+      ) {
+        window.TurnamenConfig.clearSelectedTournamentId();
+      }
       return { error: null, list: [], active: null };
     }
 
+    const user = getCurrentUserSafe();
+    const roleKey = getActiveRoleKey();
     const selectedId = getRuntimeState().selectedTournamentId;
     let active = list.find((t) => t.id === selectedId);
+    if (active && !isTournamentAccessibleForRole(active, roleKey)) {
+      active = null;
+    }
     if (!active) {
-      active = list.find((t) => t.status === "ongoing") || list[0];
+      if (roleKey === "committee" && user) {
+        active =
+          list.find((t) => getCommitteeTournamentAssignment(t, user) === true && t.status === "ongoing") ||
+          list.find((t) => getCommitteeTournamentAssignment(t, user) === true) ||
+          list.find((t) => t.status === "ongoing") ||
+          list[0];
+      } else if (roleKey === "organizer" && user) {
+        active =
+          list.find((t) => t.organizer_id === user.id && t.status === "ongoing") ||
+          list.find((t) => t.organizer_id === user.id) ||
+          list.find((t) => t.status === "ongoing") ||
+          list[0];
+      } else {
+        active =
+          list.find((t) => isTournamentAccessibleForRole(t, roleKey) && t.status === "ongoing") ||
+          list.find((t) => isTournamentAccessibleForRole(t, roleKey)) ||
+          list[0];
+      }
       if (active && window.TurnamenConfig) {
         window.TurnamenConfig.setSelectedTournamentId(active.id);
       }
@@ -846,6 +1362,14 @@
   // NAVIGATION WITH RBAC ACCESS GUARD & RACE-CONDITION PROTECTION
   // =========================================================================
   async function navigateTo(pageName, options = {}) {
+    if (
+      window.TurnamenUI &&
+      typeof window.TurnamenUI.closeModal === "function" &&
+      !(typeof window.TurnamenUI.isModalBusy === "function" && window.TurnamenUI.isModalBusy())
+    ) {
+      window.TurnamenUI.closeModal(false);
+    }
+
     const seq = ++navigationSeq;
     const targetPage = PAGE_TITLES[pageName] ? pageName : "dashboard";
 
@@ -871,6 +1395,7 @@
 
     const access = checkPageAccess(targetPage);
     if (!access.allowed) {
+      container.setAttribute("aria-busy", "false");
       container.innerHTML = window.TurnamenUI.renderAccessDeniedState(
         access.title,
         access.message,
@@ -879,58 +1404,119 @@
       return;
     }
 
-    container.innerHTML = window.TurnamenUI.renderLoadingState(
-      `Memuat ${PAGE_TITLES[targetPage] || "halaman"}...`
-    );
+    const snapKey = getPageSnapshotKey(targetPage);
+    const snapshotHtml = uiPageSnapshots.get(snapKey) || "";
+    const hasSnapshot = Boolean(snapshotHtml) && targetPage !== "login";
+    container.setAttribute("aria-busy", "true");
+
+    if (hasSnapshot) {
+      container.innerHTML = `${window.TurnamenUI.renderRefreshBanner("Memperbarui data terbaru...")}${snapshotHtml}`;
+    } else if (targetPage === "dashboard") {
+      container.innerHTML = window.TurnamenUI.renderDashboardSkeleton(roleKey);
+    } else if (targetPage === "tournament-list") {
+      container.innerHTML = isCompetitiveRole()
+        ? window.TurnamenUI.renderTournamentCardsSkeleton(4)
+        : window.TurnamenUI.renderTableSkeleton({
+            rows: 5,
+            columns: 4,
+            title: "Katalog & Manajemen Turnamen",
+          });
+    } else if (targetPage === "team-management") {
+      container.innerHTML = window.TurnamenUI.renderListSkeleton({
+        rows: 5,
+        title: "Manajemen Tim & Roster Pemain",
+        withAvatar: true,
+      });
+    } else if (targetPage === "game-management") {
+      container.innerHTML = window.TurnamenUI.renderTournamentCardsSkeleton(3);
+    } else if (targetPage === "announcements") {
+      container.innerHTML = window.TurnamenUI.renderAnnouncementCardsSkeleton(3);
+    } else if (targetPage === "reports") {
+      container.innerHTML = window.TurnamenUI.renderReportChartSkeleton();
+    } else if (targetPage === "login") {
+      container.innerHTML = window.TurnamenUI.renderLoadingState(
+        `Memuat ${PAGE_TITLES[targetPage] || "halaman"}...`
+      );
+    } else {
+      container.innerHTML = window.TurnamenUI.renderTableSkeleton({ rows: 4, columns: 4 });
+    }
 
     const isStale = () => seq !== navigationSeq;
 
-    switch (targetPage) {
-      case "dashboard":
-        await renderDashboard(container, isStale);
-        break;
-      case "tournament-list":
-        await renderTournamentList(container, isStale);
-        break;
-      case "tournament-detail":
-        await renderTournamentDetail(container, isStale);
-        break;
-      case "team-management":
-        await renderTeamManagement(container, isStale);
-        break;
-      case "match-management":
-        await renderMatchManagement(container, isStale);
-        break;
-      case "bracket":
-        await renderBracketPage(container, isStale);
-        break;
-      case "announcements":
-        await renderAnnouncementsPage(container, isStale);
-        break;
-      case "reports":
-        await renderReportsPage(container, isStale);
-        break;
-      case "profile":
-        await renderProfilePage(container, isStale);
-        break;
-      case "login":
-        await renderLoginPage(container, isStale);
-        break;
-      default:
-        await renderDashboard(container, isStale);
+    try {
+      switch (targetPage) {
+        case "dashboard":
+          await renderDashboard(container, isStale, { hasSnapshot, snapKey });
+          break;
+        case "tournament-list":
+          await renderTournamentList(container, isStale);
+          break;
+        case "tournament-detail":
+          await renderTournamentDetail(container, isStale);
+          break;
+        case "team-management":
+          await renderTeamManagement(container, isStale);
+          break;
+        case "game-management":
+          await renderGameManagement(container, isStale);
+          break;
+        case "match-management":
+          await renderMatchManagement(container, isStale);
+          break;
+        case "bracket":
+          await renderBracketPage(container, isStale);
+          break;
+        case "announcements":
+          await renderAnnouncementsPage(container, isStale);
+          break;
+        case "reports":
+          await renderReportsPage(container, isStale);
+          break;
+        case "profile":
+          await renderProfilePage(container, isStale);
+          break;
+        case "login":
+          await renderLoginPage(container, isStale);
+          break;
+        default:
+          await renderDashboard(container, isStale, { hasSnapshot, snapKey });
+      }
+      if (
+        !isStale() &&
+        targetPage !== "login" &&
+        !(targetPage === "dashboard" && roleKey === "super_admin") &&
+        !container.innerHTML.includes('data-skeleton="true"') &&
+        !container.innerHTML.includes("state-box-error")
+      ) {
+        uiPageSnapshots.set(snapKey, container.innerHTML);
+      }
+    } finally {
+      if (!isStale()) {
+        container.setAttribute("aria-busy", "false");
+      }
     }
   }
 
   // =========================================================================
   // 1. ROLE-BASED DASHBOARD DISPATCHER & 5+ ROLE VIEWS
   // =========================================================================
-  async function renderDashboard(container, isStale) {
-    await ensureGamesLoaded(false);
-    if (isStale()) return;
+  async function renderDashboard(container, isStale, navOptions = {}) {
+    const roleKey = getActiveRoleKey();
+    const isSuperAdmin = roleKey === "super_admin";
+    if (isSuperAdmin) {
+      await renderSuperAdminProgressive(container, isStale, navOptions);
+      return;
+    }
 
-    const [tourRes, teamsRes] = await Promise.all([
+    const needsTeams =
+      roleKey === "player" || roleKey === "team_captain" || roleKey === "guest";
+    const noopTeamsPromise = Promise.resolve({ success: true, data: [] });
+
+    // Wave 1: Execute all independent top-level dashboard queries in parallel.
+    const [, tourRes, teamsRes] = await Promise.all([
+      ensureGamesLoaded(false),
       window.TurnamenAPI.getTournaments(),
-      window.TurnamenAPI.getTeams(),
+      needsTeams ? window.TurnamenAPI.getTeams() : noopTeamsPromise,
     ]);
     if (isStale()) return;
 
@@ -940,7 +1526,7 @@
     }
 
     const tournaments = Array.isArray(tourRes.data) ? tourRes.data : [];
-    const teamsOk = Boolean(teamsRes.success && Array.isArray(teamsRes.data));
+    const teamsOk = Boolean(teamsRes && teamsRes.success && Array.isArray(teamsRes.data));
     const teams = teamsOk ? teamsRes.data : [];
     const ctx = await resolveActiveTournamentContext(tournaments);
     if (isStale()) return;
@@ -949,32 +1535,53 @@
     let activeAnnouncements = [];
     let activeReport = null;
     let activeRegs = [];
+    let reportError = null;
 
     if (ctx.active) {
+      const needsMatches =
+        roleKey === "player" ||
+        roleKey === "team_captain" ||
+        roleKey === "committee" ||
+        roleKey === "guest";
+      const needsAnnouncements =
+        roleKey === "player" ||
+        roleKey === "team_captain" ||
+        roleKey === "organizer" ||
+        roleKey === "committee" ||
+        roleKey === "guest";
+      const needsReport =
+        roleKey === "organizer" ||
+        roleKey === "committee" ||
+        roleKey === "player" ||
+        roleKey === "guest";
+      const needsRegs = roleKey === "organizer" || roleKey === "committee";
+
+      // Wave 2: Fetch only the active-tournament endpoints rendered by this role.
       const [matchRes, annRes, reportRes, regRes] = await Promise.all([
-        window.TurnamenAPI.getTournamentMatches(ctx.active.id),
-        window.TurnamenAPI.getAnnouncements(ctx.active.id),
-        window.TurnamenAPI.getTournamentReport(ctx.active.id),
-        window.TurnamenAPI.getTournamentRegistrations(ctx.active.id),
+        needsMatches ? window.TurnamenAPI.getTournamentMatches(ctx.active.id) : Promise.resolve(null),
+        needsAnnouncements ? window.TurnamenAPI.getAnnouncements(ctx.active.id) : Promise.resolve(null),
+        needsReport ? window.TurnamenAPI.getTournamentReport(ctx.active.id) : Promise.resolve(null),
+        needsRegs ? window.TurnamenAPI.getTournamentRegistrations(ctx.active.id) : Promise.resolve(null),
       ]);
       if (isStale()) return;
-      if (matchRes.success && matchRes.data && Array.isArray(matchRes.data.matches)) {
+      if (matchRes && matchRes.success && matchRes.data && Array.isArray(matchRes.data.matches)) {
         activeMatches = matchRes.data.matches;
       }
-      if (annRes.success && Array.isArray(annRes.data)) {
+      if (annRes && annRes.success && Array.isArray(annRes.data)) {
         activeAnnouncements = [...annRes.data].sort(
           (a, b) => Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned))
         );
       }
-      if (reportRes.success && reportRes.data) {
+      if (reportRes && reportRes.success && reportRes.data) {
         activeReport = reportRes.data;
+      } else if (needsReport && reportRes && !reportRes.success) {
+        reportError = reportRes.message || "Ringkasan laporan turnamen gagal dimuat.";
       }
-      if (regRes.success && Array.isArray(regRes.data)) {
+      if (regRes && regRes.success && Array.isArray(regRes.data)) {
         activeRegs = regRes.data;
       }
     }
 
-    const roleKey = getActiveRoleKey();
     const sharedData = {
       tournaments,
       teams,
@@ -984,6 +1591,7 @@
       activeAnnouncements,
       activeReport,
       activeRegs,
+      reportError,
       gamesById: buildGameLookup(),
     };
 
@@ -999,9 +1607,6 @@
         break;
       case "committee":
         renderCommitteeDashboard(container, sharedData);
-        break;
-      case "super_admin":
-        renderSuperAdminDashboard(container, sharedData);
         break;
       default:
         renderGuestDashboard(container, sharedData);
@@ -1020,11 +1625,11 @@
     return `
       <div class="game-poster-grid">
         ${gamesState.items
-          .map((g, idx) => {
+          .map((g) => {
             const tourCount = tournaments.filter((t) => t.game_id === g.id).length;
             return `
             <article class="game-poster-card">
-              <div class="game-poster-art">${window.TurnamenUI.renderGameArtwork(g, "", { eager: idx < 2, hideCaption: true })}</div>
+              <div class="game-poster-art">${window.TurnamenUI.renderGameArtwork(g, "", { hideCaption: true })}</div>
               <div class="game-poster-body">
                 <h3 class="game-poster-title">${window.TurnamenUI.escapeHtml(g.name)}</h3>
                 <div class="game-poster-meta">
@@ -1068,7 +1673,7 @@
             const fillPct = maxTeams > 0 ? Math.round((approved / maxTeams) * 100) : 0;
             const canQuickJoin =
               canPerform("registration:create") &&
-              (t.status === "open_registration" || t.status === "draft") &&
+              t.status === "open_registration" &&
               teams.some((tm) => ownedTeamIds.includes(tm.id) && tm.game_id === t.game_id);
 
             return `
@@ -1080,7 +1685,7 @@
                 </div>
               </div>
               <div class="tournament-card-body">
-                <div>${window.TurnamenUI.renderGameChip(t.game_name, game.slug)}</div>
+                <div>${window.TurnamenUI.renderGameChip(game)}</div>
                 <h3 class="tournament-card-title">${window.TurnamenUI.escapeHtml(t.title)}</h3>
                 <div class="tournament-card-meta-grid">
                   <div class="meta-stat-item">
@@ -1176,7 +1781,7 @@
             </div>
           </div>
           <div class="esports-banner-art">
-            ${window.TurnamenUI.renderGameArtwork(featuredGame, `HADIAH ${window.TurnamenUI.formatRupiah(featured.prize_pool)}`, { eager: true })}
+            ${window.TurnamenUI.renderGameArtwork(featuredGame, `HADIAH ${window.TurnamenUI.formatRupiah(featured.prize_pool)}`)}
           </div>
         </section>
       `
@@ -1392,10 +1997,7 @@
         joinedEntries.push({ tournament, reg: r });
       });
       const eligible = getEligibleTeamsForRegistration(captainTeams, tournament, regs);
-      if (
-        (tournament.status === "open_registration" || tournament.status === "draft") &&
-        eligible.length > 0
-      ) {
+      if (tournament.status === "open_registration" && eligible.length > 0) {
         openTournamentsForCaptain.push({ tournament, eligible });
       }
     });
@@ -1416,7 +2018,7 @@
               <h2 class="team-hero-name">${window.TurnamenUI.escapeHtml(activeTeam.name)}</h2>
               <div class="team-hero-meta">
                 <span class="badge badge-info tabular-nums">${window.TurnamenUI.escapeHtml(activeTeam.tag)}</span>
-                ${window.TurnamenUI.renderGameChip(activeTeam.game_name)}
+                ${window.TurnamenUI.renderGameChip(activeTeam.game_name, gamesById[activeTeam.game_id] || activeTeam.game_id)}
                 <span>Region: <strong>${window.TurnamenUI.escapeHtml(activeTeam.region || "-")}</strong></span>
                 <span class="tabular-nums"><strong>${(activeTeam.members || []).length}</strong> Roster</span>
               </div>
@@ -1542,7 +2144,7 @@
                     <div class="participation-card-head">
                       ${window.TurnamenUI.renderTeamEmblem(reg.team_tag, 38)}
                       <div style="min-width:0; flex:1;">
-                        ${window.TurnamenUI.renderGameChip(tournament.game_name, tGame.slug)}
+                        ${window.TurnamenUI.renderGameChip(tournament.game_name, tGame)}
                         <h4 class="participation-card-title">${window.TurnamenUI.escapeHtml(tournament.title)}</h4>
                         <div class="participation-card-meta">
                           <span class="badge badge-neutral tabular-nums">${window.TurnamenUI.escapeHtml(reg.team_tag)}</span>
@@ -1649,7 +2251,7 @@
   // B1. ORGANIZER DASHBOARD (Management Tournament Control)
   async function renderOrganizerDashboard(container, data, isStale) {
     const user = getCurrentUserSafe();
-    const { tournaments, ctx, activeReport, activeRegs, activeAnnouncements } = data;
+    const { tournaments, ctx, activeReport, activeRegs, activeAnnouncements, gamesById } = data;
     const myTournaments = user
       ? tournaments.filter((t) => t.organizer_id === user.id)
       : [];
@@ -1759,7 +2361,7 @@
                         <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
                         <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")} | Bo${t.best_of}</div>
                       </td>
-                      <td class="col-game">${window.TurnamenUI.renderGameChip(t.game_name)}</td>
+                      <td class="col-game">${window.TurnamenUI.renderGameChip(t.game_name, gamesById[t.game_id] || t.game_id)}</td>
                       <td class="col-quota">
                         <div class="tabular-nums" style="font-size:12px; margin-bottom:4px;">${app} / ${max} Tim</div>
                         ${window.TurnamenUI.renderProgressBar(pct, `Kuota ${t.title}`)}
@@ -1886,14 +2488,20 @@
 
   // B2. COMMITTEE DASHBOARD (Operational Match & Verification Desk)
   function renderCommitteeDashboard(container, data) {
-    const { ctx, activeMatches, activeRegs, activeAnnouncements, activeReport } = data;
+    const user = getCurrentUserSafe();
+    const { tournaments, ctx, activeMatches, activeRegs, activeAnnouncements, activeReport } = data;
     const playableMatches = activeMatches.filter(
-      (m) => m.team_a_id && m.team_b_id && m.status !== "completed"
+      (m) => m.team_a_id && m.team_b_id && m.status !== "completed" && m.status !== "bye"
     );
-    const completedMatches = activeMatches.filter((m) => m.status === "completed");
+    const settledMatches = activeMatches.filter(
+      (m) => m.status === "completed" || m.status === "bye"
+    );
     const pendingRegs = activeRegs.filter((r) => r.status === "pending");
+    const assignedTournaments = (tournaments || []).filter(
+      (t) => getCommitteeTournamentAssignment(t, user) === true
+    );
     const committeeAssignment = ctx.active
-      ? getCommitteeTournamentAssignment(ctx.active, getCurrentUserSafe())
+      ? getCommitteeTournamentAssignment(ctx.active, user)
       : null;
     const canAnnounce = Boolean(
       ctx.active && canPerform("announcement:create", { tournament: ctx.active })
@@ -1935,6 +2543,33 @@
       </div>
       ${renderCommitteeAssignmentNotice(ctx.active)}
 
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Turnamen Ditugaskan kepada Anda</h3>
+            <p class="card-subtitle">Pilih turnamen yang menugaskan akun panitia Anda untuk mulai memverifikasi peserta dan mengesahkan skor.</p>
+          </div>
+          <span class="badge badge-info tabular-nums">${assignedTournaments.length} Ditugaskan</span>
+        </div>
+        ${
+          assignedTournaments.length === 0
+            ? window.TurnamenUI.renderEmptyState(
+                "Belum Ada Penugasan Turnamen",
+                "Belum ada turnamen yang menugaskan akun panitia Anda saat ini. Hubungi Organizer atau Super Admin untuk penugasan."
+              )
+            : `
+          <div class="row-actions" style="flex-wrap:wrap; gap:8px;">
+            ${assignedTournaments
+              .map((t) => {
+                const isSelected = ctx.active && ctx.active.id === t.id;
+                return `<button type="button" class="btn ${isSelected ? "btn-primary" : "btn-secondary"} btn-sm" data-action="go-page" data-page="dashboard" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">${window.TurnamenUI.escapeHtml(t.title)} (${window.TurnamenUI.escapeHtml(t.status)})</button>`;
+              })
+              .join("")}
+          </div>
+        `
+        }
+      </div>
+
       <div class="grid-4">
         <div class="metric-card metric-card-accent">
           <div class="metric-label">Match Siap Disahkan</div>
@@ -1942,8 +2577,8 @@
           <div class="metric-note">Menunggu hasil skor pertandingan</div>
         </div>
         <div class="metric-card">
-          <div class="metric-label">Match Terkunci</div>
-          <div class="metric-value">${completedMatches.length}</div>
+          <div class="metric-label">Match Selesai &amp; BYE</div>
+          <div class="metric-value">${settledMatches.length}</div>
           <div class="metric-note">Dari total ${activeMatches.length} match bracket</div>
         </div>
         <div class="metric-card">
@@ -2037,8 +2672,13 @@
             <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail">Panel Peserta</button>
           </div>
           ${
-            pendingRegs.length > 0
-              ? `
+            !canVerifyRegs
+              ? window.TurnamenUI.renderEmptyState(
+                  committeeAssignment === false ? "Bukan Penugasan Anda" : "Penugasan Belum Diverifikasi",
+                  "Akun panitia Anda hanya dapat memverifikasi peserta pada turnamen yang ditugaskan kepada Anda."
+                )
+              : pendingRegs.length > 0
+                ? `
             <div class="table-container">
               <table class="data-table">
                 <thead><tr><th>Tim</th><th>Status</th><th>Aksi</th></tr></thead>
@@ -2056,16 +2696,10 @@
                       </td>
                       <td>${window.TurnamenUI.renderStatusBadge(r.status)}</td>
                       <td>
-                        ${
-                          canVerifyRegs
-                            ? `
-                          <div class="row-actions">
-                            <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-status="approved">Setujui</button>
-                            <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-status="rejected">Tolak</button>
-                          </div>
-                        `
-                            : `<span class="table-subtext">${unverifiedLabel}</span>`
-                        }
+                        <div class="row-actions">
+                          <button type="button" class="btn btn-success btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-status="approved">Setujui</button>
+                          <button type="button" class="btn btn-danger btn-sm" data-action="verify-registration" data-id="${window.TurnamenUI.escapeHtml(r.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-status="rejected">Tolak</button>
+                        </div>
                       </td>
                     </tr>
                   `
@@ -2075,10 +2709,10 @@
               </table>
             </div>
           `
-              : window.TurnamenUI.renderEmptyState(
-                  "Semua Peserta Terverifikasi",
-                  `${activeRegs.length} tim pendaftar sudah diproses.`
-                )
+                : window.TurnamenUI.renderEmptyState(
+                    "Semua Peserta Terverifikasi",
+                    `${activeRegs.length} tim pendaftar sudah diproses.`
+                  )
           }
         </div>
 
@@ -2118,165 +2752,330 @@
   }
 
   // B3. SUPER ADMIN DASHBOARD (System Administration & Cross-Tournament Telemetry)
-  function renderSuperAdminDashboard(container, data) {
-    const { tournaments, teams, teamsOk, ctx, activeReport } = data;
-    const state = getRuntimeState();
-    const ongoingCount = tournaments.filter((t) => t.status === "ongoing").length;
-    const openCount = tournaments.filter((t) => t.status === "open_registration").length;
-    const totalRosterPlayers = teams.reduce(
+  const USER_ROLE_LABELS = {
+    player: "Player",
+    team_captain: "Team Captain",
+    committee: "Committee / Panitia",
+    organizer: "Tournament Organizer",
+    super_admin: "Super Admin",
+  };
+
+  function buildSuperAdminMetricsHtml(saState) {
+    const ongoingCount = saState.tournaments.filter((t) => t.status === "ongoing").length;
+    const openCount = saState.tournaments.filter((t) => t.status === "open_registration").length;
+    const totalRosterPlayers = saState.teams.reduce(
       (sum, tm) => sum + Number(tm.member_count ?? (tm.members ? tm.members.length : 0)),
       0
     );
-    const summary = activeReport && activeReport.summary ? activeReport.summary : null;
+    const summary =
+      saState.activeReport && saState.activeReport.summary ? saState.activeReport.summary : null;
 
-    container.innerHTML = `
-      ${renderGamesErrorNotice()}
-      <div class="page-header">
-        <div class="page-header-copy">
-          <h2>Administrasi Sistem Turnamen.in</h2>
-          <p>Kontrol penuh lintas organizer, katalog game, tim esports, dan audit operasional.</p>
-        </div>
-        <div class="page-actions">
-          <button type="button" class="btn btn-secondary" data-action="open-create-team">${window.TurnamenUI.icon("plus", 14)}<span>Buat Tim</span></button>
-          <button type="button" class="btn btn-primary" data-action="open-create-tournament">${window.TurnamenUI.icon("plus", 14)}<span>Buat Turnamen</span></button>
-        </div>
+    const metricCardSkeleton = (label) => `
+      <div class="metric-card skeleton-metric-card" role="status" aria-busy="true">
+        <div class="metric-label">${label}</div>
+        <span class="arena-skeleton arena-skeleton-line is-xl" style="width:44%;"></span>
+        <span class="arena-skeleton arena-skeleton-line is-xs" style="width:72%;"></span>
       </div>
+    `;
 
-      <div class="grid-4">
-        <div class="metric-card">
-          <div class="metric-label">Total Turnamen Sistem</div>
-          <div class="metric-value">${tournaments.length}</div>
-          <div class="metric-note">${ongoingCount} berlangsung, ${openCount} buka pendaftaran</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Cabang Game Aktif</div>
-          <div class="metric-value">${gamesState.items.length}</div>
-          <div class="metric-note">Terdaftar pada katalog sistem</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Total Tim &amp; Pemain</div>
-          <div class="metric-value">${teamsOk ? teams.length : "-"}</div>
-          <div class="metric-note">${teamsOk ? `${totalRosterPlayers} total pemain pada roster` : "Data tim gagal dimuat"}</div>
-        </div>
-        <div class="metric-card metric-card-accent">
-          <div class="metric-label">Progres Turnamen Aktif</div>
-          <div class="metric-value">${summary ? `${summary.completed_matches} / ${summary.total_matches}` : "0 / 0"}</div>
-          <div class="metric-note">${summary ? `${summary.completion_percentage}% selesai` : "Belum ada pertandingan"}</div>
-        </div>
-      </div>
-
-      <div class="workspace-split">
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h3 class="card-title">Kontrol Seluruh Turnamen</h3>
-              <p class="card-subtitle">Akses administrasi penuh untuk mengubah, mengaudit, atau memantau bracket.</p>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Kelola Lengkap</button>
+    const tournamentsCard = !saState.tournamentsReady
+      ? metricCardSkeleton("Total Turnamen Sistem")
+      : saState.tourError
+        ? `
+          <div class="metric-card">
+            <div class="metric-label">Total Turnamen Sistem</div>
+            <div class="metric-value">-</div>
+            <div class="metric-note">${window.TurnamenUI.escapeHtml(saState.tourError)}</div>
           </div>
-          ${
-            tournaments.length === 0
+        `
+        : `
+          <div class="metric-card">
+            <div class="metric-label">Total Turnamen Sistem</div>
+            <div class="metric-value">${saState.tournaments.length}</div>
+            <div class="metric-note">${ongoingCount} berlangsung, ${openCount} buka pendaftaran</div>
+          </div>
+        `;
+
+    const gamesCard = !saState.gamesReady
+      ? metricCardSkeleton("Cabang Game Sistem")
+      : `
+          <div class="metric-card">
+            <div class="metric-label">Cabang Game Sistem</div>
+            <div class="metric-value">${saState.adminGames.length}</div>
+            <div class="metric-note">${saState.adminGames.filter((g) => g.is_active !== false).length} cabang game aktif</div>
+          </div>
+        `;
+
+    const teamsCard = !saState.teamsReady
+      ? metricCardSkeleton("Total Tim &amp; Pemain")
+      : `
+          <div class="metric-card">
+            <div class="metric-label">Total Tim &amp; Pemain</div>
+            <div class="metric-value">${saState.teamsOk ? saState.teams.length : "-"}</div>
+            <div class="metric-note">${saState.teamsOk ? `${totalRosterPlayers} total pemain pada roster` : window.TurnamenUI.escapeHtml(saState.teamsError || "Data tim gagal dimuat")}</div>
+          </div>
+        `;
+
+    const reportCard = !saState.reportReady
+      ? metricCardSkeleton("Progres Turnamen Aktif")
+      : `
+          <div class="metric-card metric-card-accent">
+            <div class="metric-label">Progres Turnamen Aktif</div>
+            <div class="metric-value">${summary ? `${summary.completed_matches} / ${summary.total_matches}` : saState.reportError ? "-" : "0 / 0"}</div>
+            <div class="metric-note">${summary ? `${summary.completion_percentage}% selesai` : saState.reportError ? window.TurnamenUI.escapeHtml(saState.reportError) : "Belum ada pertandingan"}</div>
+          </div>
+        `;
+
+    return `<div class="grid-4">${tournamentsCard}${gamesCard}${teamsCard}${reportCard}</div>`;
+  }
+
+  function buildSuperAdminTournamentsCardHtml(saState) {
+    if (!saState.tournamentsReady) {
+      return window.TurnamenUI.renderTableSkeleton({
+        rows: 4,
+        columns: 4,
+        title: "Kontrol Seluruh Turnamen",
+      });
+    }
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Kontrol Seluruh Turnamen</h3>
+            <p class="card-subtitle">Akses administrasi penuh untuk mengubah, mengaudit, atau memantau bracket.</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-list">Kelola Lengkap</button>
+        </div>
+        ${
+          saState.tourError
+            ? window.TurnamenUI.renderErrorState(saState.tourError, "retry-page")
+            : saState.tournaments.length === 0
               ? window.TurnamenUI.renderEmptyState("Belum Ada Turnamen", "Sistem belum memiliki data turnamen.")
               : `
-            <div class="table-container">
-              <table class="data-table">
-                <thead>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="col-title">Turnamen</th>
+                  <th class="col-quota">Peserta</th>
+                  <th class="col-status">Status</th>
+                  <th class="col-actions">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${saState.tournaments
+                  .map(
+                    (t) => `
                   <tr>
-                    <th class="col-title">Turnamen</th>
-                    <th class="col-quota">Peserta</th>
-                    <th class="col-status">Status</th>
-                    <th class="col-actions">Aksi</th>
+                    <td class="col-title">
+                      <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
+                      <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.game_name)} | ${window.TurnamenUI.escapeHtml(t.venue || "Online")}</div>
+                    </td>
+                    <td class="col-quota tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams}</td>
+                    <td class="col-status">${window.TurnamenUI.renderStatusBadge(t.status)}</td>
+                    <td class="col-actions">
+                      <div class="row-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
+                        <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Edit ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("edit", 14)}</button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  ${tournaments
-                    .map(
-                      (t) => `
+                `
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+        }
+      </div>
+    `;
+  }
+
+  function buildSuperAdminGamesCardHtml(saState) {
+    if (!saState.gamesReady) {
+      return window.TurnamenUI.renderListSkeleton({
+        rows: 3,
+        title: "Katalog & Pengaturan Game",
+        withAvatar: false,
+      });
+    }
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Katalog &amp; Pengaturan Game</h3>
+            <p class="card-subtitle">Tambah, ubah konfigurasi, atau ganti poster resmi cabang game.</p>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="game-management">${window.TurnamenUI.icon("image", 14)}<span>Kelola Poster</span></button>
+            <button type="button" class="btn btn-primary btn-sm" data-action="open-create-game">${window.TurnamenUI.icon("plus", 14)}<span>Tambah</span></button>
+          </div>
+        </div>
+        ${
+          saState.gamesError && saState.adminGames.length === 0
+            ? window.TurnamenUI.renderErrorState(saState.gamesError, "retry-games")
+            : saState.adminGames.length > 0
+              ? `
+          <div class="kv-list">
+            ${saState.adminGames
+              .map((g) => {
+                const gTours = saState.tournaments.filter((t) => t.game_id === g.id).length;
+                const gTeams = saState.teams.filter((tm) => tm.game_id === g.id).length;
+                const inactiveTag =
+                  g.is_active === false ? ' <span class="badge badge-neutral">Nonaktif</span>' : "";
+                const customTag = g.custom_artwork_url
+                  ? ' <span class="badge badge-info">Poster Kustom</span>'
+                  : "";
+                return `
+                <div class="kv-item">
+                  <span class="kv-label">${window.TurnamenUI.renderGameChip(g)}${customTag}${inactiveTag}</span>
+                  <span class="kv-value row-actions">
+                    <span class="tabular-nums">${gTours} Turnamen | ${gTeams} Tim</span>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="game-management" aria-label="Kelola poster ${window.TurnamenUI.escapeHtml(g.name)}">${window.TurnamenUI.icon("image", 14)}<span>Poster</span></button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-game" data-id="${window.TurnamenUI.escapeHtml(g.id)}" aria-label="Edit game ${window.TurnamenUI.escapeHtml(g.name)}">${window.TurnamenUI.icon("edit", 14)}</button>
+                  </span>
+                </div>
+              `;
+              })
+              .join("")}
+          </div>
+        `
+              : window.TurnamenUI.renderEmptyState("Game Kosong", "Belum ada cabang game terdaftar.")
+        }
+      </div>
+    `;
+  }
+
+  function buildSuperAdminTelemetryCardHtml(state) {
+    return `
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Telemetri Lingkungan Sistem</h3>
+          <span class="badge ${isMockMode() ? "badge-warning" : "badge-success"}">${window.TurnamenUI.escapeHtml(state.appMode.toUpperCase())}</span>
+        </div>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-label">Endpoint API</span>
+            <span class="kv-value"><code>${window.TurnamenUI.escapeHtml(state.apiBaseUrl)}</code></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-label">Transport</span>
+            <span class="kv-value">${window.TurnamenBridge && window.TurnamenBridge.hasEel() ? "Python Eel Bridge" : "HTTP REST Lokal"}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function buildSuperAdminUsersCardHtml(saState) {
+    if (!saState.usersReady) {
+      return window.TurnamenUI.renderTableSkeleton({
+        rows: 4,
+        columns: 5,
+        title: "Manajemen Pengguna & Penetapan Role",
+      });
+    }
+    return `
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Manajemen Pengguna &amp; Penetapan Role</h3>
+            <p class="card-subtitle">Hanya Super Admin yang dapat mengubah role pengguna yang sudah tertaut dengan akun Auth yang sah.</p>
+          </div>
+          <span class="badge badge-info tabular-nums">${saState.systemUsers.length} Akun</span>
+        </div>
+        ${
+          saState.usersError
+            ? window.TurnamenUI.renderErrorState(saState.usersError, "retry-page")
+            : saState.systemUsers.length === 0
+              ? window.TurnamenUI.renderEmptyState(
+                  "Daftar Pengguna Belum Tersedia",
+                  "Belum ada data akun pengguna."
+                )
+              : `
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Pengguna</th>
+                  <th>Email</th>
+                  <th>Status Auth</th>
+                  <th>Role Saat Ini</th>
+                  <th>Ubah Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${saState.systemUsers
+                  .map((u) => {
+                    const currentRole = String(u.role || "player").toLowerCase();
+                    const linkedBadge = u.is_auth_linked
+                      ? `<span class="badge badge-success">Tertaut Auth</span>`
+                      : `<span class="badge badge-warning">Belum Tertaut</span>`;
+                    const roleOptions = Object.keys(USER_ROLE_LABELS)
+                      .map(
+                        (rk) =>
+                          `<option value="${window.TurnamenUI.escapeHtml(rk)}" ${currentRole === rk ? "selected" : ""}>${window.TurnamenUI.escapeHtml(USER_ROLE_LABELS[rk])}</option>`
+                      )
+                      .join("");
+                    return `
                     <tr>
-                      <td class="col-title">
-                        <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
-                        <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.game_name)} | ${window.TurnamenUI.escapeHtml(t.venue || "Online")}</div>
+                      <td>
+                        <strong>${window.TurnamenUI.escapeHtml(u.full_name || u.username || "-")}</strong>
+                        <div class="table-subtext">@${window.TurnamenUI.escapeHtml(u.username || "-")}</div>
                       </td>
-                      <td class="col-quota tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams}</td>
-                      <td class="col-status">${window.TurnamenUI.renderStatusBadge(t.status)}</td>
-                      <td class="col-actions">
+                      <td class="tabular-nums">${window.TurnamenUI.escapeHtml(u.email || "-")}</td>
+                      <td>${linkedBadge}</td>
+                      <td>${window.TurnamenUI.renderRoleBadge(currentRole)}</td>
+                      <td>
                         <div class="row-actions">
-                          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="tournament-detail" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Peserta</button>
-                          <button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Bracket</button>
-                          <button type="button" class="btn btn-ghost btn-sm" data-action="open-edit-tournament" data-id="${window.TurnamenUI.escapeHtml(t.id)}" aria-label="Edit ${window.TurnamenUI.escapeHtml(t.title)}">${window.TurnamenUI.icon("edit", 14)}</button>
+                          <label for="user-role-select-${window.TurnamenUI.escapeHtml(u.id)}" class="sr-only">Pilih role untuk ${window.TurnamenUI.escapeHtml(u.username || u.email)}</label>
+                          <select id="user-role-select-${window.TurnamenUI.escapeHtml(u.id)}" class="form-select form-select-compact">${roleOptions}</select>
+                          <button type="button" class="btn btn-primary btn-sm" data-action="assign-user-role" data-id="${window.TurnamenUI.escapeHtml(u.id)}">Simpan Role</button>
                         </div>
                       </td>
                     </tr>
-                  `
-                    )
-                    .join("")}
-                </tbody>
-              </table>
-            </div>
-          `
-          }
-        </div>
-
-        <div class="stack-md">
-          <div class="card">
-            <div class="card-header">
-              <h3 class="card-title">Distribusi Cabang Game</h3>
-              <span class="badge badge-info">Catalog</span>
-            </div>
-            ${
-              gamesState.items.length > 0
-                ? `
-              <div class="kv-list">
-                ${gamesState.items
-                  .map((g) => {
-                    const gTours = tournaments.filter((t) => t.game_id === g.id).length;
-                    const gTeams = teams.filter((tm) => tm.game_id === g.id).length;
-                    return `
-                    <div class="kv-item">
-                      <span class="kv-label">${window.TurnamenUI.renderGameChip(g.name, g.slug)}</span>
-                      <span class="kv-value tabular-nums">${gTours} Turnamen | ${gTeams} Tim</span>
-                    </div>
                   `;
                   })
                   .join("")}
-              </div>
-            `
-                : window.TurnamenUI.renderEmptyState("Game Kosong", "Belum ada cabang game aktif.")
-            }
+              </tbody>
+            </table>
           </div>
-
-          <div class="card">
-            <div class="card-header">
-              <h3 class="card-title">Telemetri Lingkungan Sistem</h3>
-              <span class="badge ${isMockMode() ? "badge-warning" : "badge-success"}">${window.TurnamenUI.escapeHtml(state.appMode.toUpperCase())}</span>
-            </div>
-            <div class="kv-list">
-              <div class="kv-item">
-                <span class="kv-label">Endpoint API</span>
-                <span class="kv-value"><code>${window.TurnamenUI.escapeHtml(state.apiBaseUrl)}</code></span>
-              </div>
-              <div class="kv-item">
-                <span class="kv-label">Transport</span>
-                <span class="kv-value">${window.TurnamenBridge && window.TurnamenBridge.hasEel() ? "Python Eel Bridge" : "HTTP REST Lokal"}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        `
+        }
       </div>
+    `;
+  }
 
+  function buildSuperAdminAuditCardHtml(saState) {
+    if (!saState.reportReady) {
+      return window.TurnamenUI.renderTableSkeleton({
+        rows: 4,
+        columns: 3,
+        title: "Jejak Audit Aktivitas Sistem",
+      });
+    }
+    const activeTitle =
+      saState.ctx && saState.ctx.active ? saState.ctx.active.title : "Turnamen Aktif";
+    return `
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">Jejak Audit Aktivitas Sistem (${window.TurnamenUI.escapeHtml(ctx.active ? ctx.active.title : "Turnamen Aktif")})</h3>
+          <h3 class="card-title">Jejak Audit Aktivitas Sistem (${window.TurnamenUI.escapeHtml(activeTitle)})</h3>
           <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="reports">Laporan Lengkap</button>
         </div>
         ${
-          activeReport && Array.isArray(activeReport.recent_activity) && activeReport.recent_activity.length > 0
-            ? `
+          saState.reportError && !saState.activeReport
+            ? window.TurnamenUI.renderErrorState(saState.reportError, "retry-page")
+            : saState.activeReport &&
+                Array.isArray(saState.activeReport.recent_activity) &&
+                saState.activeReport.recent_activity.length > 0
+              ? `
           <div class="table-container">
             <table class="data-table">
               <thead><tr><th>Aksi</th><th>Entitas</th><th>Waktu</th></tr></thead>
               <tbody>
-                ${activeReport.recent_activity
+                ${saState.activeReport.recent_activity
                   .map(
                     (log) => `
                   <tr>
@@ -2291,10 +3090,970 @@
             </table>
           </div>
         `
-            : window.TurnamenUI.renderEmptyState("Belum Ada Aktivitas", "Belum ada log audit pada turnamen aktif.")
+              : window.TurnamenUI.renderEmptyState(
+                  "Belum Ada Aktivitas",
+                  "Belum ada log audit pada turnamen aktif."
+                )
         }
       </div>
     `;
+  }
+
+  function buildSuperAdminFullHtml(saState, runtimeState) {
+    return `
+      <div id="sa-games-notice-slot">${saState.gamesError && saState.adminGames.length === 0 ? "" : renderGamesErrorNotice()}</div>
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Administrasi Sistem Turnamen.in</h2>
+          <p>Kontrol penuh lintas organizer, katalog game, manajemen role pengguna, dan audit operasional.</p>
+        </div>
+        <div class="page-actions">
+          <button type="button" class="btn btn-secondary" data-action="open-create-game">${window.TurnamenUI.icon("plus", 14)}<span>Tambah Game</span></button>
+          <button type="button" class="btn btn-secondary" data-action="open-create-team">${window.TurnamenUI.icon("plus", 14)}<span>Buat Tim</span></button>
+          <button type="button" class="btn btn-primary" data-action="open-create-tournament">${window.TurnamenUI.icon("plus", 14)}<span>Buat Turnamen</span></button>
+        </div>
+      </div>
+
+      <div id="sa-metrics-slot">${buildSuperAdminMetricsHtml(saState)}</div>
+
+      <div class="workspace-split">
+        <div id="sa-tournaments-slot">${buildSuperAdminTournamentsCardHtml(saState)}</div>
+
+        <div class="stack-md">
+          <div id="sa-games-slot">${buildSuperAdminGamesCardHtml(saState)}</div>
+          ${buildSuperAdminTelemetryCardHtml(runtimeState)}
+        </div>
+      </div>
+
+      <div id="sa-users-slot">${buildSuperAdminUsersCardHtml(saState)}</div>
+      <div id="sa-audit-slot">${buildSuperAdminAuditCardHtml(saState)}</div>
+    `;
+  }
+
+  async function renderSuperAdminProgressive(container, isStale, navOptions = {}) {
+    const runtimeState = getRuntimeState();
+    const hasSnapshot = Boolean(navOptions.hasSnapshot);
+    const saState = {
+      tournamentsReady: false,
+      gamesReady: false,
+      teamsReady: false,
+      usersReady: false,
+      reportReady: false,
+      tournaments: [],
+      tourError: null,
+      adminGames: gamesState.items.slice(),
+      gamesError: null,
+      teams: [],
+      teamsOk: false,
+      teamsError: null,
+      systemUsers: [],
+      usersError: null,
+      ctx: { error: null, list: [], active: null },
+      activeReport: null,
+      reportError: null,
+    };
+
+    const getSlot = (selector) =>
+      typeof container.querySelector === "function" ? container.querySelector(selector) : null;
+    const canPatchSlots = () => !hasSnapshot && Boolean(getSlot("#sa-metrics-slot"));
+    const updateSlot = (selector, htmlBuilder) => {
+      if (isStale()) return;
+      const slot = getSlot(selector);
+      if (slot) {
+        slot.innerHTML = htmlBuilder(saState);
+      }
+    };
+
+    if (!hasSnapshot) {
+      container.innerHTML = buildSuperAdminFullHtml(saState, runtimeState);
+    }
+
+    // Launch all independent Wave 1 requests concurrently; Wave 2 starts as soon as tournaments resolve.
+    const gamesTask = window.TurnamenAPI.getGames({ includeInactive: true }).then((gamesRes) => {
+      if (isStale()) return;
+      saState.gamesReady = true;
+      if (gamesRes && gamesRes.success && Array.isArray(gamesRes.data)) {
+        saState.adminGames = gamesRes.data;
+        adminGamesCache = gamesRes.data;
+        gamesState.items = gamesRes.data.filter((g) => g.is_active !== false);
+        gamesState.loaded = true;
+        gamesState.error = null;
+      } else {
+        saState.gamesError =
+          (gamesRes && gamesRes.message) || "Gagal memuat daftar cabang game.";
+        gamesState.items = [];
+        gamesState.loaded = false;
+        gamesState.error = saState.gamesError;
+      }
+      if (canPatchSlots()) {
+        updateSlot("#sa-games-slot", buildSuperAdminGamesCardHtml);
+        updateSlot("#sa-metrics-slot", buildSuperAdminMetricsHtml);
+      }
+    });
+
+    const teamsTask = window.TurnamenAPI.getTeams().then((teamsRes) => {
+      if (isStale()) return;
+      saState.teamsReady = true;
+      if (teamsRes && teamsRes.success && Array.isArray(teamsRes.data)) {
+        saState.teamsOk = true;
+        saState.teams = teamsRes.data;
+      } else {
+        saState.teamsOk = false;
+        saState.teams = [];
+        saState.teamsError = (teamsRes && teamsRes.message) || "Data tim gagal dimuat";
+      }
+      if (canPatchSlots()) {
+        updateSlot("#sa-metrics-slot", buildSuperAdminMetricsHtml);
+        if (saState.gamesReady) {
+          updateSlot("#sa-games-slot", buildSuperAdminGamesCardHtml);
+        }
+      }
+    });
+
+    const usersTask = window.TurnamenAPI.getUsers().then((usersRes) => {
+      if (isStale()) return;
+      saState.usersReady = true;
+      if (usersRes && usersRes.success && Array.isArray(usersRes.data)) {
+        saState.systemUsers = usersRes.data;
+      } else {
+        saState.systemUsers = [];
+        saState.usersError =
+          (usersRes && usersRes.message) || "Daftar pengguna gagal dimuat.";
+      }
+      if (canPatchSlots()) {
+        updateSlot("#sa-users-slot", buildSuperAdminUsersCardHtml);
+      }
+    });
+
+    const tourAndReportTask = window.TurnamenAPI.getTournaments().then(async (tourRes) => {
+      if (isStale()) return;
+      saState.tournamentsReady = true;
+      if (tourRes && tourRes.success) {
+        saState.tournaments = Array.isArray(tourRes.data) ? tourRes.data : [];
+        saState.ctx = await resolveActiveTournamentContext(saState.tournaments);
+      } else {
+        saState.tournaments = [];
+        saState.tourError =
+          (tourRes && tourRes.message) || "Gagal memuat daftar turnamen.";
+      }
+      if (isStale()) return;
+
+      if (canPatchSlots()) {
+        updateSlot("#sa-tournaments-slot", buildSuperAdminTournamentsCardHtml);
+        updateSlot("#sa-metrics-slot", buildSuperAdminMetricsHtml);
+        if (saState.gamesReady) {
+          updateSlot("#sa-games-slot", buildSuperAdminGamesCardHtml);
+        }
+      }
+
+      if (saState.ctx && saState.ctx.active) {
+        const reportRes = await window.TurnamenAPI.getTournamentReport(saState.ctx.active.id);
+        if (isStale()) return;
+        saState.reportReady = true;
+        if (reportRes && reportRes.success && reportRes.data) {
+          saState.activeReport = reportRes.data;
+        } else if (reportRes && !reportRes.success) {
+          saState.reportError =
+            reportRes.message || "Ringkasan laporan turnamen gagal dimuat.";
+        }
+      } else {
+        saState.reportReady = true;
+      }
+
+      if (canPatchSlots()) {
+        updateSlot("#sa-audit-slot", buildSuperAdminAuditCardHtml);
+        updateSlot("#sa-metrics-slot", buildSuperAdminMetricsHtml);
+      }
+    });
+
+    await Promise.all([gamesTask, teamsTask, usersTask, tourAndReportTask]);
+    if (isStale()) return;
+
+    const finalHtml = buildSuperAdminFullHtml(saState, runtimeState);
+    if (!canPatchSlots()) {
+      container.innerHTML = finalHtml;
+    }
+    if (
+      navOptions.snapKey &&
+      !saState.tourError &&
+      !saState.gamesError &&
+      !saState.teamsError &&
+      !saState.usersError &&
+      !saState.reportError
+    ) {
+      uiPageSnapshots.set(navOptions.snapKey, finalHtml);
+    }
+  }
+
+  async function renderSuperAdminDashboard(container, data, isStale = () => false) {
+    const {
+      tournaments,
+      teams,
+      teamsOk,
+      ctx,
+      activeReport,
+      reportError,
+      preloadedUsersRes,
+      preloadedAllGamesRes,
+    } = data;
+    const state = getRuntimeState();
+    let usersRes = preloadedUsersRes || null;
+    let allGamesRes = preloadedAllGamesRes || null;
+    if (!usersRes || !allGamesRes) {
+      const [fetchedUsers, fetchedAllGames] = await Promise.all([
+        usersRes ? Promise.resolve(usersRes) : window.TurnamenAPI.getUsers(),
+        allGamesRes ? Promise.resolve(allGamesRes) : window.TurnamenAPI.getGames({ includeInactive: true }),
+      ]);
+      if (isStale()) return;
+      usersRes = fetchedUsers;
+      allGamesRes = fetchedAllGames;
+    }
+
+    const saState = {
+      tournamentsReady: true,
+      gamesReady: true,
+      teamsReady: true,
+      usersReady: true,
+      reportReady: true,
+      tournaments: Array.isArray(tournaments) ? tournaments : [],
+      tourError: null,
+      adminGames:
+        allGamesRes && allGamesRes.success && Array.isArray(allGamesRes.data)
+          ? allGamesRes.data
+          : gamesState.items,
+      gamesError: allGamesRes && !allGamesRes.success ? allGamesRes.message : null,
+      teams: Array.isArray(teams) ? teams : [],
+      teamsOk: Boolean(teamsOk),
+      teamsError: null,
+      systemUsers:
+        usersRes && usersRes.success && Array.isArray(usersRes.data) ? usersRes.data : [],
+      usersError: usersRes && !usersRes.success ? usersRes.message : null,
+      ctx: ctx || { error: null, list: [], active: null },
+      activeReport: activeReport || null,
+      reportError: reportError || null,
+    };
+
+    container.innerHTML = buildSuperAdminFullHtml(saState, state);
+  }
+
+  async function submitAssignUserRole(userId, triggerEl = null) {
+    const selectEl = document.getElementById(`user-role-select-${userId}`);
+    const newRole = selectEl ? selectEl.value : "";
+    if (!newRole) {
+      window.TurnamenUI.showToast("Pilih role target yang valid.", "warning");
+      return;
+    }
+    await withSubmissionGuard(`user:assign-role:${userId}`, triggerEl, "Menyimpan...", async () => {
+      const res = await window.TurnamenAPI.assignUserRole(userId, newRole);
+      if (!res.success) {
+        window.TurnamenUI.showToast(res.message, "danger");
+        return;
+      }
+      window.TurnamenUI.showToast("Role pengguna berhasil diperbarui.", "success");
+      await navigateTo("dashboard");
+    });
+  }
+
+  function openCreateGameModal() {
+    window.TurnamenUI.openModal({
+      title: "Tambah Cabang Game Baru",
+      bodyHtml: `
+        <div class="form-group">
+          <label for="game-form-name" class="form-label">Nama Game</label>
+          <input id="game-form-name" class="form-input" placeholder="Contoh: Counter-Strike 2" />
+        </div>
+        <div class="grid-2" style="margin-bottom:0;">
+          <div class="form-group">
+            <label for="game-form-genre" class="form-label">Genre</label>
+            <input id="game-form-genre" class="form-input" placeholder="FPS / MOBA / Battle Royale" />
+          </div>
+          <div class="form-group">
+            <label for="game-form-platform" class="form-label">Platform</label>
+            <input id="game-form-platform" class="form-input" value="PC / Mobile" />
+          </div>
+        </div>
+        <div class="grid-2" style="margin-bottom:0;">
+          <div class="form-group">
+            <label for="game-form-team-size" class="form-label">Ukuran Tim</label>
+            <input id="game-form-team-size" type="number" min="1" max="20" class="form-input tabular-nums" value="5" />
+          </div>
+          <div class="form-group">
+            <label for="game-form-bo" class="form-label">Default Best Of</label>
+            <select id="game-form-bo" class="form-select">
+              <option value="1">Bo1</option>
+              <option value="3" selected>Bo3</option>
+              <option value="5">Bo5</option>
+              <option value="7">Bo7</option>
+            </select>
+          </div>
+        </div>
+      `,
+      footerHtml: `
+        <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
+        <button type="button" class="btn btn-primary" data-action="submit-create-game">Simpan Game</button>
+      `,
+    });
+  }
+
+  async function openEditGameModal(gameId) {
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
+    const res = await window.TurnamenAPI.getGameById(gameId);
+    if (isModalRequestStale(startNavSeq, startRoleKey)) return;
+    if (!res.success || !res.data) {
+      window.TurnamenUI.showToast(res.message || "Gagal memuat detail game.", "danger");
+      return;
+    }
+    const g = res.data;
+    window.TurnamenUI.openModal({
+      title: `Edit Cabang Game: ${g.name}`,
+      bodyHtml: `
+        <div class="form-group">
+          <label for="game-form-name" class="form-label">Nama Game</label>
+          <input id="game-form-name" class="form-input" value="${window.TurnamenUI.escapeHtml(g.name || "")}" />
+        </div>
+        <div class="grid-2" style="margin-bottom:0;">
+          <div class="form-group">
+            <label for="game-form-genre" class="form-label">Genre</label>
+            <input id="game-form-genre" class="form-input" value="${window.TurnamenUI.escapeHtml(g.genre || "")}" />
+          </div>
+          <div class="form-group">
+            <label for="game-form-platform" class="form-label">Platform</label>
+            <input id="game-form-platform" class="form-input" value="${window.TurnamenUI.escapeHtml(g.platform || "PC / Mobile")}" />
+          </div>
+        </div>
+        <div class="grid-2" style="margin-bottom:0;">
+          <div class="form-group">
+            <label for="game-form-team-size" class="form-label">Ukuran Tim</label>
+            <input id="game-form-team-size" type="number" min="1" max="20" class="form-input tabular-nums" value="${Number(g.team_size || 5)}" />
+          </div>
+          <div class="form-group">
+            <label for="game-form-bo" class="form-label">Default Best Of</label>
+            <select id="game-form-bo" class="form-select">
+              ${[1, 3, 5, 7]
+                .map(
+                  (bo) =>
+                    `<option value="${bo}" ${Number(g.default_best_of || 3) === bo ? "selected" : ""}>Bo${bo}</option>`
+                )
+                .join("")}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="game-form-active" class="form-label">Status Katalog</label>
+          <select id="game-form-active" class="form-select">
+            <option value="true" ${g.is_active !== false ? "selected" : ""}>Aktif (Ditampilkan)</option>
+            <option value="false" ${g.is_active === false ? "selected" : ""}>Nonaktif (Disembunyikan)</option>
+          </select>
+        </div>
+      `,
+      footerHtml: `
+        <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
+        <button type="button" class="btn btn-primary" data-action="submit-edit-game" data-id="${window.TurnamenUI.escapeHtml(g.id)}">Simpan Perubahan</button>
+      `,
+    });
+  }
+
+  async function submitGameModal(gameId = "", triggerEl = null) {
+    const isEdit = Boolean(gameId);
+    const lockKey = isEdit ? `game:edit:${gameId}` : "game:create";
+    await withSubmissionGuard(
+      lockKey,
+      triggerEl,
+      "Menyimpan...",
+      async () => {
+        const name = (document.getElementById("game-form-name")?.value || "").trim();
+        const genre = (document.getElementById("game-form-genre")?.value || "").trim();
+        const platform = (document.getElementById("game-form-platform")?.value || "PC / Mobile").trim();
+        const teamSize = Number(document.getElementById("game-form-team-size")?.value || 5);
+        const defaultBo = Number(document.getElementById("game-form-bo")?.value || 3);
+        const activeEl = document.getElementById("game-form-active");
+
+        if (name.length < 2 || genre.length < 2) {
+          window.TurnamenUI.showToast("Nama dan genre game minimal 2 karakter.", "warning");
+          return;
+        }
+        const payload = {
+          name,
+          genre,
+          platform,
+          team_size: teamSize,
+          default_best_of: defaultBo,
+        };
+        if (isEdit && activeEl) {
+          payload.is_active = activeEl.value === "true";
+        }
+        const res = isEdit
+          ? await window.TurnamenAPI.updateGame(gameId, payload)
+          : await window.TurnamenAPI.createGame(payload);
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.closeModal(true);
+        await ensureGamesLoaded(true);
+        window.TurnamenUI.showToast(
+          isEdit ? "Cabang game berhasil diperbarui." : "Cabang game baru berhasil ditambahkan.",
+          "success"
+        );
+        clearUiPageSnapshots();
+        await navigateTo(currentPage === "game-management" ? "game-management" : "dashboard");
+      },
+      { lockModal: true }
+    );
+  }
+
+  // =========================================================================
+  // WAVE 6.11: MANAJEMEN GAME & CUSTOM ARTWORK POSTER
+  // =========================================================================
+  const MAX_GAME_ARTWORK_BYTES = 5 * 1024 * 1024;
+  const ALLOWED_ARTWORK_MIMES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+  const ALLOWED_ARTWORK_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+
+  function bytesToBase64(bytes) {
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function detectArtworkSignature(bytes, filename, declaredMime) {
+    if (!bytes || bytes.length === 0) {
+      return { ok: false, message: "File gambar poster kosong atau tidak terbaca." };
+    }
+    if (bytes.length > MAX_GAME_ARTWORK_BYTES) {
+      return { ok: false, message: "Ukuran gambar poster melebihi batas maksimal 5 MB." };
+    }
+    const lowerHead = String.fromCharCode.apply(null, bytes.subarray(0, Math.min(256, bytes.length))).toLowerCase();
+    if (
+      lowerHead.includes("<svg") ||
+      lowerHead.includes("<?xml") ||
+      lowerHead.includes("<html") ||
+      lowerHead.includes("<script") ||
+      (bytes[0] === 0x4d && bytes[1] === 0x5a) ||
+      (bytes[0] === 0x7f && bytes[1] === 0x45 && bytes[2] === 0x4c && bytes[3] === 0x46)
+    ) {
+      return {
+        ok: false,
+        message: "Format SVG, HTML, atau executable tidak diperbolehkan. Gunakan JPEG, PNG, atau WebP.",
+      };
+    }
+
+    let detectedMime = "";
+    if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+      detectedMime = "image/png";
+    } else if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+      detectedMime = "image/jpeg";
+    } else if (
+      bytes.length >= 12 &&
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    ) {
+      detectedMime = "image/webp";
+    }
+    if (!detectedMime) {
+      return {
+        ok: false,
+        message: "Signature file tidak dikenali sebagai JPEG, PNG, atau WebP yang valid.",
+      };
+    }
+
+    const cleanName = String(filename || "").trim().toLowerCase();
+    const dotIdx = cleanName.lastIndexOf(".");
+    const ext = dotIdx >= 0 ? cleanName.slice(dotIdx) : "";
+    if (ext && !ALLOWED_ARTWORK_EXTS.has(ext)) {
+      return { ok: false, message: "Ekstensi file tidak valid. Gunakan .jpg, .jpeg, .png, atau .webp." };
+    }
+    const extMimeMap = {
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png",
+      ".webp": "image/webp",
+    };
+    if (ext && extMimeMap[ext] !== detectedMime) {
+      return {
+        ok: false,
+        message: "Ekstensi file tidak sesuai dengan isi biner gambar sebenarnya.",
+      };
+    }
+    const normMime = String(declaredMime || "").trim().toLowerCase();
+    const normalizedDeclared = normMime === "image/jpg" ? "image/jpeg" : normMime;
+    if (normalizedDeclared && normalizedDeclared !== "application/octet-stream" && normalizedDeclared !== detectedMime) {
+      return {
+        ok: false,
+        message: "Tipe MIME file tidak sesuai dengan format gambar sebenarnya.",
+      };
+    }
+    return { ok: true, mimeType: detectedMime };
+  }
+
+  async function optimizeArtworkInBrowser(dataUrl, mimeType, bytesLength) {
+    if (typeof Image === "undefined" || typeof document.createElement !== "function") {
+      return {
+        previewUrl: dataUrl,
+        imageBase64: dataUrl.split(",")[1] || "",
+        contentType: mimeType,
+        width: null,
+        height: null,
+        fileSizeBytes: bytesLength,
+        aspectWarning: "",
+      };
+    }
+
+    const loadedImg = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Gambar gagal dirender untuk preview."));
+      img.src = dataUrl;
+    }).catch(() => null);
+
+    if (!loadedImg || !loadedImg.naturalWidth || !loadedImg.naturalHeight) {
+      return {
+        previewUrl: dataUrl,
+        imageBase64: dataUrl.split(",")[1] || "",
+        contentType: mimeType,
+        width: null,
+        height: null,
+        fileSizeBytes: bytesLength,
+        aspectWarning: "",
+      };
+    }
+
+    const natW = loadedImg.naturalWidth;
+    const natH = loadedImg.naturalHeight;
+    if (natW < 320 || natH < 180) {
+      throw new Error(`Resolusi gambar terlalu kecil (${natW}x${natH} px). Minimal 320x180 px.`);
+    }
+    const ratio = natW / natH;
+    if (ratio < 0.75 || ratio > 2.6) {
+      throw new Error(
+        `Rasio aspek gambar (${ratio.toFixed(2)}:1) terlalu ekstrem. Gunakan gambar lanskap mendekati 16:9.`
+      );
+    }
+
+    const targetRatio = 16 / 9;
+    const needsCrop = Math.abs(ratio - targetRatio) > 0.08;
+    let aspectWarning = needsCrop
+      ? `Proporsi asli ${natW}x${natH} px disesuaikan otomatis ke bingkai poster 16:9.`
+      : "";
+
+    const canvas = document.createElement("canvas");
+    if (canvas && typeof canvas.getContext === "function") {
+      const outW = Math.min(1280, Math.max(640, natW));
+      const outH = Math.round(outW / targetRatio);
+      canvas.width = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        let sx = 0;
+        let sy = 0;
+        let sw = natW;
+        let sh = natH;
+        if (ratio > targetRatio) {
+          sw = Math.round(natH * targetRatio);
+          sx = Math.round((natW - sw) / 2);
+        } else if (ratio < targetRatio) {
+          sh = Math.round(natW / targetRatio);
+          sy = Math.round((natH - sh) / 2);
+        }
+        ctx.drawImage(loadedImg, sx, sy, sw, sh, 0, 0, outW, outH);
+        const preferredOutMime = mimeType === "image/png" ? "image/png" : "image/webp";
+        const optimizedDataUrl = canvas.toDataURL(preferredOutMime, 0.88);
+        if (optimizedDataUrl && optimizedDataUrl.startsWith(`data:${preferredOutMime};base64,`)) {
+          const b64 = optimizedDataUrl.split(",")[1] || "";
+          const approxBytes = Math.floor((b64.length * 3) / 4);
+          if (approxBytes > 0 && (needsCrop || approxBytes < bytesLength || bytesLength > 900 * 1024)) {
+            return {
+              previewUrl: optimizedDataUrl,
+              imageBase64: b64,
+              contentType: preferredOutMime,
+              width: outW,
+              height: outH,
+              fileSizeBytes: approxBytes,
+              aspectWarning,
+            };
+          }
+        }
+      }
+    }
+
+    return {
+      previewUrl: dataUrl,
+      imageBase64: dataUrl.split(",")[1] || "",
+      contentType: mimeType,
+      width: natW,
+      height: natH,
+      fileSizeBytes: bytesLength,
+      aspectWarning,
+    };
+  }
+
+  async function inspectAndPrepareArtworkFile(file) {
+    if (!file) {
+      throw new Error("Pilih file gambar poster terlebih dahulu.");
+    }
+    const rawName = String(file.name || "poster.jpg");
+    const rawType = String(file.type || "").trim().toLowerCase();
+    if (rawType && rawType !== "application/octet-stream" && !ALLOWED_ARTWORK_MIMES.has(rawType)) {
+      throw new Error("Format file tidak didukung. Pilih gambar JPEG, PNG, atau WebP.");
+    }
+    if (!file.size || file.size > MAX_GAME_ARTWORK_BYTES) {
+      throw new Error("Ukuran gambar harus lebih dari 0 byte dan maksimal 5 MB.");
+    }
+
+    let bytes;
+    if (typeof file.arrayBuffer === "function") {
+      bytes = new Uint8Array(await file.arrayBuffer());
+    } else if (file._bytes && ArrayBuffer.isView(file._bytes)) {
+      bytes = new Uint8Array(file._bytes.buffer, file._bytes.byteOffset, file._bytes.byteLength);
+    } else {
+      throw new Error("Browser gagal membaca isi file gambar.");
+    }
+
+    const sig = detectArtworkSignature(bytes, rawName, rawType);
+    if (!sig.ok) {
+      throw new Error(sig.message);
+    }
+
+    const b64 = bytesToBase64(bytes);
+    const dataUrl = `data:${sig.mimeType};base64,${b64}`;
+    const prepared = await optimizeArtworkInBrowser(dataUrl, sig.mimeType, bytes.length);
+    if (prepared.fileSizeBytes > MAX_GAME_ARTWORK_BYTES) {
+      throw new Error("Hasil gambar masih melebihi batas 5 MB.");
+    }
+    return {
+      filename: rawName,
+      contentType: prepared.contentType,
+      imageBase64: prepared.imageBase64,
+      previewUrl: prepared.previewUrl,
+      width: prepared.width,
+      height: prepared.height,
+      fileSizeBytes: prepared.fileSizeBytes,
+      aspectWarning: prepared.aspectWarning,
+    };
+  }
+
+  function formatByteSize(bytes) {
+    const n = Number(bytes || 0);
+    if (!Number.isFinite(n) || n <= 0) return "-";
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  function buildGameManagementCardsHtml(games) {
+    if (!games || games.length === 0) {
+      return window.TurnamenUI.renderEmptyState(
+        "Belum Ada Cabang Game",
+        "Tambahkan cabang game baru untuk mulai mengatur katalog dan posternya.",
+        `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-game">Tambah Cabang Game</button>`
+      );
+    }
+
+    return `
+      <div class="artwork-manager-grid">
+        ${games
+          .map((g) => {
+            const art = window.TurnamenUI.resolveGameArtwork(g);
+            const draft = pendingArtworkDrafts.get(g.id) || null;
+            const uploadStatus = artworkUploadState.get(g.id) || null;
+            const isUploading = Boolean(uploadStatus && uploadStatus.busy);
+            const isCustom = Boolean(g.custom_artwork_url);
+            const sourceBadge = isCustom
+              ? `<span class="badge badge-info">Poster Kustom</span>`
+              : art.hasOfficialArtwork
+                ? `<span class="badge badge-success">Artwork Resmi</span>`
+                : `<span class="badge badge-neutral">Fallback Arena</span>`;
+            const inactiveBadge =
+              g.is_active === false ? `<span class="badge badge-warning">Nonaktif</span>` : "";
+            const dimLabel =
+              g.custom_artwork_width && g.custom_artwork_height
+                ? `${g.custom_artwork_width}x${g.custom_artwork_height} px`
+                : "16:9 Siap";
+
+            return `
+              <article class="artwork-manager-card" data-game-card-id="${window.TurnamenUI.escapeHtml(g.id)}">
+                <div class="artwork-manager-head">
+                  <div>
+                    <h3 class="card-title">${window.TurnamenUI.escapeHtml(g.name)}</h3>
+                    <div class="table-subtext">${window.TurnamenUI.escapeHtml(g.genre || "-")} | ${window.TurnamenUI.escapeHtml(g.platform || "-")} | <code>${window.TurnamenUI.escapeHtml(g.slug || "")}</code></div>
+                  </div>
+                  <div class="row-actions">
+                    ${sourceBadge}
+                    ${inactiveBadge}
+                  </div>
+                </div>
+
+                <div class="artwork-manager-poster">
+                  ${window.TurnamenUI.renderGameArtwork(g, "", { hideCaption: true })}
+                </div>
+
+                <div class="artwork-manager-meta">
+                  <span>Sumber: <strong>${window.TurnamenUI.escapeHtml(art.sourceLabel || "Artwork Resmi")}</strong></span>
+                  <span class="tabular-nums">Dimensi: <strong>${window.TurnamenUI.escapeHtml(dimLabel)}</strong></span>
+                  <span class="tabular-nums">Format Default: <strong>${g.team_size || 5}v${g.team_size || 5} Bo${g.default_best_of || 3}</strong></span>
+                </div>
+
+                ${
+                  draft
+                    ? `
+                  <div class="artwork-manager-preview-box" data-preview-game-id="${window.TurnamenUI.escapeHtml(g.id)}">
+                    <div class="artwork-manager-preview-head">
+                      <span>Preview Poster Baru (Belum Disimpan)</span>
+                      <button type="button" class="btn btn-ghost btn-sm" data-action="clear-game-artwork-preview" data-id="${window.TurnamenUI.escapeHtml(g.id)}" ${isUploading ? "disabled" : ""}>Batalkan Preview</button>
+                    </div>
+                    <div class="artwork-manager-preview-frame">
+                      <img class="artwork-manager-preview-img" src="${window.TurnamenUI.escapeHtml(draft.previewUrl)}" alt="Preview poster baru ${window.TurnamenUI.escapeHtml(g.name)}" />
+                    </div>
+                    <div class="artwork-manager-meta">
+                      <span>File: <strong>${window.TurnamenUI.escapeHtml(draft.filename)}</strong></span>
+                      <span class="tabular-nums">${draft.width && draft.height ? `${draft.width}x${draft.height} px | ` : ""}${formatByteSize(draft.fileSizeBytes)} | ${window.TurnamenUI.escapeHtml(draft.contentType)}</span>
+                    </div>
+                    ${
+                      draft.aspectWarning
+                        ? `<div class="notice-banner notice-banner-warning" role="status"><span>${window.TurnamenUI.escapeHtml(draft.aspectWarning)}</span></div>`
+                        : ""
+                    }
+                  </div>
+                `
+                    : ""
+                }
+
+                ${
+                  uploadStatus && uploadStatus.error
+                    ? `<div class="notice-banner notice-banner-danger" role="alert"><span>${window.TurnamenUI.escapeHtml(uploadStatus.error)}</span></div>`
+                    : ""
+                }
+
+                ${
+                  isUploading
+                    ? `
+                  <div class="artwork-upload-status" role="status" aria-live="polite">
+                    ${window.TurnamenUI.renderProgressBar(uploadStatus.progress || 65, uploadStatus.label || "Mengunggah poster ke Storage...")}
+                  </div>
+                `
+                    : ""
+                }
+
+                <div class="artwork-manager-actions">
+                  <input
+                    id="artwork-file-input-${window.TurnamenUI.escapeHtml(g.id)}"
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    class="artwork-file-input-sr"
+                    data-action="game-artwork-file-input"
+                    data-id="${window.TurnamenUI.escapeHtml(g.id)}"
+                    aria-label="Pilih poster kustom untuk ${window.TurnamenUI.escapeHtml(g.name)}"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-action="trigger-game-artwork-picker"
+                    data-id="${window.TurnamenUI.escapeHtml(g.id)}"
+                    ${isUploading ? "disabled" : ""}
+                  >${window.TurnamenUI.icon("image", 14)}<span>Ganti Poster</span></button>
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    data-action="save-game-artwork"
+                    data-id="${window.TurnamenUI.escapeHtml(g.id)}"
+                    ${!draft || isUploading ? "disabled" : ""}
+                  >${isUploading ? "Menyimpan..." : "Simpan Poster"}</button>
+                  ${
+                    isCustom
+                      ? `<button
+                          type="button"
+                          class="btn btn-ghost btn-sm"
+                          data-action="confirm-restore-game-artwork"
+                          data-id="${window.TurnamenUI.escapeHtml(g.id)}"
+                          ${isUploading ? "disabled" : ""}
+                        >${window.TurnamenUI.icon("refresh", 14)}<span>Kembalikan Artwork Resmi</span></button>`
+                      : ""
+                  }
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    data-action="open-edit-game"
+                    data-id="${window.TurnamenUI.escapeHtml(g.id)}"
+                    aria-label="Edit konfigurasi ${window.TurnamenUI.escapeHtml(g.name)}"
+                    ${isUploading ? "disabled" : ""}
+                  >${window.TurnamenUI.icon("edit", 14)}<span>Edit Data</span></button>
+                </div>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  async function renderGameManagement(container, isStale) {
+    const res = await window.TurnamenAPI.getGames({ includeInactive: true });
+    if (isStale()) return;
+
+    if (!res || !res.success || !Array.isArray(res.data)) {
+      container.innerHTML = window.TurnamenUI.renderErrorState(
+        (res && res.message) || "Gagal memuat katalog game untuk manajemen poster.",
+        "retry-page"
+      );
+      return;
+    }
+
+    const adminGames = res.data;
+    adminGamesCache = adminGames;
+    gamesState.items = adminGames.filter((g) => g.is_active !== false);
+    gamesState.loaded = true;
+    gamesState.error = null;
+
+    container.innerHTML = `
+      <div class="page-header">
+        <div class="page-header-copy">
+          <h2>Manajemen Game &amp; Poster Arena</h2>
+          <p>Ganti, preview, dan kelola poster cabang game secara langsung. Format didukung: JPEG, PNG, atau WebP maksimal 5 MB.</p>
+        </div>
+        <div class="page-actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-action="go-page" data-page="dashboard">Kembali ke Dashboard</button>
+          <button type="button" class="btn btn-primary btn-sm" data-action="open-create-game">${window.TurnamenUI.icon("plus", 14)}<span>Tambah Game</span></button>
+        </div>
+      </div>
+
+      <div id="game-management-cards-wrap">
+        ${buildGameManagementCardsHtml(adminGames)}
+      </div>
+    `;
+  }
+
+  async function handleArtworkFileInputChange(inputEl) {
+    const gameId = inputEl ? inputEl.getAttribute("data-id") || "" : "";
+    const file = inputEl && inputEl.files && inputEl.files[0] ? inputEl.files[0] : null;
+    if (!gameId || !file) return;
+
+    artworkUploadState.delete(gameId);
+    try {
+      const prepared = await inspectAndPrepareArtworkFile(file);
+      pendingArtworkDrafts.set(gameId, prepared);
+      window.TurnamenUI.showToast(
+        "Preview poster siap. Periksa tampilan lalu klik Simpan Poster.",
+        "info"
+      );
+    } catch (err) {
+      pendingArtworkDrafts.delete(gameId);
+      const msg = (err && err.message) || "File gambar tidak valid.";
+      artworkUploadState.set(gameId, { busy: false, error: msg });
+      window.TurnamenUI.showToast(msg, "danger");
+    }
+    if (currentPage === "game-management") {
+      await navigateTo("game-management");
+    }
+  }
+
+  async function saveGameArtworkDraft(gameId, triggerEl = null) {
+    const draft = pendingArtworkDrafts.get(gameId);
+    if (!draft) {
+      window.TurnamenUI.showToast("Pilih gambar poster terlebih dahulu sebelum menyimpan.", "warning");
+      return;
+    }
+
+    await withSubmissionGuard(`game:artwork-save:${gameId}`, triggerEl, "Menyimpan...", async () => {
+      artworkUploadState.set(gameId, {
+        busy: true,
+        progress: 55,
+        label: "Mengunggah dan memvalidasi poster di server...",
+        error: "",
+      });
+      if (currentPage === "game-management") {
+        const wrap = document.getElementById("game-management-cards-wrap");
+        if (wrap && adminGamesCache.length > 0) {
+          wrap.innerHTML = buildGameManagementCardsHtml(adminGamesCache);
+        }
+      }
+
+      const res = await window.TurnamenAPI.uploadGameArtwork(gameId, {
+        filename: draft.filename,
+        content_type: draft.contentType,
+        image_base64: draft.imageBase64,
+      });
+      if (!res || !res.success) {
+        const errMsg = (res && res.message) || "Gagal menyimpan poster baru.";
+        artworkUploadState.set(gameId, { busy: false, error: errMsg });
+        window.TurnamenUI.showToast(errMsg, "danger");
+        if (currentPage === "game-management") {
+          await navigateTo("game-management");
+        }
+        return;
+      }
+
+      pendingArtworkDrafts.delete(gameId);
+      artworkUploadState.delete(gameId);
+      clearUiPageSnapshots();
+      await ensureGamesLoaded(true);
+      window.TurnamenUI.showToast(
+        res.data && res.data.aspect_ratio_warning
+          ? `Poster disimpan. ${res.data.aspect_ratio_warning}`
+          : "Poster game berhasil diperbarui di seluruh aplikasi.",
+        "success"
+      );
+      await navigateTo(currentPage === "game-management" ? "game-management" : "dashboard");
+    });
+  }
+
+  function openRestoreGameArtworkConfirm(gameId) {
+    const game =
+      adminGamesCache.find((g) => g.id === gameId) ||
+      gamesState.items.find((g) => g.id === gameId);
+    const titleLabel = game ? game.name : "Cabang Game";
+    window.TurnamenUI.openModal({
+      title: "Kembalikan Artwork Resmi",
+      bodyHtml: `
+        <p style="margin:0 0 10px; color:var(--text-secondary);">
+          Yakin ingin menghapus poster kustom untuk <strong>${window.TurnamenUI.escapeHtml(titleLabel)}</strong> dan mengembalikannya ke artwork resmi Wave 6.10?
+        </p>
+        <p class="table-subtext" style="margin:0;">
+          Perubahan ini langsung diterapkan pada Dashboard, Jelajah Game, Daftar Turnamen, dan seluruh chip game.
+        </p>
+      `,
+      footerHtml: `
+        <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
+        <button type="button" class="btn btn-danger" data-action="submit-restore-game-artwork" data-id="${window.TurnamenUI.escapeHtml(gameId)}">Ya, Kembalikan Artwork Resmi</button>
+      `,
+    });
+  }
+
+  async function restoreGameArtworkConfirmed(gameId, triggerEl = null) {
+    await withSubmissionGuard(
+      `game:artwork-restore:${gameId}`,
+      triggerEl,
+      "Mengembalikan...",
+      async () => {
+        const res = await window.TurnamenAPI.restoreGameArtwork(gameId);
+        if (!res || !res.success) {
+          window.TurnamenUI.showToast(
+            (res && res.message) || "Gagal mengembalikan artwork resmi.",
+            "danger"
+          );
+          return;
+        }
+        window.TurnamenUI.closeModal(true);
+        pendingArtworkDrafts.delete(gameId);
+        artworkUploadState.delete(gameId);
+        clearUiPageSnapshots();
+        await ensureGamesLoaded(true);
+        window.TurnamenUI.showToast(
+          "Artwork game berhasil dikembalikan ke poster resmi.",
+          "success"
+        );
+        await navigateTo(currentPage === "game-management" ? "game-management" : "dashboard");
+      },
+      { lockModal: true }
+    );
   }
 
   // GUEST PUBLIC DASHBOARD (currentUser === null)
@@ -2322,7 +4081,7 @@
           </div>
         </div>
         <div class="esports-banner-art">
-          ${window.TurnamenUI.renderGameArtwork(featuredGame, "PUBLIC ARENA", { eager: true })}
+          ${window.TurnamenUI.renderGameArtwork(featuredGame, "PUBLIC ARENA")}
         </div>
       </section>
 
@@ -2348,14 +4107,12 @@
   // 2. TOURNAMENT LIST PAGE (ADAPTIVE: DISCOVERY CARDS VS MANAGEMENT TABLE)
   // =========================================================================
   async function renderTournamentList(container, isStale) {
-    await ensureGamesLoaded(false);
-    if (isStale()) return;
-
     const apiFilters = {};
     if (tournamentFilterState.status) apiFilters.status = tournamentFilterState.status;
     if (tournamentFilterState.gameId) apiFilters.game_id = tournamentFilterState.gameId;
 
-    const [res, teamsRes] = await Promise.all([
+    const [, res, teamsRes] = await Promise.all([
+      ensureGamesLoaded(false),
       window.TurnamenAPI.getTournaments(apiFilters),
       canPerform("registration:create") ? window.TurnamenAPI.getTeams() : Promise.resolve({ success: false }),
     ]);
@@ -2503,17 +4260,31 @@
     ownedTeamIds,
     teams
   ) {
+    const hasFilter = Boolean(
+      tournamentFilterState.search.trim() ||
+        tournamentFilterState.status ||
+        tournamentFilterState.gameId
+    );
     if (list.length === 0) {
+      const emptyActions = [];
+      if (hasFilter) {
+        emptyActions.push(
+          `<button type="button" class="btn btn-secondary btn-sm" data-action="reset-tournament-filters">Reset Filter</button>`
+        );
+      }
+      if (canCreate) {
+        emptyActions.push(
+          `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-tournament">Buat Turnamen Baru</button>`
+        );
+      }
       return `
         <div class="card">
           ${window.TurnamenUI.renderEmptyState(
             "Tidak Ada Turnamen Ditemukan",
-            rawTotal === 0
-              ? "Belum ada turnamen tersedia. Buat turnamen baru atau ubah filter pencarian."
-              : "Tidak ada turnamen yang cocok dengan kata kunci pencarian saat ini.",
-            canCreate
-              ? `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-tournament">Buat Turnamen Pertama</button>`
-              : ""
+            rawTotal === 0 && !hasFilter
+              ? "Belum ada turnamen tersedia. Buat turnamen pertama untuk memulai."
+              : "Tidak ada turnamen yang cocok dengan kata kunci atau filter saat ini.",
+            emptyActions.join("")
           )}
         </div>
       `;
@@ -2522,6 +4293,9 @@
     if (competitiveView) {
       return renderTournamentDiscoveryCards(list, gamesById, { ownedTeamIds, teams });
     }
+
+    const user = getCurrentUserSafe();
+    const roleKey = getActiveRoleKey();
 
     return `
       <div class="card">
@@ -2546,13 +4320,21 @@
                     canPerform("tournament:delete", { tournament: t }) &&
                     t.status !== "ongoing" &&
                     t.status !== "completed";
+                  const committeeAssign =
+                    roleKey === "committee" ? getCommitteeTournamentAssignment(t, user) : null;
+                  const assignBadge =
+                    roleKey === "committee"
+                      ? committeeAssign === true
+                        ? `<span class="badge badge-info">Ditugaskan</span>`
+                        : `<span class="badge badge-neutral">Lihat Saja</span>`
+                      : "";
                   return `
                   <tr>
                     <td class="col-title">
                       <strong>${window.TurnamenUI.escapeHtml(t.title)}</strong>
-                      <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")} | ${window.TurnamenUI.formatDateOnly(t.start_date)}</div>
+                      <div class="table-subtext">${window.TurnamenUI.escapeHtml(t.venue || "Online")} | ${window.TurnamenUI.formatDateOnly(t.start_date)} ${assignBadge}</div>
                     </td>
-                    <td class="col-game">${window.TurnamenUI.renderGameChip(t.game_name)}</td>
+                    <td class="col-game">${window.TurnamenUI.renderGameChip(t.game_name, gamesById[t.game_id] || t.game_id)}</td>
                     <td class="col-format tabular-nums">Single Elim (Bo${t.best_of})</td>
                     <td class="col-quota tabular-nums">${t.approved_teams_count || 0} / ${t.max_teams} Tim</td>
                     <td class="col-money tabular-nums">${window.TurnamenUI.formatRupiah(t.prize_pool)}</td>
@@ -2592,7 +4374,10 @@
       );
       return;
     }
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
     const games = await ensureGamesLoaded(false);
+    if (isModalRequestStale(startNavSeq, startRoleKey)) return;
     const gameOptions =
       games.length > 0
         ? games
@@ -2630,6 +4415,7 @@
               <option value="1">Best of 1 (Bo1)</option>
               <option value="3" selected>Best of 3 (Bo3)</option>
               <option value="5">Best of 5 (Bo5)</option>
+              <option value="7">Best of 7 (Bo7)</option>
             </select>
           </div>
         </div>
@@ -2661,39 +4447,86 @@
     });
   }
 
-  async function submitCreateTournament() {
+  async function submitCreateTournament(triggerEl = null) {
     if (!canPerform("tournament:create")) {
       window.TurnamenUI.showToast(getDeniedActionMessage("tournament:create", null), "danger");
       return;
     }
-    const payload = {
-      title: (document.getElementById("new-tour-title")?.value || "").trim(),
-      game_id: document.getElementById("new-tour-game")?.value || "",
-      max_teams: Number(document.getElementById("new-tour-max-teams")?.value || 8),
-      best_of: Number(document.getElementById("new-tour-bo")?.value || 3),
-      registration_fee: Number(document.getElementById("new-tour-fee")?.value || 0),
-      prize_pool: Number(document.getElementById("new-tour-prize")?.value || 0),
-      venue: (document.getElementById("new-tour-venue")?.value || "Online").trim(),
-      start_date: `${document.getElementById("new-tour-start")?.value || "2026-12-01"}T10:00:00+07:00`,
-      status: "open_registration",
-    };
-
-    const res = await window.TurnamenAPI.createTournament(payload);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
+    const title = (document.getElementById("new-tour-title")?.value || "").trim();
+    const gameId = document.getElementById("new-tour-game")?.value || "";
+    const startRaw = (document.getElementById("new-tour-start")?.value || "").trim();
+    if (title.length < 4) {
+      window.TurnamenUI.showToast("Judul turnamen wajib minimal 4 karakter.", "warning");
       return;
     }
-    if (res.data && res.data.id && window.TurnamenConfig) {
-      window.TurnamenConfig.setSelectedTournamentId(res.data.id);
+    if (!gameId) {
+      window.TurnamenUI.showToast("Cabang game wajib dipilih.", "warning");
+      return;
     }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Turnamen baru berhasil dibuat.", "success");
-    await navigateTo("tournament-list");
+    if (!startRaw) {
+      window.TurnamenUI.showToast("Tanggal mulai turnamen wajib diisi.", "warning");
+      return;
+    }
+
+    await withSubmissionGuard(
+      "tournament:create",
+      triggerEl,
+      "Menyimpan...",
+      async () => {
+        const payload = {
+          title,
+          game_id: gameId,
+          max_teams: Number(document.getElementById("new-tour-max-teams")?.value || 8),
+          best_of: Number(document.getElementById("new-tour-bo")?.value || 3),
+          registration_fee: Number(document.getElementById("new-tour-fee")?.value || 0),
+          prize_pool: Number(document.getElementById("new-tour-prize")?.value || 0),
+          venue: (document.getElementById("new-tour-venue")?.value || "Online").trim(),
+          start_date: `${startRaw}T10:00:00+07:00`,
+          status: "open_registration",
+        };
+
+        const res = await window.TurnamenAPI.createTournament(payload);
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        if (res.data && res.data.id && window.TurnamenConfig) {
+          window.TurnamenConfig.setSelectedTournamentId(res.data.id);
+        }
+        window.TurnamenUI.closeModal(true);
+        window.TurnamenUI.showToast("Turnamen baru berhasil dibuat.", "success");
+        await navigateTo("tournament-list");
+      },
+      { lockModal: true }
+    );
   }
 
+  const TOURNAMENT_STATUS_LABELS = {
+    draft: "Draft",
+    open_registration: "Pendaftaran Dibuka",
+    registration_closed: "Pendaftaran Ditutup",
+    ongoing: "Sedang Berlangsung",
+    completed: "Selesai",
+    cancelled: "Dibatalkan",
+  };
+
+  const ALLOWED_EDIT_STATUS_MAP = {
+    draft: ["draft", "open_registration", "registration_closed", "cancelled"],
+    open_registration: ["open_registration", "draft", "registration_closed", "ongoing", "cancelled"],
+    registration_closed: ["registration_closed", "open_registration", "ongoing", "cancelled"],
+    ongoing: ["ongoing", "completed", "cancelled"],
+    completed: ["completed"],
+    cancelled: ["cancelled"],
+  };
+
   async function openEditTournamentModal(tournamentId) {
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
     const t = await resolveAuthorizedTournament(tournamentId, "tournament:edit");
-    if (!t) return;
+    if (!t || isModalRequestStale(startNavSeq, startRoleKey)) return;
+
+    const legalStatuses = ALLOWED_EDIT_STATUS_MAP[t.status] || [t.status];
+    const isTerminalStatus = t.status === "completed" || t.status === "cancelled";
 
     window.TurnamenUI.openModal({
       title: `Edit Turnamen: ${t.title}`,
@@ -2705,14 +4538,15 @@
         <div class="grid-2" style="margin-bottom:0;">
           <div class="form-group">
             <label for="edit-tour-status" class="form-label">Status Turnamen</label>
-            <select id="edit-tour-status" class="form-select">
-              <option value="draft" ${t.status === "draft" ? "selected" : ""}>Draft</option>
-              <option value="open_registration" ${t.status === "open_registration" ? "selected" : ""}>Pendaftaran Dibuka</option>
-              <option value="registration_closed" ${t.status === "registration_closed" ? "selected" : ""}>Pendaftaran Ditutup</option>
-              <option value="ongoing" ${t.status === "ongoing" ? "selected" : ""}>Sedang Berlangsung</option>
-              <option value="completed" ${t.status === "completed" ? "selected" : ""}>Selesai</option>
-              <option value="cancelled" ${t.status === "cancelled" ? "selected" : ""}>Dibatalkan</option>
+            <select id="edit-tour-status" class="form-select" ${isTerminalStatus ? "disabled" : ""}>
+              ${legalStatuses
+                .map(
+                  (st) =>
+                    `<option value="${window.TurnamenUI.escapeHtml(st)}" ${t.status === st ? "selected" : ""}>${window.TurnamenUI.escapeHtml(TOURNAMENT_STATUS_LABELS[st] || st)}</option>`
+                )
+                .join("")}
             </select>
+            ${isTerminalStatus ? `<p class="form-hint">Status terminal (${window.TurnamenUI.escapeHtml(t.status)}) tidak dapat diubah kembali.</p>` : ""}
           </div>
           <div class="form-group">
             <label for="edit-tour-venue" class="form-label">Venue</label>
@@ -2741,25 +4575,38 @@
     });
   }
 
-  async function submitEditTournament(tournamentId) {
-    const t = await resolveAuthorizedTournament(tournamentId, "tournament:edit");
-    if (!t) return;
-    const payload = {
-      title: (document.getElementById("edit-tour-title")?.value || "").trim(),
-      status: document.getElementById("edit-tour-status")?.value || "open_registration",
-      venue: (document.getElementById("edit-tour-venue")?.value || "Online").trim(),
-      max_teams: Number(document.getElementById("edit-tour-max-teams")?.value || 8),
-      prize_pool: Number(document.getElementById("edit-tour-prize")?.value || 0),
-      description: (document.getElementById("edit-tour-desc")?.value || "").trim(),
-    };
-    const res = await window.TurnamenAPI.updateTournament(t.id, payload);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      return;
-    }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Data turnamen berhasil diperbarui.", "success");
-    await navigateTo(currentPage);
+  async function submitEditTournament(tournamentId, triggerEl = null) {
+    await withSubmissionGuard(
+      `tournament:edit:${tournamentId}`,
+      triggerEl,
+      "Menyimpan...",
+      async () => {
+        const t = await resolveAuthorizedTournament(tournamentId, "tournament:edit");
+        if (!t) return;
+        const title = (document.getElementById("edit-tour-title")?.value || "").trim();
+        if (title.length < 4) {
+          window.TurnamenUI.showToast("Judul turnamen wajib minimal 4 karakter.", "warning");
+          return;
+        }
+        const payload = {
+          title,
+          status: document.getElementById("edit-tour-status")?.value || t.status,
+          venue: (document.getElementById("edit-tour-venue")?.value || "Online").trim(),
+          max_teams: Number(document.getElementById("edit-tour-max-teams")?.value || 8),
+          prize_pool: Number(document.getElementById("edit-tour-prize")?.value || 0),
+          description: (document.getElementById("edit-tour-desc")?.value || "").trim(),
+        };
+        const res = await window.TurnamenAPI.updateTournament(t.id, payload);
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.closeModal(true);
+        window.TurnamenUI.showToast("Data turnamen berhasil diperbarui.", "success");
+        await navigateTo(currentPage);
+      },
+      { lockModal: true }
+    );
   }
 
   async function confirmDeleteTournament(tournamentId) {
@@ -2786,17 +4633,25 @@
     });
   }
 
-  async function executeDeleteTournament(tournamentId) {
-    const t = await resolveAuthorizedTournament(tournamentId, "tournament:delete");
-    if (!t) return;
-    const res = await window.TurnamenAPI.deleteTournament(t.id);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      return;
-    }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Turnamen berhasil dihapus.", "success");
-    await navigateTo("tournament-list");
+  async function executeDeleteTournament(tournamentId, triggerEl = null) {
+    await withSubmissionGuard(
+      `tournament:delete:${tournamentId}`,
+      triggerEl,
+      "Menghapus...",
+      async () => {
+        const t = await resolveAuthorizedTournament(tournamentId, "tournament:delete");
+        if (!t) return;
+        const res = await window.TurnamenAPI.deleteTournament(t.id);
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.closeModal(true);
+        window.TurnamenUI.showToast("Turnamen berhasil dihapus.", "success");
+        await navigateTo("tournament-list");
+      },
+      { lockModal: true }
+    );
   }
 
   // =========================================================================
@@ -2841,6 +4696,19 @@
     const t = tourRes.data;
     const regs = regsRes.success && Array.isArray(regsRes.data) ? regsRes.data : [];
     const teams = teamsRes.success && Array.isArray(teamsRes.data) ? teamsRes.data : [];
+    const canManageStaff = canPerform("tournament:edit", { tournament: t });
+    let staffList = [];
+    let committeeCandidates = [];
+    if (canManageStaff) {
+      const [staffRes, candRes] = await Promise.all([
+        window.TurnamenAPI.getTournamentStaff(t.id),
+        window.TurnamenAPI.getCommitteeCandidates(),
+      ]);
+      if (isStale()) return;
+      staffList = staffRes && staffRes.success && Array.isArray(staffRes.data) ? staffRes.data : [];
+      committeeCandidates =
+        candRes && candRes.success && Array.isArray(candRes.data) ? candRes.data : [];
+    }
     const gamesById = buildGameLookup();
     const heroGame = gamesById[t.game_id] || { name: t.game_name, slug: t.game_name };
     const teamsById = {};
@@ -2849,9 +4717,14 @@
     });
     const canVerify = canPerform("registration:verify", { tournament: t });
     const canRegister =
-      canPerform("registration:create") &&
-      (t.status === "open_registration" || t.status === "draft");
+      canPerform("registration:create") && t.status === "open_registration";
     const eligibleTeams = canRegister ? getEligibleTeamsForRegistration(teams, t, regs) : [];
+    const detailRoleKey = getActiveRoleKey();
+    const regsSubtitle = canVerify
+      ? "Kelola persetujuan tim pendaftar. Registrasi berstatus disetujui akan masuk ke bagan bracket."
+      : detailRoleKey === "team_captain"
+        ? "Menampilkan tim peserta yang sudah disetujui serta status pengajuan tim milik Anda."
+        : "Menampilkan daftar peserta terverifikasi (approved) yang lolos ke turnamen.";
 
     let registrationControlHtml = "";
     if (canRegister) {
@@ -2897,13 +4770,13 @@
 
       <section class="tournament-detail-hero" aria-label="Banner Detail Turnamen">
         <div class="tournament-detail-hero-bg">
-          ${window.TurnamenUI.renderGameArtwork(heroGame, "", { eager: true, hideLabels: true })}
+          ${window.TurnamenUI.renderGameArtwork(heroGame, "", { hideLabels: true })}
         </div>
         <div class="tournament-detail-hero-scrim" aria-hidden="true"></div>
         <div class="tournament-detail-hero-content">
           <div>
             <div class="tournament-detail-hero-badges">
-              ${window.TurnamenUI.renderGameChip(t.game_name, heroGame.slug)}
+              ${window.TurnamenUI.renderGameChip(heroGame)}
               ${window.TurnamenUI.renderStatusBadge(t.status)}
               <span class="badge badge-info tabular-nums">Single Elim Bo${t.best_of}</span>
             </div>
@@ -2930,7 +4803,11 @@
         <div class="metric-card">
           <div class="metric-label">Peserta Terverifikasi</div>
           <div class="metric-value">${t.approved_teams_count || 0} / ${t.max_teams}</div>
-          <div class="metric-note">Total Pendaftar: ${t.registered_teams_count || regs.length}</div>
+          <div class="metric-note">${
+            canVerify
+              ? `Total Pendaftar: ${t.registered_teams_count ?? regs.length}`
+              : `Kuota maksimal: ${t.max_teams} tim`
+          }</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Biaya Pendaftaran</div>
@@ -2947,8 +4824,8 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <h3 class="card-title">Daftar Tim Peserta &amp; Verifikasi Registrasi</h3>
-            <p class="card-subtitle">Registrasi tim berstatus disetujui akan masuk ke bagan bracket.</p>
+            <h3 class="card-title">${canVerify ? "Daftar Tim Peserta &amp; Verifikasi Registrasi" : "Daftar Peserta Terdaftar"}</h3>
+            <p class="card-subtitle">${window.TurnamenUI.escapeHtml(regsSubtitle)}</p>
           </div>
           ${registrationControlHtml}
         </div>
@@ -2992,10 +4869,19 @@
                     }
                   </div>
                   ${
-                    canVerify || r.notes
+                    canVerify || r.notes || r.status !== "approved"
                       ? `
                     <div class="participant-card-foot">
-                      <span class="table-subtext">${window.TurnamenUI.escapeHtml(r.notes || "Terverifikasi")}</span>
+                      <span class="table-subtext">${window.TurnamenUI.escapeHtml(
+                        r.notes ||
+                          (r.status === "pending"
+                            ? "Menunggu pemeriksaan panitia"
+                            : r.status === "rejected"
+                              ? "Pengajuan ditolak panitia"
+                              : r.status === "withdrawn"
+                                ? "Tim mengundurkan diri"
+                                : "Terverifikasi panitia")
+                      )}</span>
                       ${
                         canVerify
                           ? `
@@ -3018,10 +4904,124 @@
         `
         }
       </div>
+      ${
+        canManageStaff
+          ? `
+        <div class="card" style="margin-top:20px;">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Penugasan Panitia (Committee)</h3>
+              <p class="card-subtitle">Tugaskan akun panitia agar berwenang memverifikasi peserta, mengisi skor, dan mempublikasikan pengumuman pada turnamen ini.</p>
+            </div>
+            <div class="row-actions">
+              ${
+                (() => {
+                  const assignedIds = new Set(staffList.map((s) => s.user_id));
+                  const available = committeeCandidates.filter((c) => !assignedIds.has(c.id));
+                  if (available.length === 0) {
+                    return `<span class="table-subtext">${committeeCandidates.length === 0 ? "Tidak ada akun ber-role committee." : "Seluruh kandidat panitia sudah ditugaskan."}</span>`;
+                  }
+                  return `
+                    <label for="staff-candidate-select" class="sr-only">Pilih panitia</label>
+                    <select id="staff-candidate-select" class="form-select form-select-compact">
+                      ${available
+                        .map(
+                          (c) =>
+                            `<option value="${window.TurnamenUI.escapeHtml(c.id)}">${window.TurnamenUI.escapeHtml(c.full_name || c.username)} (@${window.TurnamenUI.escapeHtml(c.username)})</option>`
+                        )
+                        .join("")}
+                    </select>
+                    <label for="staff-role-select" class="sr-only">Peran staf panitia</label>
+                    <select id="staff-role-select" class="form-select form-select-compact">
+                      <option value="head_committee">Head Committee</option>
+                      <option value="referee" selected>Referee</option>
+                      <option value="verifier">Verifier</option>
+                      <option value="announcer">Announcer</option>
+                    </select>
+                    <button type="button" class="btn btn-primary btn-sm" data-action="add-tournament-staff" data-id="${window.TurnamenUI.escapeHtml(t.id)}">${window.TurnamenUI.icon("plus", 14)}<span>Tugaskan Panitia</span></button>
+                  `;
+                })()
+              }
+            </div>
+          </div>
+          ${
+            staffList.length === 0
+              ? window.TurnamenUI.renderEmptyState(
+                  "Belum Ada Panitia Ditugaskan",
+                  "Tambahkan akun ber-role committee agar panitia dapat membantu pengelolaan turnamen ini."
+                )
+              : `
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Nama Panitia</th>
+                    <th>Username</th>
+                    <th>Peran Staf</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${staffList
+                    .map(
+                      (s) => `
+                    <tr>
+                      <td><strong>${window.TurnamenUI.escapeHtml(s.full_name || s.username || "-")}</strong></td>
+                      <td class="tabular-nums">@${window.TurnamenUI.escapeHtml(s.username || "-")}</td>
+                      <td><span class="badge badge-info">${window.TurnamenUI.escapeHtml(s.staff_role || "referee")}</span></td>
+                      <td>
+                        <button type="button" class="btn btn-danger btn-sm" data-action="remove-tournament-staff" data-id="${window.TurnamenUI.escapeHtml(s.user_id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(t.id)}">Cabut Tugas</button>
+                      </td>
+                    </tr>
+                  `
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          }
+        </div>
+      `
+          : ""
+      }
     `;
   }
 
-  async function registerSelectedTeam(tournamentId) {
+  async function submitAddTournamentStaff(tournamentId, triggerEl = null) {
+    const userId = document.getElementById("staff-candidate-select")?.value || "";
+    const staffRole = document.getElementById("staff-role-select")?.value || "referee";
+    if (!userId) {
+      window.TurnamenUI.showToast("Pilih panitia yang valid terlebih dahulu.", "warning");
+      return;
+    }
+    await withSubmissionGuard(`staff:add:${tournamentId}`, triggerEl, "Menugaskan...", async () => {
+      const res = await window.TurnamenAPI.addTournamentStaff(tournamentId, {
+        user_id: userId,
+        staff_role: staffRole,
+      });
+      if (!res.success) {
+        window.TurnamenUI.showToast(res.message, "danger");
+        return;
+      }
+      window.TurnamenUI.showToast("Panitia berhasil ditugaskan.", "success");
+      await navigateTo("tournament-detail");
+    });
+  }
+
+  async function submitRemoveTournamentStaff(tournamentId, userId, triggerEl = null) {
+    await withSubmissionGuard(`staff:remove:${tournamentId}:${userId}`, triggerEl, "Mencabut...", async () => {
+      const res = await window.TurnamenAPI.removeTournamentStaff(tournamentId, userId);
+      if (!res.success) {
+        window.TurnamenUI.showToast(res.message, "danger");
+        return;
+      }
+      window.TurnamenUI.showToast("Penugasan panitia berhasil dicabut.", "info");
+      await navigateTo("tournament-detail");
+    });
+  }
+
+  async function registerSelectedTeam(tournamentId, triggerEl = null) {
     if (!canPerform("registration:create")) {
       window.TurnamenUI.showToast(
         "Hanya Team Captain atau Super Admin yang dapat mendaftarkan tim.",
@@ -3034,49 +5034,63 @@
       window.TurnamenUI.showToast("Pilih tim yang valid terlebih dahulu.", "warning");
       return;
     }
-    const ownedTeam = await resolveAuthorizedTeam(
-      teamId,
-      "Anda hanya dapat mendaftarkan tim milik Anda sendiri."
+    await withSubmissionGuard(
+      `registration:create:${tournamentId}`,
+      triggerEl,
+      "Mendaftarkan...",
+      async () => {
+        const ownedTeam = await resolveAuthorizedTeam(
+          teamId,
+          "Anda hanya dapat mendaftarkan tim milik Anda sendiri."
+        );
+        if (!ownedTeam) return;
+        const res = await window.TurnamenAPI.registerTeamToTournament(tournamentId, {
+          team_id: ownedTeam.id,
+          notes: "Pendaftaran via Desktop UI",
+        });
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.showToast("Tim berhasil didaftarkan.", "success");
+        await navigateTo("tournament-detail");
+      }
     );
-    if (!ownedTeam) return;
-    const res = await window.TurnamenAPI.registerTeamToTournament(tournamentId, {
-      team_id: ownedTeam.id,
-      notes: "Pendaftaran via Desktop UI",
-    });
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      return;
-    }
-    window.TurnamenUI.showToast("Tim berhasil didaftarkan.", "success");
-    await navigateTo("tournament-detail");
   }
 
-  async function verifyRegistration(registrationId, newStatus, tournamentId = "") {
-    const t = await resolveAuthorizedTournament(tournamentId, "registration:verify");
-    if (!t) return;
-    const res = await window.TurnamenAPI.updateRegistrationStatus(
-      registrationId,
-      newStatus,
-      `Diverifikasi melalui panel panitia (${newStatus})`
+  async function verifyRegistration(registrationId, newStatus, tournamentId = "", triggerEl = null) {
+    await withSubmissionGuard(
+      `registration:verify:${registrationId}`,
+      triggerEl,
+      "Memproses...",
+      async () => {
+        const t = await resolveAuthorizedTournament(tournamentId, "registration:verify");
+        if (!t) return;
+        const res = await window.TurnamenAPI.updateRegistrationStatus(
+          registrationId,
+          newStatus,
+          `Diverifikasi melalui panel panitia (${newStatus})`
+        );
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.showToast(`Status pendaftaran diubah ke ${newStatus}.`, "success");
+        await navigateTo(currentPage);
+      }
     );
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      return;
-    }
-    window.TurnamenUI.showToast(`Status pendaftaran diubah ke ${newStatus}.`, "success");
-    await navigateTo(currentPage);
   }
 
   // =========================================================================
   // 4. TEAM MANAGEMENT PAGE (ADAPTIVE PER ROLE)
   // =========================================================================
   async function renderTeamManagement(container, isStale) {
-    await ensureGamesLoaded(false);
-    if (isStale()) return;
-
-    const res = await window.TurnamenAPI.getTeams(
-      teamFilterState.gameId ? { game_id: teamFilterState.gameId } : {}
-    );
+    const [, res] = await Promise.all([
+      ensureGamesLoaded(false),
+      window.TurnamenAPI.getTeams(
+        teamFilterState.gameId ? { game_id: teamFilterState.gameId } : {}
+      ),
+    ]);
     if (isStale()) return;
 
     if (!res.success) {
@@ -3183,15 +5197,26 @@
   }
 
   function renderTeamManagementContent(teams, canCreateTeam, roleKey, user) {
+    const gamesById = buildGameLookup();
+    const hasTeamFilter = Boolean(teamFilterState.search.trim() || teamFilterState.gameId);
     if (teams.length === 0) {
+      const teamEmptyActions = [];
+      if (hasTeamFilter) {
+        teamEmptyActions.push(
+          `<button type="button" class="btn btn-secondary btn-sm" data-action="reset-team-filters">Reset Filter</button>`
+        );
+      }
+      if (canCreateTeam) {
+        teamEmptyActions.push(
+          `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-team">Buat Tim Baru</button>`
+        );
+      }
       return `
         <div class="card">
           ${window.TurnamenUI.renderEmptyState(
             "Belum Ada Tim Ditemukan",
             "Belum ada tim yang sesuai dengan filter saat ini.",
-            canCreateTeam
-              ? `<button type="button" class="btn btn-primary btn-sm" data-action="open-create-team">Buat Tim Baru</button>`
-              : ""
+            teamEmptyActions.join("")
           )}
         </div>
       `;
@@ -3288,7 +5313,7 @@
                         <strong>${window.TurnamenUI.escapeHtml(tm.name)}</strong>
                       </div>
                     </td>
-                    <td>${window.TurnamenUI.renderGameChip(tm.game_name)}</td>
+                    <td>${window.TurnamenUI.renderGameChip(tm.game_name, gamesById[tm.game_id] || tm.game_id)}</td>
                     <td>${window.TurnamenUI.escapeHtml(tm.region || "-")}</td>
                     <td class="tabular-nums">${tm.member_count ?? members.length} Pemain</td>
                     <td>
@@ -3337,7 +5362,10 @@
       );
       return;
     }
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
     const games = await ensureGamesLoaded(false);
+    if (isModalRequestStale(startNavSeq, startRoleKey)) return;
     const gameOptions = games
       .map(
         (g) =>
@@ -3374,32 +5402,54 @@
     });
   }
 
-  async function submitCreateTeam() {
+  async function submitCreateTeam(triggerEl = null) {
     if (!canPerform("team:create")) {
       window.TurnamenUI.showToast(getDeniedActionMessage("team:create", null), "danger");
       return;
     }
-    const payload = {
-      name: (document.getElementById("new-team-name")?.value || "").trim(),
-      tag: (document.getElementById("new-team-tag")?.value || "").trim(),
-      region: (document.getElementById("new-team-region")?.value || "Indonesia").trim(),
-      game_id: document.getElementById("new-team-game")?.value || "",
-    };
-    const res = await window.TurnamenAPI.createTeam(payload);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
+    const name = (document.getElementById("new-team-name")?.value || "").trim();
+    const tag = (document.getElementById("new-team-tag")?.value || "").trim();
+    if (name.length < 3) {
+      window.TurnamenUI.showToast("Nama tim wajib minimal 3 karakter.", "warning");
       return;
     }
-    if (res.data && res.data.id) {
-      selectedCaptainTeamId = res.data.id;
+    if (tag.length < 2 || tag.length > 6) {
+      window.TurnamenUI.showToast("Tag tim wajib 2 hingga 6 karakter.", "warning");
+      return;
     }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Tim berhasil dibuat.", "success");
-    await navigateTo(currentPage);
+
+    await withSubmissionGuard(
+      "team:create",
+      triggerEl,
+      "Menyimpan...",
+      async () => {
+        const payload = {
+          name,
+          tag,
+          region: (document.getElementById("new-team-region")?.value || "Indonesia").trim(),
+          game_id: document.getElementById("new-team-game")?.value || "",
+        };
+        const res = await window.TurnamenAPI.createTeam(payload);
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        if (res.data && res.data.id) {
+          selectedCaptainTeamId = res.data.id;
+        }
+        window.TurnamenUI.closeModal(true);
+        window.TurnamenUI.showToast("Tim berhasil dibuat.", "success");
+        await navigateTo(currentPage);
+      },
+      { lockModal: true }
+    );
   }
 
   async function openTeamDetailModal(teamId) {
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
     const res = await window.TurnamenAPI.getTeamById(teamId);
+    if (isModalRequestStale(startNavSeq, startRoleKey)) return;
     if (!res.success || !res.data) {
       window.TurnamenUI.showToast(res.message || "Gagal memuat detail tim.", "danger");
       return;
@@ -3469,8 +5519,10 @@
   }
 
   async function openEditTeamModal(teamId) {
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
     const tm = await resolveAuthorizedTeam(teamId, "Anda tidak memiliki izin mengubah tim ini.");
-    if (!tm) return;
+    if (!tm || isModalRequestStale(startNavSeq, startRoleKey)) return;
 
     window.TurnamenUI.openModal({
       title: `Edit Tim: ${tm.name}`,
@@ -3497,30 +5549,46 @@
     });
   }
 
-  async function submitEditTeam(teamId) {
-    const tm = await resolveAuthorizedTeam(teamId, "Anda tidak memiliki izin mengubah tim ini.");
-    if (!tm) return;
-    const payload = {
-      name: (document.getElementById("edit-team-name")?.value || "").trim(),
-      tag: (document.getElementById("edit-team-tag")?.value || "").trim(),
-      region: (document.getElementById("edit-team-region")?.value || "").trim(),
-    };
-    const res = await window.TurnamenAPI.updateTeam(tm.id, payload);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      return;
-    }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Data tim berhasil diperbarui.", "success");
-    await navigateTo(currentPage);
+  async function submitEditTeam(teamId, triggerEl = null) {
+    await withSubmissionGuard(
+      `team:edit:${teamId}`,
+      triggerEl,
+      "Menyimpan...",
+      async () => {
+        const tm = await resolveAuthorizedTeam(teamId, "Anda tidak memiliki izin mengubah tim ini.");
+        if (!tm) return;
+        const name = (document.getElementById("edit-team-name")?.value || "").trim();
+        const tag = (document.getElementById("edit-team-tag")?.value || "").trim();
+        if (name.length < 3 || tag.length < 2 || tag.length > 6) {
+          window.TurnamenUI.showToast("Nama minimal 3 karakter dan tag wajib 2–6 karakter.", "warning");
+          return;
+        }
+        const payload = {
+          name,
+          tag,
+          region: (document.getElementById("edit-team-region")?.value || "").trim(),
+        };
+        const res = await window.TurnamenAPI.updateTeam(tm.id, payload);
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.closeModal(true);
+        window.TurnamenUI.showToast("Data tim berhasil diperbarui.", "success");
+        await navigateTo(currentPage);
+      },
+      { lockModal: true }
+    );
   }
 
   async function openAddMemberModal(teamId) {
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
     const tm = await resolveAuthorizedTeam(
       teamId,
       "Anda tidak memiliki izin menambah anggota pada tim ini."
     );
-    if (!tm) return;
+    if (!tm || isModalRequestStale(startNavSeq, startRoleKey)) return;
 
     window.TurnamenUI.openModal({
       title: `Tambah Anggota Roster: ${tm.name} [${tm.tag}]`,
@@ -3542,6 +5610,11 @@
             <option value="coach">Coach</option>
           </select>
         </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label for="member-user-id" class="form-label">ID Akun Pemain (Opsional)</label>
+          <input id="member-user-id" class="form-input tabular-nums" placeholder="UUID profil pemain jika ingin ditautkan ke akun" />
+          <p class="form-hint">Server akan memverifikasi kepemilikan tim dan validitas profil secara aman tanpa membocorkan data pribadi.</p>
+        </div>
       `,
       footerHtml: `
         <button type="button" class="btn btn-secondary" data-modal-close="true">Batal</button>
@@ -3550,25 +5623,48 @@
     });
   }
 
-  async function submitAddMember(teamId) {
-    const tm = await resolveAuthorizedTeam(
-      teamId,
-      "Anda tidak memiliki izin menambah anggota pada tim ini."
-    );
-    if (!tm) return;
-    const payload = {
-      nickname: (document.getElementById("member-nickname")?.value || "").trim(),
-      ingame_id: (document.getElementById("member-ingame-id")?.value || "").trim(),
-      member_role: document.getElementById("member-role")?.value || "starter",
-    };
-    const res = await window.TurnamenAPI.addTeamMember(tm.id, payload);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
+  async function submitAddMember(teamId, triggerEl = null) {
+    const nickname = (document.getElementById("member-nickname")?.value || "").trim();
+    const ingameId = (document.getElementById("member-ingame-id")?.value || "").trim();
+    const memberRole = document.getElementById("member-role")?.value || "starter";
+    const userIdRaw = (document.getElementById("member-user-id")?.value || "").trim();
+    if (nickname.length < 2 || ingameId.length < 2) {
+      window.TurnamenUI.showToast(
+        "Nickname pemain dan ID In-Game wajib diisi (minimal 2 karakter).",
+        "warning"
+      );
       return;
     }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Anggota tim berhasil ditambahkan.", "success");
-    await navigateTo(currentPage);
+
+    await withSubmissionGuard(
+      `team:add_member:${teamId}`,
+      triggerEl,
+      "Menambahkan...",
+      async () => {
+        const tm = await resolveAuthorizedTeam(
+          teamId,
+          "Anda tidak memiliki izin menambah anggota pada tim ini."
+        );
+        if (!tm) return;
+        const payload = {
+          nickname,
+          ingame_id: ingameId,
+          member_role: memberRole,
+        };
+        if (userIdRaw) {
+          payload.user_id = userIdRaw;
+        }
+        const res = await window.TurnamenAPI.addTeamMember(tm.id, payload);
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.closeModal(true);
+        window.TurnamenUI.showToast("Anggota tim berhasil ditambahkan.", "success");
+        await navigateTo(currentPage);
+      },
+      { lockModal: true }
+    );
   }
 
   // =========================================================================
@@ -3605,14 +5701,20 @@
     if (matchRoundFilter && !roundNames.includes(matchRoundFilter)) {
       matchRoundFilter = "";
     }
-    const matches = matchRoundFilter
-      ? allMatches.filter((m) => m.round_name === matchRoundFilter)
-      : allMatches;
+    const matches = allMatches.filter((m) => {
+      if (matchRoundFilter && m.round_name !== matchRoundFilter) return false;
+      if (matchStatusFilter === "ready") {
+        return Boolean(m.team_a_id && m.team_b_id && m.status !== "completed" && m.status !== "bye");
+      }
+      if (matchStatusFilter && m.status !== matchStatusFilter) return false;
+      return true;
+    });
 
     const canManageMatches = canPerform("match:submit_result", { tournament: ctx.active });
     const completedCount = allMatches.filter((m) => m.status === "completed").length;
+    const byeCount = allMatches.filter((m) => m.status === "bye").length;
     const readyCount = allMatches.filter(
-      (m) => m.team_a_id && m.team_b_id && m.status !== "completed"
+      (m) => m.team_a_id && m.team_b_id && m.status !== "completed" && m.status !== "bye"
     ).length;
 
     container.innerHTML = `
@@ -3634,6 +5736,7 @@
         <div class="metric-card">
           <div class="metric-label">Total Match Bracket</div>
           <div class="metric-value">${allMatches.length}</div>
+          <div class="metric-note">${byeCount > 0 ? `Termasuk ${byeCount} match BYE otomatis` : "Seluruh babak turnamen"}</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Match Siap Bertanding</div>
@@ -3646,7 +5749,7 @@
       </div>
 
       ${
-        roundNames.length > 0
+        allMatches.length > 0
           ? `
         <div class="filter-bar">
           <label for="filter-match-round" class="context-bar-label">Filter Babak:</label>
@@ -3659,6 +5762,14 @@
               )
               .join("")}
           </select>
+          <label for="filter-match-status" class="context-bar-label">Status Match:</label>
+          <select id="filter-match-status" class="form-select form-select-compact">
+            <option value="" ${matchStatusFilter === "" ? "selected" : ""}>Semua Status</option>
+            <option value="ready" ${matchStatusFilter === "ready" ? "selected" : ""}>Siap Disahkan</option>
+            <option value="scheduled" ${matchStatusFilter === "scheduled" ? "selected" : ""}>Terjadwal</option>
+            <option value="completed" ${matchStatusFilter === "completed" ? "selected" : ""}>Selesai</option>
+            <option value="bye" ${matchStatusFilter === "bye" ? "selected" : ""}>BYE Otomatis</option>
+          </select>
         </div>
       `
           : ""
@@ -3668,9 +5779,13 @@
         ${
           matches.length === 0
             ? window.TurnamenUI.renderEmptyState(
-                "Belum Ada Pertandingan",
-                "Bracket turnamen ini belum dibuat. Generate bracket untuk menghasilkan jadwal pertandingan.",
-                `<button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Buka Halaman Bracket</button>`
+                allMatches.length === 0 ? "Belum Ada Pertandingan" : "Tidak Ada Match Cocok",
+                allMatches.length === 0
+                  ? "Bracket turnamen ini belum dibuat. Generate bracket untuk menghasilkan jadwal pertandingan."
+                  : "Tidak ada pertandingan yang sesuai dengan filter babak/status saat ini.",
+                allMatches.length === 0
+                  ? `<button type="button" class="btn btn-primary btn-sm" data-action="go-page" data-page="bracket" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}">Buka Halaman Bracket</button>`
+                  : `<button type="button" class="btn btn-secondary btn-sm" data-action="reset-match-filters">Reset Filter Match</button>`
               )
             : `
           <div class="table-container">
@@ -3691,13 +5806,14 @@
                 ${matches
                   .map((m) => {
                     const maxWin = Math.ceil(Number(m.best_of || data.best_of || 3) / 2);
-                    const isReady = Boolean(m.team_a_id && m.team_b_id && m.status !== "completed");
+                    const isBye = m.status === "bye";
+                    const isReady = Boolean(m.team_a_id && m.team_b_id && m.status !== "completed" && !isBye);
                     let actionCell = `<span class="table-subtext">Menunggu Lawan</span>`;
                     if (m.status === "completed") {
                       actionCell = canManageMatches
                         ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open-override-score" data-id="${window.TurnamenUI.escapeHtml(m.id)}" data-tournament-id="${window.TurnamenUI.escapeHtml(ctx.active.id)}" data-team-a="${window.TurnamenUI.escapeHtml(m.team_a_name)}" data-team-b="${window.TurnamenUI.escapeHtml(m.team_b_name)}" data-score-a="${m.score_a}" data-score-b="${m.score_b}" data-max="${maxWin}">Koreksi Audit</button>`
                         : `<span class="table-subtext">Terkunci (Audited)</span>`;
-                    } else if (m.status === "bye") {
+                    } else if (isBye) {
                       actionCell = `<span class="table-subtext">Lolos Otomatis (BYE)</span>`;
                     } else if (isReady) {
                       actionCell = canManageMatches
@@ -3714,6 +5830,9 @@
                         : `<span class="table-subtext">Siap Bertanding</span>`;
                     }
 
+                    const scoreDisplay = isBye ? "ADV - BYE" : `${m.score_a} - ${m.score_b}`;
+                    const teamBDisplay = m.team_b_name || (isBye ? "BYE" : "TBD");
+
                     return `
                     <tr>
                       <td><strong>${window.TurnamenUI.escapeHtml(m.round_name)}</strong></td>
@@ -3721,14 +5840,14 @@
                       <td>
                         <div class="team-cell-inline">
                           ${m.team_a_id ? window.TurnamenUI.renderTeamEmblem(m.team_a_tag, 22) : ""}
-                          <span>${window.TurnamenUI.escapeHtml(m.team_a_name || "TBD")}</span>
+                          <span>${window.TurnamenUI.escapeHtml(m.team_a_name || (isBye ? "BYE" : "TBD"))}</span>
                         </div>
                       </td>
-                      <td class="tabular-nums"><strong>${m.score_a} - ${m.score_b}</strong></td>
+                      <td class="tabular-nums"><strong>${scoreDisplay}</strong></td>
                       <td>
                         <div class="team-cell-inline">
                           ${m.team_b_id ? window.TurnamenUI.renderTeamEmblem(m.team_b_tag, 22) : ""}
-                          <span>${window.TurnamenUI.escapeHtml(m.team_b_name || "TBD")}</span>
+                          <span>${window.TurnamenUI.escapeHtml(teamBDisplay)}</span>
                         </div>
                       </td>
                       <td>${m.winner_team_name ? `<span class="badge badge-success">${window.TurnamenUI.escapeHtml(m.winner_team_name)}</span>` : "-"}</td>
@@ -3747,49 +5866,96 @@
     `;
 
     const roundSelect = document.getElementById("filter-match-round");
+    const statusSelect = document.getElementById("filter-match-status");
     if (roundSelect) {
       roundSelect.addEventListener("change", (e) => {
         matchRoundFilter = e.target.value;
         navigateTo("match-management");
       });
     }
+    if (statusSelect) {
+      statusSelect.addEventListener("change", (e) => {
+        matchStatusFilter = e.target.value;
+        navigateTo("match-management");
+      });
+    }
   }
 
-  async function submitScore(matchId, tournamentId = "") {
-    const t = await resolveAuthorizedTournament(tournamentId, "match:submit_result");
-    if (!t) return;
-    const scoreA = Number(document.getElementById(`score-a-${matchId}`)?.value ?? 0);
-    const scoreB = Number(document.getElementById(`score-b-${matchId}`)?.value ?? 0);
-
-    const res = await window.TurnamenAPI.submitMatchResult(matchId, {
-      score_a: scoreA,
-      score_b: scoreB,
-      notes: "Disahkan melalui panel operasional desktop",
-    });
-
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
+  async function submitScore(matchId, tournamentId = "", triggerEl = null) {
+    const scoreAInput = document.getElementById(`score-a-${matchId}`);
+    const scoreBInput = document.getElementById(`score-b-${matchId}`);
+    const rawA = Number(scoreAInput?.value ?? 0);
+    const rawB = Number(scoreBInput?.value ?? 0);
+    if (!Number.isInteger(rawA) || !Number.isInteger(rawB) || rawA < 0 || rawB < 0) {
+      window.TurnamenUI.showToast("Skor harus berupa angka bulat tidak negatif.", "warning");
       return;
     }
 
-    window.TurnamenUI.showToast(
-      "Skor disahkan. Pemenang otomatis maju ke babak berikutnya.",
-      "success"
+    const notes = "Disahkan melalui panel operasional desktop";
+    const slotKey = `${matchId}::submit`;
+    const fingerprint = `${rawA}|${rawB}|false|${notes}`;
+    const idempotencyKey = getOrCreateMatchIdempotencyKey(slotKey, fingerprint);
+
+    await withSubmissionGuard(
+      `match:submit:${matchId}`,
+      triggerEl,
+      "Mengesahkan...",
+      async () => {
+        const t = await resolveAuthorizedTournament(tournamentId, "match:submit_result");
+        if (!t) return;
+        window.TurnamenUI.showToast("Memproses pengesahan skor...", "info", {
+          group: `match-status-${matchId}`,
+          duration: 2400,
+        });
+        const res = await window.TurnamenAPI.submitMatchResult(
+          matchId,
+          {
+            score_a: rawA,
+            score_b: rawB,
+            notes,
+            idempotency_key: idempotencyKey,
+          },
+          { idempotencyKey }
+        );
+
+        if (!res.success) {
+          if (isRetryableSubmissionError(res)) {
+            window.TurnamenUI.showToast(
+              `${res.message} Klik 'Sahkan' kembali untuk retry aman dengan Idempotency-Key yang sama.`,
+              "warning",
+              { duration: 6000 }
+            );
+          } else {
+            clearMatchIdempotencyKey(slotKey);
+            window.TurnamenUI.showToast(res.message, "danger");
+          }
+          return;
+        }
+
+        clearMatchIdempotencyKey(slotKey);
+        const successMsg =
+          res.data && res.data.idempotent_replay
+            ? "Pengesahan sebelumnya sudah tersimpan; data disinkronkan ulang."
+            : "Skor disahkan. Pemenang otomatis maju ke babak berikutnya.";
+        window.TurnamenUI.showToast(successMsg, "success");
+        await navigateTo(currentPage);
+      }
     );
-    await navigateTo(currentPage);
   }
 
   async function openOverrideScoreModal(matchData) {
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
     const t = await resolveAuthorizedTournament(
       matchData && matchData.tournamentId,
       "match:submit_result"
     );
-    if (!t) return;
+    if (!t || isModalRequestStale(startNavSeq, startRoleKey)) return;
     window.TurnamenUI.openModal({
       title: "Koreksi Audit Skor Pertandingan",
       bodyHtml: `
         <p style="margin-top:0; color:var(--text-secondary);">
-          Pertandingan ini sudah berstatus selesai. Koreksi skor akan dicatat pada log audit dengan <code>force_override: true</code>.
+          Pertandingan ini sudah berstatus selesai. Koreksi skor dicatat pada log audit dengan <code>force_override: true</code> dan dilindungi oleh <code>Idempotency-Key</code>.
         </p>
         <div class="grid-2" style="margin-bottom:0;">
           <div class="form-group">
@@ -3813,13 +5979,15 @@
     });
   }
 
-  async function submitOverrideScore(matchId, tournamentId = "") {
-    const t = await resolveAuthorizedTournament(tournamentId, "match:submit_result");
-    if (!t) return;
+  async function submitOverrideScore(matchId, tournamentId = "", triggerEl = null) {
     const scoreA = Number(document.getElementById("override-score-a")?.value ?? 0);
     const scoreB = Number(document.getElementById("override-score-b")?.value ?? 0);
     const notes = (document.getElementById("override-notes")?.value || "").trim();
 
+    if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB) || scoreA < 0 || scoreB < 0) {
+      window.TurnamenUI.showToast("Skor koreksi harus berupa angka bulat tidak negatif.", "warning");
+      return;
+    }
     if (notes.length < 4) {
       window.TurnamenUI.showToast(
         "Catatan alasan koreksi wajib diisi (minimal 4 karakter).",
@@ -3828,19 +5996,52 @@
       return;
     }
 
-    const res = await window.TurnamenAPI.submitMatchResult(matchId, {
-      score_a: scoreA,
-      score_b: scoreB,
-      notes,
-      force_override: true,
-    });
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      return;
-    }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Koreksi audit skor berhasil disimpan.", "success");
-    await navigateTo(currentPage);
+    const slotKey = `${matchId}::override`;
+    const fingerprint = `${scoreA}|${scoreB}|true|${notes}`;
+    const idempotencyKey = getOrCreateMatchIdempotencyKey(slotKey, fingerprint);
+
+    await withSubmissionGuard(
+      `match:override:${matchId}`,
+      triggerEl,
+      "Memproses Koreksi...",
+      async () => {
+        const t = await resolveAuthorizedTournament(tournamentId, "match:submit_result");
+        if (!t) return;
+        const res = await window.TurnamenAPI.submitMatchResult(
+          matchId,
+          {
+            score_a: scoreA,
+            score_b: scoreB,
+            notes,
+            force_override: true,
+            idempotency_key: idempotencyKey,
+          },
+          { idempotencyKey }
+        );
+        if (!res.success) {
+          if (isRetryableSubmissionError(res)) {
+            window.TurnamenUI.showToast(
+              `${res.message} Klik 'Sahkan Koreksi' ulang untuk retry aman dengan Idempotency-Key yang sama.`,
+              "warning",
+              { duration: 6000 }
+            );
+          } else {
+            clearMatchIdempotencyKey(slotKey);
+            window.TurnamenUI.showToast(res.message, "danger");
+          }
+          return;
+        }
+        clearMatchIdempotencyKey(slotKey);
+        window.TurnamenUI.closeModal(true);
+        const successMsg =
+          res.data && res.data.idempotent_replay
+            ? "Koreksi sebelumnya sudah tersimpan; data disinkronkan ulang."
+            : "Koreksi audit skor berhasil disimpan.";
+        window.TurnamenUI.showToast(successMsg, "success");
+        await navigateTo(currentPage);
+      },
+      { lockModal: true }
+    );
   }
 
   // =========================================================================
@@ -3936,35 +6137,41 @@
                       ${(round.matches || [])
                         .map((m) => {
                           const isCompleted = m.status === "completed";
+                          const isBye = m.status === "bye";
+                          const isDecided = isCompleted || isBye;
                           const winA = m.winner_team_id && m.winner_team_id === m.team_a_id;
                           const winB = m.winner_team_id && m.winner_team_id === m.team_b_id;
-                          const byeA = !m.team_a_id;
-                          const byeB = !m.team_b_id;
+                          const emptyA = !m.team_a_id;
+                          const emptyB = !m.team_b_id;
+                          const teamALabel = m.team_a_name || (isBye ? "BYE" : "TBD");
+                          const teamBLabel = m.team_b_name || (isBye ? "BYE" : "TBD");
+                          const scoreALabel = isBye ? (m.team_a_id ? "ADV" : "-") : m.score_a;
+                          const scoreBLabel = isBye ? (m.team_b_id ? "ADV" : "BYE") : m.score_b;
                           return `
                           <article
-                            class="bracket-match-card ${isCompleted ? "is-completed" : ""}"
+                            class="bracket-match-card ${isDecided ? "is-completed" : ""} ${isBye ? "is-bye-match" : ""}"
                             data-match-id="${window.TurnamenUI.escapeHtml(m.id)}"
                             data-next-match-id="${window.TurnamenUI.escapeHtml(m.next_match_id || "")}"
                             data-next-slot="${window.TurnamenUI.escapeHtml(m.next_slot || "")}"
-                            data-completed="${isCompleted ? "true" : "false"}"
+                            data-completed="${isDecided ? "true" : "false"}"
                           >
                             <div class="bracket-match-meta">
                               <span class="tabular-nums">Match #${m.match_number} (Bo${m.best_of})</span>
                               ${window.TurnamenUI.renderStatusBadge(m.status)}
                             </div>
-                            <div class="bracket-team-row ${winA ? "winner" : ""} ${byeA ? "bye" : ""}" data-slot="A">
+                            <div class="bracket-team-row ${winA ? "winner" : ""} ${emptyA ? "bye" : ""}" data-slot="A">
                               <span class="bracket-team-identity">
                                 ${m.team_a_id ? window.TurnamenUI.renderTeamEmblem(m.team_a_tag, 22) : ""}
-                                <span class="bracket-team-name">${window.TurnamenUI.escapeHtml(m.team_a_name || "TBD")}</span>
+                                <span class="bracket-team-name">${window.TurnamenUI.escapeHtml(teamALabel)}</span>
                               </span>
-                              <span class="bracket-score">${m.score_a}</span>
+                              <span class="bracket-score">${scoreALabel}</span>
                             </div>
-                            <div class="bracket-team-row ${winB ? "winner" : ""} ${byeB ? "bye" : ""}" data-slot="B">
+                            <div class="bracket-team-row ${winB ? "winner" : ""} ${emptyB ? "bye" : ""}" data-slot="B">
                               <span class="bracket-team-identity">
                                 ${m.team_b_id ? window.TurnamenUI.renderTeamEmblem(m.team_b_tag, 22) : ""}
-                                <span class="bracket-team-name">${window.TurnamenUI.escapeHtml(m.team_b_name || "TBD")}</span>
+                                <span class="bracket-team-name">${window.TurnamenUI.escapeHtml(teamBLabel)}</span>
                               </span>
-                              <span class="bracket-score">${m.score_b}</span>
+                              <span class="bracket-score">${scoreBLabel}</span>
                             </div>
                           </article>
                         `;
@@ -4002,17 +6209,25 @@
     });
   }
 
-  async function regenerateBracket(tournamentId) {
-    const t = await resolveAuthorizedTournament(tournamentId, "bracket:generate");
-    if (!t) return;
-    const res = await window.TurnamenAPI.generateBracket(t.id);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      return;
-    }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Bracket Single Elimination berhasil disusun.", "success");
-    await navigateTo("bracket");
+  async function regenerateBracket(tournamentId, triggerEl = null) {
+    await withSubmissionGuard(
+      `bracket:generate:${tournamentId}`,
+      triggerEl,
+      "Menyusun...",
+      async () => {
+        const t = await resolveAuthorizedTournament(tournamentId, "bracket:generate");
+        if (!t) return;
+        const res = await window.TurnamenAPI.generateBracket(t.id);
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.closeModal(true);
+        window.TurnamenUI.showToast("Bracket Single Elimination berhasil disusun.", "success");
+        await navigateTo("bracket");
+      },
+      { lockModal: true }
+    );
   }
 
   // =========================================================================
@@ -4045,7 +6260,13 @@
     }
 
     const allItems = Array.isArray(res.data) ? [...res.data] : [];
-    allItems.sort((a, b) => Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned)));
+    allItems.sort((a, b) => {
+      const pinDiff = Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned));
+      if (pinDiff !== 0) return pinDiff;
+      const tA = new Date(a.published_at || a.created_at || 0).getTime() || 0;
+      const tB = new Date(b.published_at || b.created_at || 0).getTime() || 0;
+      return tB - tA;
+    });
     const items = announcementPriorityFilter
       ? allItems.filter((a) => String(a.priority || "").toLowerCase() === announcementPriorityFilter)
       : allItems;
@@ -4084,7 +6305,10 @@
           items.length === 0
             ? window.TurnamenUI.renderEmptyState(
                 "Belum Ada Pengumuman",
-                "Belum ada pengumuman yang sesuai dengan filter pada turnamen ini."
+                "Belum ada pengumuman yang sesuai dengan filter pada turnamen ini.",
+                announcementPriorityFilter
+                  ? `<button type="button" class="btn btn-secondary btn-sm" data-action="reset-announcement-filters">Tampilkan Semua Prioritas</button>`
+                  : ""
               )
             : items
                 .map(
@@ -4101,7 +6325,7 @@
                     <h3 class="card-title">${window.TurnamenUI.escapeHtml(a.title)}</h3>
                   </div>
                   <span class="table-subtext tabular-nums">
-                    Oleh ${window.TurnamenUI.escapeHtml(a.author_name || "Panitia")} | ${window.TurnamenUI.formatDateTime(a.created_at)}
+                    Oleh ${window.TurnamenUI.escapeHtml(a.author_name || "Panitia")} | ${window.TurnamenUI.formatDateTime(a.published_at || a.created_at)}
                   </span>
                 </div>
                 <p style="margin:0; color:var(--text-secondary);">${window.TurnamenUI.escapeHtml(a.content)}</p>
@@ -4123,8 +6347,10 @@
   }
 
   async function openAnnouncementModal(tournamentId) {
+    const startNavSeq = navigationSeq;
+    const startRoleKey = getActiveRoleKey();
     const t = await resolveAuthorizedTournament(tournamentId, "announcement:create");
-    if (!t) return;
+    if (!t || isModalRequestStale(startNavSeq, startRoleKey)) return;
     window.TurnamenUI.openModal({
       title: "Publikasikan Pengumuman Resmi",
       bodyHtml: `
@@ -4158,23 +6384,43 @@
     });
   }
 
-  async function submitAnnouncement(tournamentId) {
-    const t = await resolveAuthorizedTournament(tournamentId, "announcement:create");
-    if (!t) return;
-    const payload = {
-      title: (document.getElementById("ann-title")?.value || "").trim(),
-      priority: document.getElementById("ann-priority")?.value || "normal",
-      content: (document.getElementById("ann-content")?.value || "").trim(),
-      is_pinned: Boolean(document.getElementById("ann-pinned")?.checked),
-    };
-    const res = await window.TurnamenAPI.createAnnouncement(t.id, payload);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
+  async function submitAnnouncement(tournamentId, triggerEl = null) {
+    const title = (document.getElementById("ann-title")?.value || "").trim();
+    const priority = document.getElementById("ann-priority")?.value || "normal";
+    const content = (document.getElementById("ann-content")?.value || "").trim();
+    const isPinned = Boolean(document.getElementById("ann-pinned")?.checked);
+
+    if (title.length < 4 || content.length < 5) {
+      window.TurnamenUI.showToast(
+        "Judul (minimal 4 karakter) dan isi pengumuman (minimal 5 karakter) wajib diisi.",
+        "warning"
+      );
       return;
     }
-    window.TurnamenUI.closeModal();
-    window.TurnamenUI.showToast("Pengumuman berhasil dipublikasikan.", "success");
-    await navigateTo(currentPage);
+
+    await withSubmissionGuard(
+      `announcement:create:${tournamentId}`,
+      triggerEl,
+      "Mempublikasikan...",
+      async () => {
+        const t = await resolveAuthorizedTournament(tournamentId, "announcement:create");
+        if (!t) return;
+        const res = await window.TurnamenAPI.createAnnouncement(t.id, {
+          title,
+          priority,
+          content,
+          is_pinned: isPinned,
+        });
+        if (!res.success) {
+          window.TurnamenUI.showToast(res.message, "danger");
+          return;
+        }
+        window.TurnamenUI.closeModal(true);
+        window.TurnamenUI.showToast("Pengumuman berhasil dipublikasikan.", "success");
+        await navigateTo(currentPage);
+      },
+      { lockModal: true }
+    );
   }
 
   // =========================================================================
@@ -4211,6 +6457,8 @@
     const report = res.data;
     const s = report.summary || {};
     const standings = Array.isArray(report.standings) ? report.standings : [];
+    const recentActivity = Array.isArray(report.recent_activity) ? report.recent_activity : [];
+    const hasManagerReportAccess = s.pending_registrations !== undefined;
 
     container.innerHTML = `
       ${renderTournamentContextBar(ctx.list, ctx.active)}
@@ -4220,7 +6468,22 @@
           <h2>Laporan &amp; Klasemen: ${window.TurnamenUI.escapeHtml(report.tournament?.title || ctx.active.title)}</h2>
           <p>Statistik penyelesaian pertandingan dan rekor menang-kalah seluruh tim peserta.</p>
         </div>
+        <span class="badge ${hasManagerReportAccess ? "badge-violet" : "badge-neutral"}">
+          ${hasManagerReportAccess ? "Akses Manajerial (Audit + Antrean)" : "Ringkasan Publik"}
+        </span>
       </div>
+      ${
+        !hasManagerReportAccess
+          ? `
+        <div class="notice-banner notice-banner-info" role="status">
+          <div>
+            <strong>Mode Ringkas Publik:</strong>
+            <span>Metrik internal pendaftaran tertunda dan log audit aktivitas hanya ditampilkan kepada Super Admin, Organizer pemilik, atau Committee yang ditugaskan.</span>
+          </div>
+        </div>
+      `
+          : ""
+      }
 
       <div class="grid-4">
         <div class="metric-card">
@@ -4232,7 +6495,11 @@
         <div class="metric-card">
           <div class="metric-label">Tim Terverifikasi</div>
           <div class="metric-value">${s.approved_teams ?? 0} / ${s.max_teams ?? 0}</div>
-          <div class="metric-note">Menunggu verifikasi: ${s.pending_registrations ?? 0}</div>
+          <div class="metric-note">${
+            hasManagerReportAccess
+              ? `Menunggu verifikasi: ${s.pending_registrations ?? 0} (Total pendaftar: ${s.total_registrations ?? 0})`
+              : `Kuota maksimal: ${s.max_teams ?? 0} tim terverifikasi`
+          }</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Pertandingan Tersisa</div>
@@ -4301,6 +6568,52 @@
         `
         }
       </div>
+
+      ${
+        hasManagerReportAccess
+          ? `
+        <div class="card" style="margin-top:20px;">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Log Audit Aktivitas Turnamen</h3>
+              <p class="card-subtitle">Jejak pengesahan skor, verifikasi peserta, dan perubahan status turnamen.</p>
+            </div>
+            <span class="badge badge-violet">Audit Trail</span>
+          </div>
+          ${
+            recentActivity.length === 0
+              ? window.TurnamenUI.renderEmptyState("Belum Ada Aktivitas", "Belum ada log audit tercatat pada turnamen ini.")
+              : `
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Aksi</th>
+                    <th>Entitas</th>
+                    <th>Waktu</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${recentActivity
+                    .map(
+                      (log) => `
+                    <tr>
+                      <td><code>${window.TurnamenUI.escapeHtml(log.action)}</code></td>
+                      <td>${window.TurnamenUI.escapeHtml(log.entity_type)}</td>
+                      <td class="tabular-nums">${window.TurnamenUI.formatDateTime(log.created_at)}</td>
+                    </tr>
+                  `
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          }
+        </div>
+      `
+          : ""
+      }
     `;
   }
 
@@ -4353,17 +6666,28 @@
             </div>
             <div class="form-group">
               <label for="profile-fullname" class="form-label">Nama Lengkap</label>
-              <input id="profile-fullname" class="form-input" value="${window.TurnamenUI.escapeHtml(user.full_name || "-")}" readonly />
+              <input id="profile-fullname" class="form-input" value="${window.TurnamenUI.escapeHtml(user.full_name || "")}" />
+            </div>
+            <div class="grid-2" style="margin-bottom:0;">
+              <div class="form-group">
+                <label for="profile-phone" class="form-label">Nomor Telepon</label>
+                <input id="profile-phone" class="form-input tabular-nums" placeholder="Contoh: 081234567890" value="${window.TurnamenUI.escapeHtml(user.phone || "")}" />
+              </div>
+              <div class="form-group">
+                <label for="profile-avatar-url" class="form-label">URL Avatar (Opsional)</label>
+                <input id="profile-avatar-url" class="form-input" placeholder="https://..." value="${window.TurnamenUI.escapeHtml(user.avatar_url || "")}" />
+              </div>
             </div>
             <div class="form-group">
-              <label for="profile-username" class="form-label">Username</label>
+              <label for="profile-username" class="form-label">Username (Tetap)</label>
               <input id="profile-username" class="form-input tabular-nums" value="${window.TurnamenUI.escapeHtml(user.username || "-")}" readonly />
             </div>
             <div class="form-group">
-              <label for="profile-email" class="form-label">Email</label>
+              <label for="profile-email" class="form-label">Email (Tetap)</label>
               <input id="profile-email" class="form-input tabular-nums" value="${window.TurnamenUI.escapeHtml(user.email || "-")}" readonly />
             </div>
             <div class="row-actions">
+              <button type="button" class="btn btn-primary" data-action="submit-update-profile">Simpan Profil</button>
               <button type="button" class="btn btn-secondary" data-action="go-page" data-page="login">Ganti Akun</button>
               <button type="button" class="btn btn-danger" data-action="logout">${window.TurnamenUI.icon("logout", 14)}<span>Keluar dari Sesi</span></button>
             </div>
@@ -4414,6 +6738,33 @@
         </div>
       </div>
     `;
+  }
+
+  async function submitUpdateProfile(triggerEl = null) {
+    const fullName = (document.getElementById("profile-fullname")?.value || "").trim();
+    const phone = (document.getElementById("profile-phone")?.value || "").trim();
+    const avatarUrl = (document.getElementById("profile-avatar-url")?.value || "").trim();
+
+    if (fullName.length < 2) {
+      window.TurnamenUI.showToast("Nama lengkap wajib minimal 2 karakter.", "warning");
+      return;
+    }
+
+    await withSubmissionGuard("auth:update-profile", triggerEl, "Menyimpan...", async () => {
+      const res = await window.TurnamenAPI.updateProfile({
+        full_name: fullName,
+        phone: phone || null,
+        avatar_url: avatarUrl || null,
+      });
+      if (!res.success) {
+        window.TurnamenUI.showToast(res.message, "danger");
+        return;
+      }
+      const updatedUser = res.data && res.data.user ? res.data.user : getCurrentUserSafe();
+      updateUserTopbar(updatedUser);
+      window.TurnamenUI.showToast("Profil akun berhasil diperbarui.", "success");
+      await navigateTo("profile");
+    });
   }
 
   // =========================================================================
@@ -4481,6 +6832,9 @@
               <div class="table-subtext">Masuk atau daftarkan akun resmi esports Anda</div>
             </div>
           </div>
+          ${
+            loginActiveTab === "login" || loginActiveTab === "register"
+              ? `
           <div class="tabs-nav" role="tablist" aria-label="Mode Autentikasi">
             <button
               type="button"
@@ -4509,6 +6863,9 @@
               Daftar Akun Baru
             </button>
           </div>
+          `
+              : ""
+          }
 
           <section
             id="panel-auth-login"
@@ -4538,6 +6895,15 @@
                   class="form-input"
                   placeholder="Masukkan password akun"
                 />
+              </div>
+              <div class="auth-inline-actions">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm auth-link-btn"
+                  data-action="open-password-recovery"
+                >
+                  Lupa password?
+                </button>
               </div>
               <button type="submit" class="btn btn-primary" style="width:100%;">Masuk ke Arena</button>
             </form>
@@ -4578,14 +6944,125 @@
               <button type="submit" class="btn btn-primary" style="width:100%;">Buat Akun Turnamen.in</button>
             </form>
           </section>
+
+          <section
+            id="panel-auth-recovery-request"
+            aria-label="Pemulihan Password Akun"
+            ${loginActiveTab === "recovery-request" ? "" : "hidden"}
+          >
+            <div class="auth-recovery-header">
+              <h3 class="auth-recovery-title">Pemulihan Password Akun</h3>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                data-action="switch-auth-tab"
+                data-tab="login"
+              >
+                Kembali ke Masuk
+              </button>
+            </div>
+            <p class="table-subtext" style="margin-bottom:14px;">
+              Masukkan alamat email akun terdaftar untuk mengirim tautan reset password dari Supabase Auth ke kotak masuk Anda.
+            </p>
+            <form id="recovery-request-form" novalidate>
+              <div class="form-group">
+                <label for="recovery-email" class="form-label">Email Akun Terdaftar</label>
+                <input
+                  id="recovery-email"
+                  name="recovery_email"
+                  type="email"
+                  autocomplete="email"
+                  class="form-input"
+                  placeholder="nama@domain.com"
+                />
+              </div>
+              <button type="submit" class="btn btn-primary" style="width:100%;">Kirim Email Pemulihan</button>
+            </form>
+
+            <div class="auth-recovery-box">
+              <p class="table-subtext" style="margin-top:0;margin-bottom:10px;">
+                Tempel tautan pemulihan dari email Supabase (<code>/auth/v1/verify?token=...</code>) atau URL hasil redirect di browser (<code>#access_token=...</code>) di bawah ini:
+              </p>
+              <form id="recovery-link-paste-form" novalidate>
+                <div class="form-group">
+                  <label for="recovery-url-paste" class="form-label">Tautan Pemulihan dari Email</label>
+                  <input
+                    id="recovery-url-paste"
+                    name="recovery_url"
+                    type="password"
+                    autocomplete="off"
+                    class="form-input"
+                    placeholder="Tempel tautan pemulihan dari email atau URL redirect"
+                  />
+                </div>
+                <button type="submit" class="btn btn-secondary" style="width:100%;">Gunakan Tautan Pemulihan</button>
+              </form>
+            </div>
+          </section>
+
+          <section
+            id="panel-auth-recovery-update"
+            aria-label="Atur Password Baru"
+            ${loginActiveTab === "recovery-update" ? "" : "hidden"}
+          >
+            <div class="auth-recovery-header">
+              <h3 class="auth-recovery-title">Atur Password Baru (PASSWORD_RECOVERY)</h3>
+            </div>
+            <p class="table-subtext" style="margin-bottom:14px;">
+              Password baru akan diperbarui langsung di Supabase Auth melalui <code>updateUser()</code> tanpa mengubah role atau profil akun Anda.
+            </p>
+            <form id="recovery-update-form" novalidate>
+              <div class="form-group">
+                <label for="recovery-new-password" class="form-label">Password Baru</label>
+                <input
+                  id="recovery-new-password"
+                  name="new_password"
+                  type="password"
+                  autocomplete="new-password"
+                  class="form-input"
+                  placeholder="Minimal 6 karakter"
+                />
+              </div>
+              <div class="form-group">
+                <label for="recovery-confirm-password" class="form-label">Konfirmasi Password Baru</label>
+                <input
+                  id="recovery-confirm-password"
+                  name="confirm_password"
+                  type="password"
+                  autocomplete="new-password"
+                  class="form-input"
+                  placeholder="Ulangi password baru"
+                />
+              </div>
+              <div class="auth-recovery-actions">
+                <button type="submit" class="btn btn-primary" style="flex:1;">Simpan Password Baru</button>
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  data-action="cancel-password-recovery"
+                >
+                  Batalkan
+                </button>
+              </div>
+            </form>
+          </section>
         </div>
 
         ${demoPanelHtml}
       </div>
     `;
 
+    if (pendingAuthNotice && pendingAuthNotice.message) {
+      const notice = pendingAuthNotice;
+      pendingAuthNotice = null;
+      renderAuthFeedback(notice.message, notice.variant || "info");
+    }
+
     const loginForm = document.getElementById("login-form");
     const registerForm = document.getElementById("register-form");
+    const recoveryRequestForm = document.getElementById("recovery-request-form");
+    const recoveryLinkPasteForm = document.getElementById("recovery-link-paste-form");
+    const recoveryUpdateForm = document.getElementById("recovery-update-form");
     const tabList = document.querySelector(".tabs-nav[role='tablist']");
     if (tabList) {
       tabList.addEventListener("keydown", (e) => {
@@ -4609,19 +7086,182 @@
         handleRegisterSubmit();
       });
     }
+    if (recoveryRequestForm) {
+      recoveryRequestForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        handleRecoveryRequestSubmit();
+      });
+    }
+    if (recoveryLinkPasteForm) {
+      recoveryLinkPasteForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        handleRecoveryLinkPasteSubmit();
+      });
+    }
+    if (recoveryUpdateForm) {
+      recoveryUpdateForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        handleRecoveryUpdateSubmit();
+      });
+    }
   }
 
   function renderAuthFeedback(message, variant = "warning") {
     const slot = document.getElementById("auth-feedback-slot");
     if (!slot) return;
+    let bannerClass = "notice-banner-warning";
+    if (variant === "danger") bannerClass = "notice-banner-danger";
+    else if (variant === "success") bannerClass = "notice-banner-success";
+    else if (variant === "info") bannerClass = "notice-banner-info";
     slot.innerHTML = `
-      <div class="notice-banner ${variant === "danger" ? "notice-banner-danger" : "notice-banner-warning"}" role="alert">
+      <div class="notice-banner ${bannerClass}" role="alert">
         <span>${window.TurnamenUI.escapeHtml(message)}</span>
       </div>
     `;
   }
 
-  async function handleLoginSubmit() {
+  async function handleRecoveryRequestSubmit(triggerEl = null) {
+    const emailEl = document.getElementById("recovery-email");
+    const email = (emailEl?.value || "").trim();
+    if (emailEl) emailEl.setAttribute("aria-invalid", email ? "false" : "true");
+
+    if (!email) {
+      window.TurnamenUI.showToast("Alamat email wajib diisi.", "warning");
+      renderAuthFeedback("Masukkan alamat email akun untuk menerima tautan pemulihan.", "warning");
+      return;
+    }
+
+    const submitBtn =
+      triggerEl || document.querySelector("#recovery-request-form button[type='submit']");
+    const redirectTo = getDesktopRecoveryRedirectUrl();
+    await withSubmissionGuard("auth:recovery-request", submitBtn, "Mengirim Permintaan...", async () => {
+      const res = await window.TurnamenAPI.requestPasswordRecovery(email, redirectTo);
+      if (!res.success) {
+        window.TurnamenUI.showToast(res.message, "danger");
+        renderAuthFeedback(res.message, "danger");
+        return;
+      }
+
+      const isMockRes = Boolean(res.data && res.data.mode === "mock");
+      const infoMsg = isMockRes
+        ? "Simulasi mode mock: tidak ada email nyata yang dikirimkan."
+        : "Permintaan pemulihan dikirim. Periksa kotak masuk atau spam email Anda, lalu klik tautan pemulihan atau tempel URL redirect di bawah.";
+      window.TurnamenUI.showToast(infoMsg, isMockRes ? "info" : "success");
+      renderAuthFeedback(infoMsg, isMockRes ? "info" : "success");
+    });
+  }
+
+  async function handleRecoveryLinkPasteSubmit() {
+    const inputEl = document.getElementById("recovery-url-paste");
+    const rawValue = (inputEl?.value || "").trim();
+    if (inputEl) {
+      inputEl.value = "";
+      inputEl.setAttribute("aria-invalid", rawValue ? "false" : "true");
+    }
+
+    const parsed = parseSupabaseRecoveryUrl(rawValue);
+    if (!parsed) {
+      const msg =
+        "Tautan tidak memuat parameter pemulihan password yang valid (type=recovery dengan token).";
+      window.TurnamenUI.showToast(msg, "warning");
+      renderAuthFeedback(msg, "warning");
+      return;
+    }
+    if (parsed.errorMessage) {
+      window.TurnamenUI.showToast(parsed.errorMessage, "danger");
+      renderAuthFeedback(parsed.errorMessage, "danger");
+      return;
+    }
+
+    pendingRecoverySession = {
+      accessToken: parsed.accessToken || "",
+      refreshToken: parsed.refreshToken || "",
+      tokenHash: parsed.tokenHash || "",
+    };
+    loginActiveTab = "recovery-update";
+    pendingAuthNotice = {
+      message: "Tautan pemulihan valid terdeteksi. Silakan masukkan password baru Anda.",
+      variant: "success",
+    };
+    await renderLoginPage(document.getElementById("main-content"));
+    document.getElementById("recovery-new-password")?.focus();
+  }
+
+  async function handleRecoveryUpdateSubmit(triggerEl = null) {
+    const newPassEl = document.getElementById("recovery-new-password");
+    const confirmPassEl = document.getElementById("recovery-confirm-password");
+    const newPassword = newPassEl?.value || "";
+    const confirmPassword = confirmPassEl?.value || "";
+
+    if (newPassEl) {
+      newPassEl.setAttribute(
+        "aria-invalid",
+        newPassword && newPassword.length >= 6 ? "false" : "true"
+      );
+    }
+    if (confirmPassEl) {
+      confirmPassEl.setAttribute(
+        "aria-invalid",
+        confirmPassword && confirmPassword === newPassword ? "false" : "true"
+      );
+    }
+
+    if (!pendingRecoverySession || (!pendingRecoverySession.accessToken && !pendingRecoverySession.tokenHash)) {
+      const msg = "Sesi pemulihan password tidak ditemukan. Buka tautan dari email atau minta pemulihan baru.";
+      window.TurnamenUI.showToast(msg, "danger");
+      renderAuthFeedback(msg, "danger");
+      return;
+    }
+
+    if (!newPassword.trim() || newPassword.length < 6) {
+      const msg = "Password baru minimal terdiri dari 6 karakter.";
+      window.TurnamenUI.showToast(msg, "warning");
+      renderAuthFeedback(msg, "warning");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      const msg = "Konfirmasi password baru tidak sesuai.";
+      window.TurnamenUI.showToast(msg, "warning");
+      renderAuthFeedback(msg, "warning");
+      return;
+    }
+
+    const submitBtn =
+      triggerEl || document.querySelector("#recovery-update-form button[type='submit']");
+    await withSubmissionGuard("auth:recovery-update", submitBtn, "Menyimpan Password...", async () => {
+      const res = await window.TurnamenAPI.updatePasswordWithRecoveryToken(
+        pendingRecoverySession,
+        newPassword
+      );
+      if (newPassEl) newPassEl.value = "";
+      if (confirmPassEl) confirmPassEl.value = "";
+
+      if (!res.success) {
+        if (res.error && res.error.code === "UNAUTHORIZED") {
+          pendingRecoverySession = null;
+        }
+        window.TurnamenUI.showToast(res.message, "danger");
+        renderAuthFeedback(res.message, "danger");
+        return;
+      }
+
+      pendingRecoverySession = null;
+      loginActiveTab = "login";
+      pendingAuthNotice = {
+        message: "Password akun berhasil diperbarui melalui Supabase Auth. Silakan login menggunakan password baru Anda.",
+        variant: "success",
+      };
+      window.TurnamenUI.showToast(
+        "Password berhasil diperbarui. Silakan masuk dengan password baru.",
+        "success"
+      );
+      await renderLoginPage(document.getElementById("main-content"));
+      document.getElementById("login-email")?.focus();
+    });
+  }
+
+  async function handleLoginSubmit(triggerEl = null) {
     const emailEl = document.getElementById("login-email");
     const passwordEl = document.getElementById("login-password");
     const email = (emailEl?.value || "").trim();
@@ -4636,33 +7276,37 @@
       return;
     }
 
-    const res = await window.TurnamenAPI.login(email, password);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      renderAuthFeedback(res.message, "danger");
-      return;
-    }
+    const submitBtn = triggerEl || document.querySelector("#login-form button[type='submit']");
+    await withSubmissionGuard("auth:login", submitBtn, "Memeriksa Akun...", async () => {
+      const res = await window.TurnamenAPI.login(email, password);
+      if (!res.success) {
+        window.TurnamenUI.showToast(res.message, "danger");
+        renderAuthFeedback(res.message, "danger");
+        return;
+      }
 
-    const data = res.data || {};
-    if (data.requires_email_confirmation === true || !data.token || !data.user) {
-      updateUserTopbar(getCurrentUserSafe());
-      const infoMsg =
-        "Akun memerlukan konfirmasi email sebelum sesi dibuat. Periksa kotak masuk email Anda lalu login kembali.";
-      window.TurnamenUI.showToast(infoMsg, "warning");
-      renderAuthFeedback(infoMsg, "warning");
-      if (passwordEl) passwordEl.value = "";
-      return;
-    }
+      const data = res.data || {};
+      if (data.requires_email_confirmation === true || !data.token || !data.user) {
+        updateUserTopbar(getCurrentUserSafe());
+        const infoMsg =
+          "Akun memerlukan konfirmasi email sebelum sesi dibuat. Periksa kotak masuk email Anda lalu login kembali.";
+        window.TurnamenUI.showToast(infoMsg, "warning");
+        renderAuthFeedback(infoMsg, "warning");
+        if (passwordEl) passwordEl.value = "";
+        return;
+      }
 
-    updateUserTopbar(data.user);
-    window.TurnamenUI.showToast(
-      `Selamat datang, ${data.user.full_name || data.user.username || data.user.email}.`,
-      "success"
-    );
-    await navigateTo("dashboard");
+      resetRoleScopedUiState();
+      updateUserTopbar(data.user);
+      window.TurnamenUI.showToast(
+        `Selamat datang, ${data.user.full_name || data.user.username || data.user.email}.`,
+        "success"
+      );
+      await navigateTo("dashboard");
+    });
   }
 
-  async function handleRegisterSubmit() {
+  async function handleRegisterSubmit(triggerEl = null) {
     const payload = {
       full_name: (document.getElementById("reg-fullname")?.value || "").trim(),
       username: (document.getElementById("reg-username")?.value || "").trim(),
@@ -4683,58 +7327,66 @@
       return;
     }
 
-    const res = await window.TurnamenAPI.register(payload);
-    if (!res.success) {
-      window.TurnamenUI.showToast(res.message, "danger");
-      renderAuthFeedback(res.message, "danger");
-      return;
-    }
+    const submitBtn = triggerEl || document.querySelector("#register-form button[type='submit']");
+    await withSubmissionGuard("auth:register", submitBtn, "Mendaftarkan...", async () => {
+      const res = await window.TurnamenAPI.register(payload);
+      if (!res.success) {
+        window.TurnamenUI.showToast(res.message, "danger");
+        renderAuthFeedback(res.message, "danger");
+        return;
+      }
 
-    const data = res.data || {};
-    if (data.requires_email_confirmation === true || !data.token || !data.user) {
-      updateUserTopbar(getCurrentUserSafe());
-      loginActiveTab = "login";
-      await renderLoginPage(document.getElementById("main-content"));
-      renderAuthFeedback(
-        "Registrasi berhasil. Silakan konfirmasi email Anda terlebih dahulu sebelum masuk.",
-        "warning"
-      );
+      const data = res.data || {};
+      if (data.requires_email_confirmation === true || !data.token || !data.user) {
+        updateUserTopbar(getCurrentUserSafe());
+        loginActiveTab = "login";
+        await renderLoginPage(document.getElementById("main-content"));
+        renderAuthFeedback(
+          "Registrasi berhasil. Silakan konfirmasi email Anda terlebih dahulu sebelum masuk.",
+          "warning"
+        );
+        window.TurnamenUI.showToast(
+          "Registrasi berhasil. Konfirmasi email diperlukan sebelum login.",
+          "info"
+        );
+        return;
+      }
+
+      resetRoleScopedUiState();
+      updateUserTopbar(data.user);
       window.TurnamenUI.showToast(
-        "Registrasi berhasil. Konfirmasi email diperlukan sebelum login.",
-        "info"
+        `Akun ${data.user.username || data.user.email} berhasil dibuat.`,
+        "success"
       );
-      return;
-    }
-
-    updateUserTopbar(data.user);
-    window.TurnamenUI.showToast(
-      `Akun ${data.user.username || data.user.email} berhasil dibuat.`,
-      "success"
-    );
-    await navigateTo("dashboard");
+      await navigateTo("dashboard");
+    });
   }
 
-  async function handleLogout() {
-    await window.TurnamenAPI.logout();
-    updateUserTopbar(getCurrentUserSafe());
-    window.TurnamenUI.showToast("Anda telah keluar dari sesi aktif.", "info");
-    await navigateTo("login");
+  async function handleLogout(triggerEl = null) {
+    try {
+      await withSubmissionGuard(
+        "auth:logout",
+        triggerEl,
+        "Keluar...",
+        async () => {
+          await window.TurnamenAPI.logout();
+          resetRoleScopedUiState();
+          updateUserTopbar(getCurrentUserSafe());
+          window.TurnamenUI.showToast(
+            "Anda telah keluar dari sesi aktif dan beralih ke mode Tamu (Public Guest).",
+            "info"
+          );
+          await navigateTo("login");
+        },
+        { skipRestoreHtml: true }
+      );
+    } finally {
+      updateUserTopbar(getCurrentUserSafe());
+    }
   }
 
   async function quickSwitchRole(roleName) {
-    if (!isMockMode()) {
-      return;
-    }
-    const user = window.TurnamenAPI.setSimulatedRole(roleName);
-    updateUserTopbar(user);
-    if (!user) {
-      window.TurnamenUI.showToast("Role simulasi tidak tersedia.", "warning");
-      return;
-    }
-    window.TurnamenUI.showToast(`Beralih ke akun demo: ${user.full_name}`, "success", {
-      group: "demo-role-switch",
-    });
-    await navigateTo("dashboard");
+    await applySimulatedRoleChange(roleName, "quick");
   }
 
   // =========================================================================
@@ -4772,33 +7424,33 @@
           openCreateTournamentModal();
           break;
         case "submit-create-tournament":
-          submitCreateTournament();
+          submitCreateTournament(target);
           break;
         case "open-edit-tournament":
           openEditTournamentModal(id);
           break;
         case "submit-edit-tournament":
-          submitEditTournament(id);
+          submitEditTournament(id, target);
           break;
         case "confirm-delete-tournament":
           confirmDeleteTournament(id);
           break;
         case "execute-delete-tournament":
-          executeDeleteTournament(id);
+          executeDeleteTournament(id, target);
           break;
         case "register-selected-team":
-          registerSelectedTeam(id);
+          registerSelectedTeam(id, target);
           break;
         case "verify-registration": {
           const nextStatus = target.getAttribute("data-status") || "approved";
-          verifyRegistration(id, nextStatus, tournamentId);
+          verifyRegistration(id, nextStatus, tournamentId, target);
           break;
         }
         case "open-create-team":
           openCreateTeamModal();
           break;
         case "submit-create-team":
-          submitCreateTeam();
+          submitCreateTeam(target);
           break;
         case "open-team-detail":
           openTeamDetailModal(id);
@@ -4807,16 +7459,16 @@
           openEditTeamModal(id);
           break;
         case "submit-edit-team":
-          submitEditTeam(id);
+          submitEditTeam(id, target);
           break;
         case "open-add-member":
           openAddMemberModal(id);
           break;
         case "submit-add-member":
-          submitAddMember(id);
+          submitAddMember(id, target);
           break;
         case "submit-score":
-          submitScore(id, tournamentId);
+          submitScore(id, tournamentId, target);
           break;
         case "open-override-score":
           openOverrideScoreModal({
@@ -4830,19 +7482,36 @@
           });
           break;
         case "submit-override-score":
-          submitOverrideScore(id, tournamentId);
+          submitOverrideScore(id, tournamentId, target);
           break;
         case "confirm-regenerate-bracket":
           confirmRegenerateBracket(id);
           break;
         case "regenerate-bracket":
-          regenerateBracket(id);
+          regenerateBracket(id, target);
           break;
         case "open-announcement-modal":
           openAnnouncementModal(id);
           break;
         case "submit-announcement":
-          submitAnnouncement(id);
+          submitAnnouncement(id, target);
+          break;
+        case "reset-tournament-filters":
+          tournamentFilterState = { status: "", gameId: "", search: "" };
+          navigateTo("tournament-list");
+          break;
+        case "reset-team-filters":
+          teamFilterState = { gameId: "", search: "" };
+          navigateTo("team-management");
+          break;
+        case "reset-match-filters":
+          matchRoundFilter = "";
+          matchStatusFilter = "";
+          navigateTo("match-management");
+          break;
+        case "reset-announcement-filters":
+          announcementPriorityFilter = "";
+          navigateTo("announcements");
           break;
         case "switch-auth-tab": {
           const nextTab = target.getAttribute("data-tab") || "login";
@@ -4852,13 +7521,73 @@
           });
           break;
         }
+        case "open-password-recovery": {
+          loginActiveTab = "recovery-request";
+          renderLoginPage(document.getElementById("main-content")).then(() => {
+            document.getElementById("recovery-email")?.focus();
+          });
+          break;
+        }
+        case "cancel-password-recovery": {
+          pendingRecoverySession = null;
+          loginActiveTab = "login";
+          renderLoginPage(document.getElementById("main-content")).then(() => {
+            document.getElementById("login-email")?.focus();
+          });
+          break;
+        }
         case "quick-switch-role": {
           const role = target.getAttribute("data-role") || "";
           quickSwitchRole(role);
           break;
         }
         case "logout":
-          handleLogout();
+          handleLogout(target);
+          break;
+        case "submit-update-profile":
+          submitUpdateProfile(target);
+          break;
+        case "assign-user-role":
+          submitAssignUserRole(id, target);
+          break;
+        case "open-create-game":
+          openCreateGameModal();
+          break;
+        case "open-edit-game":
+          openEditGameModal(id);
+          break;
+        case "submit-create-game":
+          submitGameModal("", target);
+          break;
+        case "submit-edit-game":
+          submitGameModal(id, target);
+          break;
+        case "trigger-game-artwork-picker": {
+          const inputEl = document.getElementById(`artwork-file-input-${id}`);
+          if (inputEl && typeof inputEl.click === "function") {
+            inputEl.click();
+          }
+          break;
+        }
+        case "clear-game-artwork-preview":
+          pendingArtworkDrafts.delete(id);
+          artworkUploadState.delete(id);
+          navigateTo("game-management");
+          break;
+        case "save-game-artwork":
+          saveGameArtworkDraft(id, target);
+          break;
+        case "confirm-restore-game-artwork":
+          openRestoreGameArtworkConfirm(id);
+          break;
+        case "submit-restore-game-artwork":
+          restoreGameArtworkConfirmed(id, target);
+          break;
+        case "add-tournament-staff":
+          submitAddTournamentStaff(id, target);
+          break;
+        case "remove-tournament-staff":
+          submitRemoveTournamentStaff(tournamentId, id, target);
           break;
         default:
           break;
@@ -4867,11 +7596,16 @@
 
     const handleChangeEvent = (e) => {
       const target = e.target;
-      if (!target || target.getAttribute("data-action") !== "select-active-tournament") {
+      if (!target) return;
+      const action = target.getAttribute("data-action");
+      if (action === "select-active-tournament") {
+        if (target.value) {
+          navigateTo(currentPage, { tournamentId: target.value });
+        }
         return;
       }
-      if (target.value) {
-        navigateTo(currentPage, { tournamentId: target.value });
+      if (action === "game-artwork-file-input") {
+        handleArtworkFileInputChange(target);
       }
     };
 
@@ -4913,8 +7647,25 @@
     submitAnnouncement,
     handleLoginSubmit,
     handleRegisterSubmit,
+    handleRecoveryRequestSubmit,
+    handleRecoveryLinkPasteSubmit,
+    handleRecoveryUpdateSubmit,
+    parseSupabaseRecoveryUrl,
+    getDesktopRecoveryRedirectUrl,
     handleLogout,
     quickSwitchRole,
+    submitUpdateProfile,
+    submitAssignUserRole,
+    openCreateGameModal,
+    openEditGameModal,
+    submitGameModal,
+    handleArtworkFileInputChange,
+    inspectAndPrepareArtworkFile,
+    saveGameArtworkDraft,
+    openRestoreGameArtworkConfirm,
+    restoreGameArtworkConfirmed,
+    submitAddTournamentStaff,
+    submitRemoveTournamentStaff,
   };
 
   document.addEventListener("DOMContentLoaded", initApp);
