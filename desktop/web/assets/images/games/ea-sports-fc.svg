@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" fill="none">
+  <defs>
+    <linearGradient id="fc-sky" x1="480" y1="0" x2="480" y2="340" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#050912"/>
+      <stop offset="65%" stop-color="#0D162E"/>
+      <stop offset="100%" stop-color="#132245"/>
+    </linearGradient>
+    <linearGradient id="fc-turf" x1="480" y1="240" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#082424"/>
+      <stop offset="50%" stop-color="#0F423A"/>
+      <stop offset="100%" stop-color="#082A26"/>
+    </linearGradient>
+    <radialGradient id="fc-pitch-glow" cx="50%" cy="62%" r="48%">
+      <stop offset="0%" stop-color="#34D399" stop-opacity="0.28"/>
+      <stop offset="52%" stop-color="#00E5FF" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#060A14" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="fc-ball-aura" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.48"/>
+      <stop offset="55%" stop-color="#34D399" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#082A26" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="fc-scrim" x1="480" y1="285" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#060A14" stop-opacity="0"/>
+      <stop offset="58%" stop-color="#060A14" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#060A14" stop-opacity="0.94"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Night Championship Stadium Sky -->
+  <rect width="960" height="540" fill="url(#fc-sky)"/>
+
+  <!-- Layered Spectator Bowl -->
+  <path d="M0,256 Q480,140 960,256 L960,360 L0,360 Z" fill="#0B1328"/>
+  <path d="M22,252 Q480,162 938,252" stroke="#1E315D" stroke-width="10"/>
+  <path d="M38,268 Q480,184 922,268" stroke="#17274B" stroke-width="8"/>
+  <path d="M58,284 Q480,206 902,284" stroke="#132142" stroke-width="6"/>
+
+  <!-- Sweeping Curved Roof Canopy with Cyan/Violet LED Arches -->
+  <path d="M0,152 Q480,38 960,152 L960,104 Q480,-2 0,104 Z" fill="#101B38" stroke="#284076" stroke-width="1.5"/>
+  <path d="M0,148 Q480,44 960,148" stroke="#00E5FF" stroke-width="2.6" stroke-opacity="0.88"/>
+  <path d="M0,118 Q480,16 960,118" stroke="#8B5CF6" stroke-width="1.8" stroke-opacity="0.7"/>
+
+  <!-- Stadium Floodlight Beams & Fixtures -->
+  <polygon points="145,124 196,114 430,455 270,455" fill="#00E5FF" fill-opacity="0.065"/>
+  <polygon points="335,92 388,84 535,455 395,455" fill="#E0F7FF" fill-opacity="0.055"/>
+  <polygon points="572,84 625,92 565,455 425,455" fill="#E0F7FF" fill-opacity="0.055"/>
+  <polygon points="764,114 815,124 690,455 530,455" fill="#8B5CF6" fill-opacity="0.07"/>
+  <g fill="#E0F7FF">
+    <rect x="150" y="112" width="42" height="8" rx="3"/>
+    <rect x="342" y="82" width="44" height="8" rx="3"/>
+    <rect x="574" y="82" width="44" height="8" rx="3"/>
+    <rect x="768" y="112" width="42" height="8" rx="3"/>
+  </g>
+
+  <!-- Abstract Perimeter LED Ribbons -->
+  <path d="M46,292 L914,292 L932,308 L28,308 Z" fill="#081122" stroke="#00E5FF" stroke-width="1.2" stroke-opacity="0.65"/>
+  <line x1="110" y1="300" x2="290" y2="300" stroke="#00E5FF" stroke-width="3.2" stroke-opacity="0.78"/>
+  <line x1="330" y1="300" x2="630" y2="300" stroke="#8B5CF6" stroke-width="3.2" stroke-opacity="0.72"/>
+  <line x1="670" y1="300" x2="850" y2="300" stroke="#34D399" stroke-width="3.2" stroke-opacity="0.78"/>
+
+  <!-- Emerald-Night Stadium Turf & Regulation Lines -->
+  <polygon points="46,308 914,308 960,540 0,540" fill="url(#fc-turf)"/>
+  <polygon points="180,308 265,308 175,540 30,540" fill="#FFFFFF" fill-opacity="0.035"/>
+  <polygon points="350,308 435,308 415,540 275,540" fill="#FFFFFF" fill-opacity="0.035"/>
+  <polygon points="525,308 610,308 685,540 545,540" fill="#FFFFFF" fill-opacity="0.035"/>
+  <polygon points="695,308 780,308 930,540 785,540" fill="#FFFFFF" fill-opacity="0.035"/>
+  <ellipse cx="480" cy="405" rx="430" ry="140" fill="url(#fc-pitch-glow)"/>
+
+  <g stroke="#CCFBF1" stroke-opacity="0.75" stroke-width="2">
+    <polygon points="94,322 866,322 938,492 22,492" fill="none"/>
+    <line x1="480" y1="322" x2="480" y2="492"/>
+    <ellipse cx="480" cy="402" rx="92" ry="30"/>
+    <polygon points="78,360 198,360 176,448 40,448" fill="none"/>
+    <polygon points="882,360 762,360 784,448 920,448" fill="none"/>
+  </g>
+  <g stroke="#E2E8F0" stroke-width="2" stroke-opacity="0.9">
+    <polyline points="54,376 54,336 74,322 74,360" fill="#00E5FF" fill-opacity="0.1"/>
+    <polyline points="906,376 906,336 886,322 886,360" fill="#8B5CF6" fill-opacity="0.1"/>
+  </g>
+
+  <!-- Heroic Foreground Championship Ball Focal Point + Kinetic Arcs -->
+  <ellipse cx="662" cy="346" rx="145" ry="118" fill="url(#fc-ball-aura)"/>
+  <path d="M402,422 C490,398 564,370 618,342" stroke="#00E5FF" stroke-width="3.5" stroke-linecap="round" stroke-opacity="0.88"/>
+  <path d="M446,442 C522,418 584,392 630,368" stroke="#34D399" stroke-width="2.4" stroke-linecap="round" stroke-opacity="0.82"/>
+  <path d="M484,390 C542,372 588,352 622,326" stroke="#A78BFA" stroke-width="2" stroke-linecap="round" stroke-opacity="0.75"/>
+
+  <g transform="translate(668, 326)">
+    <circle cx="0" cy="0" r="66" fill="#0D182F" stroke="#00E5FF" stroke-width="2.5"/>
+    <circle cx="0" cy="0" r="61" fill="none" stroke="#34D399" stroke-width="1" stroke-opacity="0.55"/>
+    <polygon points="0,-24 22,-8 14,18 -14,18 -22,-8" fill="#182C54" stroke="#67E8F9" stroke-width="1.8"/>
+    <polyline points="0,-24 0,-64" stroke="#67E8F9" stroke-width="1.6"/>
+    <polyline points="22,-8 58,-22" stroke="#67E8F9" stroke-width="1.6"/>
+    <polyline points="-22,-8 -58,-22" stroke="#67E8F9" stroke-width="1.6"/>
+    <polyline points="14,18 40,48" stroke="#34D399" stroke-width="1.6"/>
+    <polyline points="-14,18 -40,48" stroke="#34D399" stroke-width="1.6"/>
+    <ellipse cx="-20" cy="-24" rx="16" ry="8" transform="rotate(-28 -20 -24)" fill="#FFFFFF" fill-opacity="0.18"/>
+  </g>
+
+  <!-- Lower Third Contrast Scrim -->
+  <rect x="0" y="285" width="960" height="255" fill="url(#fc-scrim)"/>
+</svg>

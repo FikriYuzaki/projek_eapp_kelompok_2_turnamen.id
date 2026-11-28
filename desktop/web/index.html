@@ -3,45 +3,127 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Turnamen.in — Esports Tournament Management System</title>
+  <title>Turnamen.in | Esports Tournament Management System</title>
+  <link rel="icon" type="image/svg+xml" href="assets/images/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+    media="print"
+    onload="this.media='all'"
+  />
   <link rel="stylesheet" href="assets/css/variables.css" />
   <link rel="stylesheet" href="assets/css/layout.css" />
   <link rel="stylesheet" href="assets/css/components.css" />
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Lewati ke konten utama</a>
+
   <div class="app-shell">
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden" aria-hidden="true"></div>
+
     <!-- Sidebar Navigation -->
-    <aside class="sidebar" aria-label="Navigasi Utama">
+    <aside id="app-sidebar" class="sidebar" aria-label="Navigasi Utama">
       <div class="sidebar-brand">
-        <img src="assets/images/logo.svg" alt="Logo Turnamen.in" />
-        <div>
+        <img src="assets/images/logo.svg" alt="Logo Turnamen.in" width="34" height="34" />
+        <div class="sidebar-brand-copy">
           <span class="sidebar-brand-title">Turnamen.in</span>
-          <span class="sidebar-brand-subtitle">Esports Management Suite</span>
+          <span class="sidebar-brand-subtitle" id="sidebar-experience-label">Futuristic Arena</span>
         </div>
+        <button
+          type="button"
+          id="sidebar-close-btn"
+          class="btn btn-ghost btn-icon sidebar-close-btn"
+          aria-label="Tutup menu navigasi"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
-      <nav class="sidebar-nav">
+      <nav id="sidebar-nav" class="sidebar-nav" aria-label="Menu Utama">
         <div class="nav-section-label">Utama</div>
-        <button class="nav-item active" data-page="dashboard">📊 Dashboard</button>
-        <button class="nav-item" data-page="tournament-list">🏆 Daftar Turnamen</button>
-        <button class="nav-item" data-page="tournament-detail">📋 Detail & Peserta</button>
+        <button type="button" class="nav-item active" data-page="dashboard" aria-current="page">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="9" rx="1" />
+            <rect x="14" y="3" width="7" height="5" rx="1" />
+            <rect x="14" y="12" width="7" height="9" rx="1" />
+            <rect x="3" y="16" width="7" height="5" rx="1" />
+          </svg>
+          <span>Dashboard</span>
+        </button>
+        <button type="button" class="nav-item" data-page="tournament-list">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M6 4h12v5a6 6 0 0 1-12 0V4z" />
+            <path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3M12 15v5M8 20h8" />
+          </svg>
+          <span>Daftar Turnamen</span>
+        </button>
+        <button type="button" class="nav-item" data-page="tournament-detail">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+            <rect x="9" y="3" width="6" height="4" rx="1" />
+            <path d="M9 12h6M9 16h4" />
+          </svg>
+          <span>Detail &amp; Peserta</span>
+        </button>
 
-        <div class="nav-section-label">Kompetisi & Pertandingan</div>
-        <button class="nav-item" data-page="team-management">🛡️ Manajemen Tim</button>
-        <button class="nav-item" data-page="match-management">⚔️ Jadwal & Skor Match</button>
-        <button class="nav-item" data-page="bracket">🌿 Bracket 8 Tim</button>
+        <div class="nav-section-label">Kompetisi &amp; Pertandingan</div>
+        <button type="button" class="nav-item" data-page="team-management">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6l7-3z" />
+            <path d="M9.5 12l2 2 3.5-3.5" />
+          </svg>
+          <span>Manajemen Tim</span>
+        </button>
+        <button type="button" class="nav-item" data-page="match-management">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M4 20l6-6M14 4l6 6-8 8-6-6 8-8zM15 9l-6 6" />
+          </svg>
+          <span>Jadwal &amp; Skor Match</span>
+        </button>
+        <button type="button" class="nav-item" data-page="bracket">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M3 6h5v4H3M3 14h5v4H3M8 8h4v8H8M12 12h5M17 9h4v6h-4z" />
+          </svg>
+          <span>Bracket Turnamen</span>
+        </button>
 
-        <div class="nav-section-label">Komunikasi & Laporan</div>
-        <button class="nav-item" data-page="announcements">📢 Pengumuman</button>
-        <button class="nav-item" data-page="reports">📈 Laporan & Klasemen</button>
+        <div class="nav-section-label">Komunikasi &amp; Laporan</div>
+        <button type="button" class="nav-item" data-page="announcements">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M3 11l14-5v12L3 13v-2zM17 8a4 4 0 0 1 0 8M7 14l1.5 5H11l-1.2-4.5" />
+          </svg>
+          <span>Pengumuman</span>
+        </button>
+        <button type="button" class="nav-item" data-page="reports">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M4 20h16M7 16v-5M12 16V7M17 16v-8" />
+          </svg>
+          <span>Laporan &amp; Klasemen</span>
+        </button>
 
-        <div class="nav-section-label">Akun & Akses</div>
-        <button class="nav-item" data-page="profile">👤 Profil Pengguna</button>
-        <button class="nav-item" data-page="login">🔐 Login / Ganti Role</button>
+        <div class="nav-section-label">Akun &amp; Akses</div>
+        <button type="button" class="nav-item" data-page="profile">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" />
+          </svg>
+          <span>Profil Pengguna</span>
+        </button>
+        <button type="button" class="nav-item" data-page="login">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M10 17l5-5-5-5M15 12H3M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5" />
+          </svg>
+          <span>Autentikasi Akun</span>
+        </button>
       </nav>
 
-      <div class="sidebar-footer" id="sidebar-api-status">
-        <span>● Memeriksa koneksi API...</span>
+      <div class="sidebar-footer" id="sidebar-api-status" role="status" aria-live="polite">
+        <span class="status-indicator status-indicator-neutral"></span>
+        <span>Memeriksa koneksi API...</span>
       </div>
     </aside>
 
@@ -49,40 +131,76 @@
     <div class="main-workspace">
       <header class="topbar">
         <div class="topbar-left">
-          <h1 class="topbar-title" id="topbar-page-title">Dashboard Utama</h1>
-          <span class="badge badge-warning" id="app-mode-badge">MOCK MODE (SIMULASI LOKAL)</span>
+          <button
+            type="button"
+            id="sidebar-toggle-btn"
+            class="btn btn-ghost btn-icon sidebar-toggle-btn"
+            aria-expanded="false"
+            aria-controls="app-sidebar"
+            aria-label="Buka menu navigasi"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
+          <div class="topbar-heading-group">
+            <h1 class="topbar-title" id="topbar-page-title">Dashboard Utama</h1>
+          </div>
+          <span class="badge badge-neutral" id="app-mode-badge">MEMERIKSA MODE</span>
         </div>
 
         <div class="topbar-right">
-          <label for="topbar-role-switcher" style="font-size:12px; color:var(--text-secondary);">Simulasi Role:</label>
-          <select id="topbar-role-switcher" class="form-select" style="padding:5px 9px; font-size:12px;">
-            <option value="super_admin">Super Admin</option>
-            <option value="organizer" selected>Tournament Organizer</option>
-            <option value="committee">Committee / Panitia</option>
-            <option value="team_captain">Team Captain</option>
-            <option value="player">Player</option>
-          </select>
-          <span class="badge badge-info tabular-nums" id="topbar-active-user">garuda_eo (organizer)</span>
+          <div id="topbar-role-switcher-wrap" class="topbar-role-switcher" hidden>
+            <label for="topbar-role-switcher" class="topbar-role-label">Simulasi Role:</label>
+            <select id="topbar-role-switcher" class="form-select form-select-compact">
+              <option value="super_admin">Super Admin</option>
+              <option value="organizer">Tournament Organizer</option>
+              <option value="committee">Committee / Panitia</option>
+              <option value="team_captain">Team Captain</option>
+              <option value="player">Player</option>
+              <option value="guest">Tamu (Public Guest)</option>
+            </select>
+          </div>
+          <span class="badge badge-neutral tabular-nums" id="topbar-active-user">Memeriksa sesi...</span>
+          <button type="button" id="topbar-auth-action" class="btn btn-secondary btn-sm">Masuk</button>
         </div>
       </header>
 
-      <main class="content-area" id="main-content" role="main">
+      <main class="content-area" id="main-content" tabindex="-1">
         <!-- Dynamic page content rendered by desktop/web/assets/js/pages/app-pages.js -->
       </main>
     </div>
   </div>
 
-  <!-- Reusable Application Modal -->
-  <div id="app-modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+  <!-- Reusable Accessible Application Modal -->
+  <div
+    id="app-modal-backdrop"
+    class="modal-backdrop hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="app-modal-title"
+    aria-hidden="true"
+  >
     <div class="modal-dialog">
-      <div class="card-header">
-        <h3 class="card-title" id="app-modal-title">Dialog</h3>
-        <button class="btn btn-secondary btn-sm" onclick="TurnamenUI.closeModal()">✕</button>
+      <div class="modal-header">
+        <h2 class="modal-title" id="app-modal-title">Dialog</h2>
+        <button
+          type="button"
+          class="btn btn-ghost btn-icon"
+          id="app-modal-close-btn"
+          aria-label="Tutup dialog"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
       </div>
-      <div id="app-modal-body"></div>
-      <div id="app-modal-footer" style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;"></div>
+      <div id="app-modal-body" class="modal-body"></div>
+      <div id="app-modal-footer" class="modal-footer"></div>
     </div>
   </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-relevant="additions text"></div>
 
   <!-- Optional Python Eel script (loaded automatically when served by Eel, ignored safely in standalone browser) -->
   <script type="text/javascript" src="/eel.js"></script>

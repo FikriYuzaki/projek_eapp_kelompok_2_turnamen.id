@@ -3,11 +3,11 @@
 Dokumen ini merupakan kesepakatan resmi skema database antara **Habil** (Database & Auth), **Adriel** (Tournaments, Teams, Matches), **Anisa** (API, Announcements, Reports), dan **Fikri** (System Integration).
 
 > [!WARNING]
-> Jangan mengubah nama tabel, nama kolom, atau tipe data pada dokumen ini tanpa memperbarui `supabase/migrations/0001_initial_schema.sql`, `backend/repositories/interfaces/`, dan menginformasikan seluruh anggota tim.
+> Jangan mengubah nama tabel, nama kolom, atau tipe data pada dokumen ini tanpa memperbarui `supabase/migrations/` (`0001_initial_schema.sql` sampai `20261126232622_wave6_11_custom_game_artwork.sql`), `backend/repositories/interfaces/`, dan menginformasikan seluruh anggota tim.
 
 ---
 
-## 1. Daftar 12 Tabel Inti
+## 1. Daftar 14 Tabel Aktif
 
 | No | Nama Tabel | Primary Key | Deskripsi Singkat |
 | :- | :--- | :--- | :--- |
@@ -23,6 +23,8 @@ Dokumen ini merupakan kesepakatan resmi skema database antara **Habil** (Databas
 | 10 | `payments` | `id (UUID)` | Bukti pembayaran pendaftaran turnamen dan status verifikasinya. |
 | 11 | `announcements` | `id (UUID)` | Pengumuman resmi turnamen (`priority`: `normal`, `important`, `urgent`). |
 | 12 | `activity_logs` | `id (UUID)` | Jejak audit (*audit trail*) untuk setiap perubahan penting (pengesahan skor, pembuatan bracket, perubahan status). |
+| 13 | `match_submission_requests` | `id (UUID)` | Buku idempotency (*idempotency ledger*) pengiriman & override skor pertandingan (`0004_wave2_3_atomic_match_submission.sql`). |
+| 14 | `game_artwork_overrides` | `id (UUID)` | Metadata poster kustom cabang game Super Admin (`20261126232622_wave6_11_custom_game_artwork.sql`). |
 
 ---
 
@@ -101,3 +103,12 @@ Dokumen ini merupakan kesepakatan resmi skema database antara **Habil** (Databas
 ### G. `announcements` & `activity_logs`
 - **`announcements`**: `id`, `tournament_id`, `author_id`, `title`, `content`, `priority` (`'normal' | 'important' | 'urgent'`), `is_pinned`, `published_at`.
 - **`activity_logs`**: `id`, `actor_id`, `tournament_id`, `entity_type`, `entity_id`, `action`, `details` (`dict`), `created_at`.
+
+### H. `game_artwork_overrides` (Wave 6.11 / Migrasi `20261126232622`)
+- **`game_artwork_overrides`**: `id` (`UUID` PK), `game_id` (`UUID` UNIQUE FK -> `games.id` `ON DELETE CASCADE ON UPDATE CASCADE`), `storage_path` (`str`, format aman `<slug>/<uuid>.<jpg|jpeg|png|webp>` pada bucket Storage `game-artwork`), `mime_type` (`'image/jpeg' | 'image/png' | 'image/webp'`), `file_size_bytes` (`1..5242880`), `width` (`320..4096 | None`), `height` (`180..4096 | None`), `uploaded_by` (`UUID | None` FK -> `profiles.id` `ON DELETE SET NULL ON UPDATE CASCADE`), `created_at`, `updated_at`.
+- **Kebijakan RLS & Storage:** Publik (`anon`, `authenticated`) hanya membaca override untuk game aktif (`games.is_active = TRUE` atau `super_admin`); operasi `INSERT`, `UPDATE`, dan `DELETE` hanya untuk profil aktif ber-role `super_admin` (`public.current_user_role() = 'super_admin'`). Bucket `game-artwork` bersifat publik untuk akses poster (`5242880` bytes, JPEG/PNG/WebP), sedangkan `4` policy `storage.objects` (`SELECT`, `INSERT`, `UPDATE`, `DELETE` khusus `authenticated` `super_admin`) dikelola terpisah via Supabase Dashboard -> Storage -> Policies.
+
+### I. `match_submission_requests` (Wave 2.3 / Migrasi `0004`)
+- **`match_submission_requests`**: `id` (`UUID` PK), `match_id` (`UUID` FK -> `matches.id` `ON DELETE CASCADE ON UPDATE CASCADE`), `actor_id` (`UUID` FK -> `profiles.id` `ON DELETE RESTRICT ON UPDATE CASCADE`), `idempotency_key` (`VARCHAR(128)`), `request_hash` (`VARCHAR(64)`), `response_payload` (`JSONB`), `created_at` (`TIMESTAMPTZ`).
+- **Unique & Index:** `uq_match_submission_idempotency (match_id, actor_id, idempotency_key)` dan `idx_match_submission_requests_match_id`.
+- **Kebijakan RLS:** Semua hak `PUBLIC` dan `anon` dicabut; `authenticated` hanya diberi `SELECT` untuk baris milik sendiri (`actor_id` sesuai `auth.uid()`) atau `super_admin`. Penulisan hanya dilakukan atomik melalui RPC `private.submit_match_result_atomic` / `public.submit_match_result_atomic`.

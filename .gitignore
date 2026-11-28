@@ -51,6 +51,12 @@ Desktop.ini
 # Node temporary caches (if npx is run locally)
 node_modules/
 
+# Supabase CLI local cache/temporary metadata (keep migrations and seed tracked)
+supabase/.temp/
+
+# Local personal agent skills outside shared .agents/skills/ (kept intact on disk)
+.agent/
+
 # NOTE: .agents/skills/ and skills-lock.json are intentionally tracked in Git
 # so all 5 team members share identical project-level AI Agent Skills.
 !.agents/

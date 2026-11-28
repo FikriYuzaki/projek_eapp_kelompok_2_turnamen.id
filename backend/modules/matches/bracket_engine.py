@@ -3,12 +3,44 @@
 from __future__ import annotations
 
 import math
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from backend.contracts.dtos import VALID_BEST_OF
-from backend.core.exceptions import DomainValidationError
+from backend.core.exceptions import DomainConflictError, DomainValidationError
+
+_INTEGER_STRING = re.compile(r"^[+-]?\d+$")
+
+
+def parse_strict_int(value: Any, field: str) -> int:
+    """Parse an integer field without silently truncating floats or accepting booleans.
+
+    Python treats `True` as `1`, so booleans are rejected explicitly. Digit-only strings are
+    accepted for compatibility with form inputs; decimal strings such as "2.5" are rejected.
+    """
+    if isinstance(value, bool):
+        raise DomainValidationError(
+            f"Field {field} harus berupa angka bulat, bukan boolean.", {"field": field}
+        )
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and _INTEGER_STRING.match(value.strip()):
+        return int(value.strip())
+    raise DomainValidationError(
+        f"Field {field} harus berupa angka bulat.", {"field": field, "value": str(value)}
+    )
+
+
+def parse_best_of(value: Any) -> int:
+    best_of = parse_strict_int(value, "best_of")
+    if best_of not in VALID_BEST_OF:
+        raise DomainValidationError(
+            f"Format best_of '{best_of}' tidak valid.",
+            {"field": "best_of", "best_of": best_of, "valid_options": list(VALID_BEST_OF)},
+        )
+    return best_of
 
 
 def next_power_of_two(n: int) -> int:
@@ -48,7 +80,12 @@ def validate_match_score(
     Mengembalikan 'A' jika Tim A menang, atau 'B' jika Tim B menang.
     Menolak skor negatif, hasil seri, atau skor yang tidak memenuhi syarat kemenangan.
     """
-    if not isinstance(score_a, int) or not isinstance(score_b, int):
+    if (
+        isinstance(score_a, bool)
+        or isinstance(score_b, bool)
+        or not isinstance(score_a, int)
+        or not isinstance(score_b, int)
+    ):
         raise DomainValidationError(
             "Skor pertandingan harus berupa angka bulat.",
             {"score_a": score_a, "score_b": score_b},
@@ -60,7 +97,7 @@ def validate_match_score(
             {"score_a": score_a, "score_b": score_b},
         )
 
-    if best_of not in VALID_BEST_OF:
+    if isinstance(best_of, bool) or best_of not in VALID_BEST_OF:
         raise DomainValidationError(
             f"Format best_of '{best_of}' tidak valid.",
             {"best_of": best_of, "valid_options": list(VALID_BEST_OF)},
@@ -112,6 +149,7 @@ class SingleEliminationBracketEngine:
         Mendukung jumlah tim pangkat dua maupun bukan pangkat dua dengan penanganan BYE otomatis
         dan pemindahan langsung tim penerima BYE ke babak Semi Final / babak selanjutnya.
         """
+        best_of = parse_best_of(best_of)
         num_teams = len(team_ids)
         if num_teams < 2:
             raise DomainValidationError(
@@ -203,3 +241,176 @@ class SingleEliminationBracketEngine:
         for r in range(1, total_rounds + 1):
             all_matches.extend(rounds_matches[r])
         return all_matches
+
+
+def validate_bracket_graph(
+    tournament_id: str,
+    matches: list[dict[str, Any]],
+    *,
+    pending_final_id: str | None = None,
+) -> dict[str, Any]:
+    """Prove all matches form one acyclic tree converging on a single Grand Final.
+
+    When `pending_final_id` is supplied, validates the pre-completion state where every
+    feeder match is already `completed` or `bye` and only `pending_final_id` awaits
+    final result confirmation. Otherwise requires the unique Grand Final to already be
+    `completed` with a valid participant winner.
+    """
+    if not matches:
+        raise DomainConflictError(
+            "Turnamen belum memiliki struktur bracket pertandingan.",
+            {"tournament_id": tournament_id},
+        )
+
+    match_by_id: dict[str, dict[str, Any]] = {}
+    for item in matches:
+        mid = item.get("id")
+        if not mid or item.get("tournament_id") != tournament_id or mid in match_by_id:
+            raise DomainConflictError(
+                "Struktur bracket tidak valid: ditemukan ID pertandingan tidak konsisten.",
+                {"tournament_id": tournament_id, "match_id": mid},
+            )
+        match_by_id[mid] = item
+
+    seen_feeder_slots: set[tuple[str, str]] = set()
+    for mid, item in match_by_id.items():
+        next_id = item.get("next_match_id")
+        next_slot = item.get("next_slot")
+        if next_id is not None:
+            if next_id == mid:
+                raise DomainConflictError(
+                    "Struktur bracket tidak valid: ditemukan self-loop pada pertandingan.",
+                    {"tournament_id": tournament_id, "match_id": mid},
+                )
+            target = match_by_id.get(next_id)
+            if target is None:
+                raise DomainConflictError(
+                    "Struktur bracket tidak valid: next_match_id menunjuk ke luar turnamen atau tidak ditemukan.",
+                    {
+                        "tournament_id": tournament_id,
+                        "match_id": mid,
+                        "next_match_id": next_id,
+                    },
+                )
+            if next_slot not in ("A", "B"):
+                raise DomainConflictError(
+                    "Struktur bracket tidak valid: next_slot wajib 'A' atau 'B' saat next_match_id terisi.",
+                    {
+                        "tournament_id": tournament_id,
+                        "match_id": mid,
+                        "next_slot": next_slot,
+                    },
+                )
+            slot_key = (next_id, next_slot)
+            if slot_key in seen_feeder_slots:
+                raise DomainConflictError(
+                    "Struktur bracket tidak valid: duplikasi feeder slot menuju pertandingan lanjutan.",
+                    {
+                        "tournament_id": tournament_id,
+                        "next_match_id": next_id,
+                        "next_slot": next_slot,
+                    },
+                )
+            seen_feeder_slots.add(slot_key)
+
+            cur_round = item.get("round_number")
+            nxt_round = target.get("round_number")
+            if cur_round is not None and nxt_round is not None and int(cur_round) >= int(nxt_round):
+                raise DomainConflictError(
+                    "Struktur bracket tidak valid: round_number feeder tidak boleh melebihi babak lanjutan.",
+                    {
+                        "tournament_id": tournament_id,
+                        "match_id": mid,
+                        "next_match_id": next_id,
+                    },
+                )
+
+    finals = [m for m in matches if m.get("next_match_id") is None]
+    if len(finals) != 1:
+        raise DomainConflictError(
+            "Struktur bracket tidak valid: harus terdapat tepat satu pertandingan Grand Final.",
+            {
+                "tournament_id": tournament_id,
+                "final_match_ids": [m.get("id") for m in finals],
+            },
+        )
+
+    grand_final = finals[0]
+    gf_id = grand_final["id"]
+    if grand_final.get("next_slot") not in (None, ""):
+        raise DomainConflictError(
+            "Struktur bracket tidak valid: Grand Final tidak boleh memiliki next_slot.",
+            {
+                "tournament_id": tournament_id,
+                "match_id": gf_id,
+                "next_slot": grand_final.get("next_slot"),
+            },
+        )
+
+    if pending_final_id is not None and gf_id != pending_final_id:
+        raise DomainConflictError(
+            "Struktur bracket tidak valid: pertandingan bukan Grand Final yang sah.",
+            {
+                "tournament_id": tournament_id,
+                "match_id": pending_final_id,
+                "final_match_id": gf_id,
+            },
+        )
+
+    # Walk directed paths from every node with cycle detection + memoized reachability.
+    verified_to_gf: set[str] = {gf_id}
+    for mid in match_by_id:
+        if mid in verified_to_gf:
+            continue
+        curr: str | None = mid
+        visiting: set[str] = set()
+        trail: list[str] = []
+        while curr is not None and curr not in verified_to_gf:
+            if curr in visiting:
+                raise DomainConflictError(
+                    "Struktur bracket tidak valid: ditemukan siklus antar pertandingan.",
+                    {"tournament_id": tournament_id, "cycle_match_ids": trail},
+                )
+            visiting.add(curr)
+            trail.append(curr)
+            curr = match_by_id[curr].get("next_match_id")
+        if curr not in verified_to_gf:
+            raise DomainConflictError(
+                "Struktur bracket tidak valid: terdapat pertandingan yang tidak terhubung ke Grand Final.",
+                {"tournament_id": tournament_id, "match_id": mid},
+            )
+        verified_to_gf.update(trail)
+
+    if len(verified_to_gf) != len(match_by_id):
+        raise DomainConflictError(
+            "Struktur bracket tidak valid: tidak seluruh pertandingan terhubung ke Grand Final.",
+            {"tournament_id": tournament_id},
+        )
+
+    target_final_id = pending_final_id or gf_id
+    unfinished = [
+        m["id"]
+        for m in matches
+        if m["id"] != target_final_id and m.get("status") not in ("completed", "bye")
+    ]
+    if unfinished:
+        raise DomainConflictError(
+            "Grand Final tidak dapat diselesaikan karena masih terdapat pertandingan sebelumnya yang belum berstatus completed atau bye.",
+            {
+                "tournament_id": tournament_id,
+                "unfinished_match_ids": unfinished,
+            },
+        )
+
+    if pending_final_id is None:
+        winner = grand_final.get("winner_team_id")
+        if grand_final.get("status") != "completed" or not winner or winner not in (
+            grand_final.get("team_a_id"),
+            grand_final.get("team_b_id"),
+        ):
+            raise DomainConflictError(
+                "Grand Final belum selesai dengan pemenang yang sah.",
+                {"tournament_id": tournament_id, "match_id": gf_id},
+            )
+
+    return grand_final

@@ -28,6 +28,7 @@ Setiap implementasi repository (`MockDataStoreRepository` maupun `SupabaseDataSt
 ### A. Profile & Auth Repository
 - `list_profiles() -> list[dict]`
 - `get_profile_by_id(profile_id: str) -> dict | None`
+- `get_public_profile_summary(profile_id: str, team_id: str | None = None, actor_id: str | None = None) -> dict | None`
 - `get_profile_by_email(email: str) -> dict | None`
 - `create_profile(data: dict) -> dict`
 - `update_profile(profile_id: str, data: dict) -> dict | None`
@@ -41,8 +42,10 @@ Setiap implementasi repository (`MockDataStoreRepository` maupun `SupabaseDataSt
 - `get_tournament_by_id(tournament_id: str) -> dict | None`
 - `create_tournament(data: dict) -> dict`
 - `update_tournament(tournament_id: str, data: dict) -> dict | None`
+- `transition_tournament_status(tournament_id: str, new_status: str) -> dict | None`
 - `delete_tournament(tournament_id: str) -> bool`
 - `is_staff_assigned(tournament_id: str, user_id: str) -> bool`
+- `list_assigned_tournament_ids(user_id: str) -> list[str]`
 
 ### D. Team & Member Repository
 - `list_teams(game_id: str | None = None) -> list[dict]`
@@ -56,6 +59,7 @@ Setiap implementasi repository (`MockDataStoreRepository` maupun `SupabaseDataSt
 - `list_registrations_by_tournament(tournament_id: str) -> list[dict]`
 - `get_registration_by_id(registration_id: str) -> dict | None`
 - `create_registration(data: dict) -> dict`
+- `register_team_atomic(tournament_id: str, team_id: str, registered_by: str, notes: str = "") -> dict`
 - `update_registration_status(registration_id: str, status: str, verified_by: str, notes: str = "") -> dict | None`
 
 ### F. Match & Bracket Repository
@@ -64,6 +68,8 @@ Setiap implementasi repository (`MockDataStoreRepository` maupun `SupabaseDataSt
 - `replace_tournament_matches(tournament_id: str, matches: list[dict]) -> list[dict]`
 - `update_match(match_id: str, data: dict) -> dict | None`
 - `record_match_result(data: dict) -> dict`
+- `list_match_results(match_id: str) -> list[dict]`
+- `submit_match_result_atomic(*, match_id: str, score_a: int, score_b: int, winner_team_id: str, notes: str = "", force_override: bool = False, actor_id: str | None = None, game_number: int = 1, idempotency_key: str | None = None) -> dict`
 
 ### G. Announcement & Activity Log Repository
 - `list_announcements_by_tournament(tournament_id: str) -> list[dict]`

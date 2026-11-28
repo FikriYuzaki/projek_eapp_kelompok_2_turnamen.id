@@ -786,8 +786,9 @@ def test_supabase_client_credential_validation_and_no_monkey_patch() -> None:
 
     valid_anon_jwt = _build_test_jwt({"role": "anon", "iss": "supabase"})
     service_role_jwt = _build_test_jwt({"role": "service_role", "iss": "supabase"})
+    valid_publishable_key = "sb_publishable_test_key_format_12345"
 
-    with pytest.raises(RuntimeError, match="SUPABASE_URL dan SUPABASE_ANON_KEY belum tersedia"):
+    with pytest.raises(RuntimeError, match="SUPABASE_URL"):
         validate_supabase_credentials("", "")
 
     with pytest.raises(RuntimeError, match="SUPABASE_URL tidak valid"):
@@ -799,19 +800,27 @@ def test_supabase_client_credential_validation_and_no_monkey_patch() -> None:
     with pytest.raises(RuntimeError, match="service_role"):
         validate_supabase_credentials("https://example.supabase.co", service_role_jwt)
 
-    with pytest.raises(RuntimeError, match="sb_publishable_"):
-        validate_supabase_credentials(
-            "https://example.supabase.co",
-            "sb_publishable_test_key_format",
-        )
+    assert (
+        validate_supabase_credentials("https://example.supabase.co", valid_publishable_key)
+        == valid_publishable_key
+    )
 
-    cfg = AppConfig(
+    cfg_pub = AppConfig(
+        app_mode="supabase",
+        supabase_url="https://example.supabase.co",
+        supabase_publishable_key=valid_publishable_key,
+    )
+    client_pub = create_supabase_client(cfg_pub, access_token=valid_anon_jwt)
+    assert client_pub is not None
+    assert client_pub.supabase_key == valid_publishable_key
+
+    cfg_legacy = AppConfig(
         app_mode="supabase",
         supabase_url="https://example.supabase.co",
         supabase_anon_key=valid_anon_jwt,
     )
-    client = create_supabase_client(cfg, access_token=valid_anon_jwt)
-    assert client is not None
+    client_legacy = create_supabase_client(cfg_legacy, access_token=valid_anon_jwt)
+    assert client_legacy is not None
     assert sync_client_mod.re.match is stdlib_re.match
 
 

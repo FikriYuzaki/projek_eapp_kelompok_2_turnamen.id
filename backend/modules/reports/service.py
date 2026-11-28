@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.contracts.dtos import ROLE_COMMITTEE
 from backend.core.exceptions import DomainNotFoundError
+from backend.modules.auth.permissions import is_tournament_manager
 from backend.repositories.interfaces.repository_protocol import DataStoreRepositoryProtocol
 
 
@@ -17,27 +19,27 @@ class ReportService:
     def __init__(self, repository: DataStoreRepositoryProtocol) -> None:
         self._repo = repository
 
-    def get_tournament_standings(self, tournament_id: str) -> list[dict[str, Any]]:
-        tournament = self._repo.get_tournament_by_id(tournament_id)
-        if not tournament:
-            raise DomainNotFoundError(
-                "Turnamen tidak ditemukan.", {"tournament_id": tournament_id}
-            )
-
-        regs = self._repo.list_registrations_by_tournament(tournament["id"])
-        matches = self._repo.list_matches_by_tournament(tournament["id"])
-        teams_by_id = {t["id"]: t for t in self._repo.list_teams()}
+    def _compute_standings(
+        self,
+        regs: list[dict[str, Any]],
+        matches: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        approved_regs = [r for r in regs if r.get("status") == "approved"]
+        needs_team_lookup = any(
+            not r.get("team_name") or not r.get("team_tag") for r in approved_regs
+        )
+        teams_by_id = (
+            {t["id"]: t for t in self._repo.list_teams()} if needs_team_lookup else {}
+        )
 
         stats: dict[str, dict[str, Any]] = {}
-        for reg in regs:
-            if reg["status"] != "approved":
-                continue
+        for reg in approved_regs:
             tid = reg["team_id"]
             team = teams_by_id.get(tid, {})
             stats[tid] = {
                 "team_id": tid,
-                "team_name": team.get("name", reg.get("team_name", "Unknown Team")),
-                "team_tag": team.get("tag", reg.get("team_tag", "---")),
+                "team_name": team.get("name") or reg.get("team_name") or "Unknown Team",
+                "team_tag": team.get("tag") or reg.get("team_tag") or "---",
                 "seed_number": reg.get("seed_number"),
                 "matches_played": 0,
                 "matches_won": 0,
@@ -114,7 +116,7 @@ class ReportService:
             row["rank"] = idx
         return standings
 
-    def get_tournament_report(self, tournament_id: str) -> dict[str, Any]:
+    def get_tournament_standings(self, tournament_id: str) -> list[dict[str, Any]]:
         tournament = self._repo.get_tournament_by_id(tournament_id)
         if not tournament:
             raise DomainNotFoundError(
@@ -123,9 +125,29 @@ class ReportService:
 
         regs = self._repo.list_registrations_by_tournament(tournament["id"])
         matches = self._repo.list_matches_by_tournament(tournament["id"])
+        return self._compute_standings(regs, matches)
+
+    def get_tournament_report(
+        self, tournament_id: str, actor: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        tournament = self._repo.get_tournament_by_id(tournament_id)
+        if not tournament:
+            raise DomainNotFoundError(
+                "Turnamen tidak ditemukan.", {"tournament_id": tournament_id}
+            )
+
+        is_manager = is_tournament_manager(self._repo, actor, tournament)
+        if (
+            actor
+            and actor.get("is_active", True)
+            and str(actor.get("role") or "").strip().lower() == ROLE_COMMITTEE
+        ):
+            tournament["is_assigned_committee"] = is_manager
+
+        regs = self._repo.list_registrations_by_tournament(tournament["id"])
+        matches = self._repo.list_matches_by_tournament(tournament["id"])
         announcements = self._repo.list_announcements_by_tournament(tournament["id"])
-        standings = self.get_tournament_standings(tournament["id"])
-        logs = self._repo.list_activity_logs(tournament["id"])
+        standings = self._compute_standings(regs, matches)
 
         total_matches = len(matches)
         completed_matches = sum(1 for m in matches if m["status"] in ("completed", "bye"))
@@ -139,21 +161,32 @@ class ReportService:
             None,
         )
 
+        summary: dict[str, Any] = {
+            "max_teams": tournament["max_teams"],
+            "approved_teams": sum(1 for r in regs if r["status"] == "approved"),
+            "total_matches": total_matches,
+            "completed_matches": completed_matches,
+            "scheduled_matches": scheduled_matches,
+            "completion_percentage": completion_rate,
+            "announcements_count": len(announcements),
+            "prize_pool": tournament["prize_pool"],
+            "champion_team": champion["team_name"] if champion else None,
+        }
+        if is_manager:
+            try:
+                recent_activity = self._repo.list_activity_logs(tournament["id"], limit=10)[:10]
+            except TypeError:
+                recent_activity = self._repo.list_activity_logs(tournament["id"])[:10]
+            summary["total_registrations"] = len(regs)
+            summary["pending_registrations"] = sum(
+                1 for r in regs if r["status"] == "pending"
+            )
+        else:
+            recent_activity = []
+
         return {
             "tournament": tournament,
-            "summary": {
-                "max_teams": tournament["max_teams"],
-                "total_registrations": len(regs),
-                "approved_teams": sum(1 for r in regs if r["status"] == "approved"),
-                "pending_registrations": sum(1 for r in regs if r["status"] == "pending"),
-                "total_matches": total_matches,
-                "completed_matches": completed_matches,
-                "scheduled_matches": scheduled_matches,
-                "completion_percentage": completion_rate,
-                "announcements_count": len(announcements),
-                "prize_pool": tournament["prize_pool"],
-                "champion_team": champion["team_name"] if champion else None,
-            },
+            "summary": summary,
             "standings": standings,
-            "recent_activity": logs[:10],
+            "recent_activity": recent_activity,
         }
