@@ -12,8 +12,9 @@ from backend.core.config import AppConfig, ROOT_DIR
 SENSITIVE_PATTERNS = (
     re.compile(r"(Bearer\s+)[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE),
     re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"\bsb_(?:publishable|secret)_[A-Za-z0-9_-]+\b"),
     re.compile(
-        r"((?:password|passwd|secret_key|supabase_anon_key|service_role|rawg_api_key|api_key|apikey|access_token|refresh_token|auth_token|token|authorization)['\"\s:=]+)[^\s,'\"}\];&]+",
+        r"((?:password|passwd|secret_key|supabase_publishable_key|supabase_anon_key|service_role|rawg_api_key|api_key|apikey|access_token|refresh_token|auth_token|token|authorization)['\"\s:=]+)[^\s,'\"}\];&]+",
         re.IGNORECASE,
     ),
 )
@@ -77,6 +78,7 @@ class RedactingFormatter(logging.Formatter):
 def _extract_config_secrets(config: AppConfig) -> tuple[str, ...]:
     candidates = (
         getattr(config, "secret_key", ""),
+        getattr(config, "supabase_publishable_key", ""),
         getattr(config, "supabase_anon_key", ""),
         getattr(config, "rawg_api_key", ""),
     )
