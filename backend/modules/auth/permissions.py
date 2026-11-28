@@ -90,3 +90,19 @@ class RolePermissionGuard:
     require_authenticated = staticmethod(require_authenticated)
     require_permission = staticmethod(require_permission)
     require_any_role = staticmethod(require_any_role)
+
+
+def is_tournament_manager(
+    repository: Any, actor: dict[str, Any] | None, tournament: dict[str, Any]
+) -> bool:
+    """Return True when `actor` holds management authority over `tournament`."""
+    if not actor or not actor.get("is_active", True):
+        return False
+    role = str(actor.get("role") or "").strip().lower()
+    if role == ROLE_SUPER_ADMIN:
+        return True
+    if role == ROLE_ORGANIZER:
+        return tournament.get("organizer_id") == actor.get("id")
+    if role == ROLE_COMMITTEE:
+        return bool(repository.is_staff_assigned(tournament["id"], str(actor.get("id") or "")))
+    return False
